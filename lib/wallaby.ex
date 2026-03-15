@@ -87,6 +87,13 @@ defmodule Wallabidi do
   end
 
   @doc false
+  def stop(_state) do
+    # Clean up Docker container if we started one
+    Wallabidi.Chrome.Docker.stop()
+    :ok
+  end
+
+  @doc false
   def screenshot_on_failure? do
     Application.get_env(:wallabidi, :screenshot_on_failure)
   end

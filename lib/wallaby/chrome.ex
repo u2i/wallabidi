@@ -95,6 +95,7 @@ defmodule Wallabidi.Chrome do
 
   @doc false
   def init(_) do
+    # remote_url is set either by config or by Docker.start in validate()
     children =
       if remote_url() do
         []
@@ -108,14 +109,36 @@ defmodule Wallabidi.Chrome do
   @doc false
   @spec validate() :: :ok | {:error, DependencyError.t()}
   def validate do
-    if remote_url() do
-      :ok
-    else
-      with {:ok, chromedriver_version} <- get_chromedriver_version(),
-           {:ok, chrome_version} <- get_chrome_version(),
-           :ok <- minimum_version_check(chromedriver_version) do
-        version_compare(chrome_version, chromedriver_version)
-      end
+    cond do
+      remote_url() ->
+        :ok
+
+      local_chromedriver_available?() ->
+        with {:ok, chromedriver_version} <- get_chromedriver_version(),
+             {:ok, chrome_version} <- get_chrome_version(),
+             :ok <- minimum_version_check(chromedriver_version) do
+          version_compare(chrome_version, chromedriver_version)
+        end
+
+      Wallabidi.Chrome.Docker.available?() ->
+        case Wallabidi.Chrome.Docker.start() do
+          {:ok, _url} ->
+            :ok
+
+          {:error, reason} ->
+            {:error,
+             DependencyError.exception(
+               "Failed to start Chrome via Docker: #{inspect(reason)}. " <>
+                 "Install chromedriver locally, configure a remote_url, or install Docker."
+             )}
+        end
+
+      true ->
+        {:error,
+         DependencyError.exception(
+           "Wallabidi can't find chromedriver and Docker is not available. " <>
+             "Install chromedriver, configure remote_url, or install Docker."
+         )}
     end
   end
 
@@ -159,6 +182,10 @@ defmodule Wallabidi.Chrome do
 
   defp remote_url do
     Application.get_env(:wallabidi, :chromedriver, []) |> Keyword.get(:remote_url)
+  end
+
+  defp local_chromedriver_available? do
+    match?({:ok, _}, find_chromedriver_executable())
   end
 
   defp chromedriver_base_url do

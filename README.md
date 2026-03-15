@@ -64,7 +64,11 @@ config :wallaby, hackney_options: [...]
 
 ### Requirements
 
-Elixir 1.12+, OTP 22+, ChromeDriver, Google Chrome.
+Elixir 1.12+, OTP 22+, and one of:
+
+- **ChromeDriver + Chrome** installed locally, OR
+- **Docker** — Wallabidi will automatically start a `selenium/standalone-chromium` container if chromedriver isn't found, OR
+- A **remote ChromeDriver** URL (e.g. in your Docker Compose stack)
 
 ### Installation
 
