@@ -15,7 +15,8 @@ defmodule Wallaby.BiDi.WebSocketClient do
     pending: %{},
     subscribers: %{},
     buffer: "",
-    status: nil
+    status: nil,
+    queued_commands: []
   ]
 
   # Public API
@@ -62,24 +63,15 @@ defmodule Wallaby.BiDi.WebSocketClient do
   end
 
   @impl true
+  def handle_call({:send_command, method, params}, from, %{websocket: nil} = state) do
+    # WebSocket handshake not complete yet — queue the command
+    queued = state.queued_commands ++ [{from, method, params}]
+    {:noreply, %{state | queued_commands: queued}}
+  end
+
   def handle_call({:send_command, method, params}, from, state) do
-    id = state.next_id
-
-    message =
-      Jason.encode!(%{
-        id: id,
-        method: method,
-        params: params
-      })
-
-    case send_frame(state, {:text, message}) do
-      {:ok, state} ->
-        pending = Map.put(state.pending, id, from)
-        {:noreply, %{state | next_id: id + 1, pending: pending}}
-
-      {:error, state, reason} ->
-        {:reply, {:error, reason}, state}
-    end
+    state = do_send_command(state, from, method, params)
+    {:noreply, state}
   end
 
   def handle_call({:subscribe, event_method}, {pid, _}, state) do
@@ -140,7 +132,8 @@ defmodule Wallaby.BiDi.WebSocketClient do
   defp process_response({:headers, ref, headers}, %{ref: ref, status: 101} = state) do
     case Mint.WebSocket.new(state.conn, ref, 101, headers) do
       {:ok, conn, websocket} ->
-        %{state | conn: conn, websocket: websocket}
+        state = %{state | conn: conn, websocket: websocket}
+        flush_queued_commands(state)
 
       {:error, conn, reason} ->
         Logger.error("BiDi WebSocket handshake failed: #{inspect(reason)}")
@@ -199,6 +192,35 @@ defmodule Wallaby.BiDi.WebSocketClient do
   defp reply_all_pending(state, reply) do
     Enum.each(state.pending, fn {_id, from} ->
       GenServer.reply(from, reply)
+    end)
+  end
+
+  defp do_send_command(state, from, method, params) do
+    id = state.next_id
+
+    message =
+      Jason.encode!(%{
+        id: id,
+        method: method,
+        params: params
+      })
+
+    case send_frame(state, {:text, message}) do
+      {:ok, state} ->
+        pending = Map.put(state.pending, id, from)
+        %{state | next_id: id + 1, pending: pending}
+
+      {:error, state, reason} ->
+        GenServer.reply(from, {:error, reason})
+        state
+    end
+  end
+
+  defp flush_queued_commands(%{queued_commands: []} = state), do: state
+
+  defp flush_queued_commands(state) do
+    Enum.reduce(state.queued_commands, %{state | queued_commands: []}, fn
+      {from, method, params}, acc -> do_send_command(acc, from, method, params)
     end)
   end
 
