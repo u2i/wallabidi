@@ -6,6 +6,14 @@ Concurrent browser testing for Elixir, powered by [WebDriver BiDi](https://w3c.g
 
 Wallabidi is a fork of [Wallaby](https://github.com/elixir-wallaby/wallaby) that replaces the legacy HTTP/JSON Wire Protocol with WebDriver BiDi over WebSocket. The public API is intentionally kept close to Wallaby's to make migration straightforward.
 
+## Why fork?
+
+Wallaby is excellent. We forked because the changes we wanted were too invasive to contribute upstream — replacing the entire transport layer, removing Selenium, dropping four HTTP dependencies, and changing the default click mechanism. These aren't bug fixes; they're architectural decisions that would break backward compatibility for Wallaby's existing users.
+
+We also wanted features that only make sense with BiDi: `settle()` for LiveView, request interception, event-driven log capture. Building these on top of Wallaby's HTTP polling model would have been the wrong abstraction.
+
+If you're starting a new project or are willing to do a find-and-replace, Wallabidi gives you a simpler dependency tree, better LiveView support, and access to modern browser APIs. If you need Selenium or Firefox support, stay with Wallaby.
+
 ## What's different from Wallaby?
 
 **Protocol**: All browser communication uses WebDriver BiDi over WebSocket instead of HTTP polling. This means event-driven log capture, lower latency, and access to features impossible with request-response HTTP.
