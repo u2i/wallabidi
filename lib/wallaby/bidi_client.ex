@@ -176,7 +176,7 @@ defmodule Wallaby.BiDiClient do
     case tag_name do
       {:error, _} = error -> error
       "OPTION" -> click_option(element, shared_id, context)
-      _ -> click_with_pointer(element, shared_id, context)
+      _ -> click_with_js(element, shared_id, context)
     end
   end
 
@@ -202,23 +202,6 @@ defmodule Wallaby.BiDiClient do
     case send_bidi(element, method, params) do
       {:ok, _} -> {:ok, nil}
       error -> error
-    end
-  end
-
-  defp click_with_pointer(element, shared_id, context) do
-    actions = Commands.pointer_click_actions(shared_id)
-    {method, params} = Commands.perform_actions(context, actions)
-
-    case send_bidi(element, method, params) do
-      {:ok, _} ->
-        {:ok, nil}
-
-      {:error, :stale_reference} = error ->
-        error
-
-      {:error, _} ->
-        # Fall back to JavaScript click for elements that can't receive pointer events
-        click_with_js(element, shared_id, context)
     end
   end
 

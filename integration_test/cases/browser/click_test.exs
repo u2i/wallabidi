@@ -13,9 +13,6 @@ defmodule Wallaby.Integration.Browser.ClickTest do
              |> click(Query.button("Submit button"))
     end
 
-    @tag :skip
-    # BiDi shared references for display:none elements may not survive
-    # across script.callFunction calls in some chromedriver versions
     test "can click invisible elements", %{page: page} do
       assert page
              |> click(Query.button("Invisible Button", visible: false))
@@ -101,6 +98,21 @@ defmodule Wallaby.Integration.Browser.ClickTest do
 
     test "waits until the checkbox appears", %{page: page} do
       assert click(page, Query.checkbox("Hidden Checkbox"))
+    end
+  end
+
+  describe "click/2 with DOM mutation during handler" do
+    test "click works when handler hides the element's container", %{session: session} do
+      session
+      |> visit("js_click.html")
+      |> click(Query.button("Hide and Set"))
+
+      result =
+        session
+        |> find(Query.css("#result"))
+        |> Element.text()
+
+      assert result == "clicked"
     end
   end
 
