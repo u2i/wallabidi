@@ -1,99 +1,87 @@
-# ![Wallabidi](https://i.imgur.com/eQ1tlI3.png)
+# Wallabidi
 
-[![Actions Status](https://github.com/elixir-wallabidi/wallabidi/workflows/CI/badge.svg)](https://github.com/elixir-wallabidi/wallabidi/actions)
-[![Module Version](https://img.shields.io/hexpm/v/wallabidi.svg)](https://hex.pm/packages/wallabidi)
-[![Hex Docs](https://img.shields.io/badge/hex-docs-lightgreen.svg)](https://hexdocs.pm/wallabidi/)
-[![License](https://img.shields.io/hexpm/l/wallabidi.svg)](https://github.com/elixir-wallabidi/wallabidi/blob/master/LICENSE)
+[![License](https://img.shields.io/hexpm/l/wallabidi.svg)](https://github.com/u2i/wallabidi/blob/main/LICENSE)
 
-Wallabidi helps you test your web applications by simulating realistic user interactions.
-By default it runs each test case concurrently and manages browsers for you.
-Here's an example test for a simple Todo application:
+Concurrent browser testing for Elixir, powered by [WebDriver BiDi](https://w3c.github.io/webdriver-bidi/).
+
+Wallabidi is a fork of [Wallaby](https://github.com/elixir-wallaby/wallaby) that replaces the legacy HTTP/JSON Wire Protocol with WebDriver BiDi over WebSocket. The public API is intentionally kept close to Wallaby's to make migration straightforward.
+
+## What's different from Wallaby?
+
+**Protocol**: All browser communication uses WebDriver BiDi over WebSocket instead of HTTP polling. This means event-driven log capture, lower latency, and access to features impossible with request-response HTTP.
+
+**New features**:
+- `settle/2` — Wait for the page to settle after an action. LiveView-aware: watches both network activity and `phx-*-loading` states.
+- `on_console/2` — Register a callback for real-time browser console output.
+- `intercept_request/3` — Mock HTTP responses directly in the browser without Bypass or a test server.
+
+**Removed**:
+- Selenium driver — Chrome only (via ChromeDriver)
+- HTTPoison / Hackney dependencies — replaced with Mint
+- `create_session_fn` / `end_session_fn` options
+
+**Simplified**:
+- Single ChromeDriver process shared by all test sessions
+- Event-driven JS error detection (no HTTP polling per command)
+- W3C capabilities format (`goog:chromeOptions`)
+
+## Migrating from Wallaby
+
+1. Replace the dependency:
 
 ```elixir
-defmodule MyApp.Features.TodoTest do
-  use ExUnit.Case, async: true
-  use Wallabidi.Feature
-
-  import Wallabidi.Query, only: [css: 2, text_field: 1, button: 1]
-
-  feature "users can create todos", %{session: session} do
-    session
-    |> visit("/todos")
-    |> fill_in(text_field("New Todo"), with: "Write my first Wallabidi test")
-    |> click(button("Save"))
-    |> assert_has(css(".alert", text: "You created a todo"))
-    |> assert_has(css(".todo-list > .todo", text: "Write my first Wallabidi test"))
-  end
-end
+# mix.exs
+{:wallabidi, "~> 0.1", runtime: false, only: :test}
 ```
 
-Because Wallabidi manages multiple browsers for you, its possible to test several users interacting with a page simultaneously.
+2. Find and replace in your project:
+
+| Wallaby | Wallabidi |
+|---------|-----------|
+| `Wallaby.` | `Wallabidi.` |
+| `:wallaby` | `:wallabidi` |
+| `config :wallaby,` | `config :wallabidi,` |
+
+3. Remove if present:
 
 ```elixir
-defmodule MyApp.Features.MultipleUsersTest do
-  use ExUnit.Case, async: true
-  use Wallabidi.Feature
-
-  import Wallabidi.Query, only: [text_field: 1, button: 1, css: 2]
-
-  @page message_path(Endpoint, :index)
-  @message_field text_field("Share Message")
-  @share_button button("Share")
-
-  def message(msg), do: css(".messages > .message", text: msg)
-
-  @sessions 2
-  feature "That users can send messages to each other", %{sessions: [user1, user2]} do
-    user1
-    |> visit(@page)
-    |> fill_in(@message_field, with: "Hello there!")
-    |> click(@share_button)
-
-    user2
-    |> visit(@page)
-    |> fill_in(@message_field, with: "Hello yourself")
-    |> click(@share_button)
-
-    user1
-    |> assert_has(message("Hello yourself"))
-
-    user2
-    |> assert_has(message("Hello there!"))
-  end
-end
+# No longer needed
+config :wallaby, driver: Wallaby.Chrome
+config :wallaby, hackney_options: [...]
 ```
 
-Read on to see what else Wallabidi can do or check out the [Official Documentation](https://hexdocs.pm/wallabidi).
+4. That's it. The `Browser`, `Query`, `Element`, `Feature`, and `DSL` APIs are the same.
 
 ## Setup
 
 ### Requirements
 
-Wallabidi requires Elixir 1.12+ and OTP 22+.
-
-Wallabidi also requires `bash` to be installed. Generally `bash` is widely available, but it does not come pre-installed on Alpine Linux.
+Elixir 1.12+, OTP 22+, ChromeDriver, Google Chrome.
 
 ### Installation
 
-Add Wallabidi to your list of dependencies in `mix.exs`:
-
 ```elixir
 def deps do
-  [
-    {:wallabidi, "~> 0.30", runtime: false, only: :test}
-  ]
+  [{:wallabidi, "~> 0.1", runtime: false, only: :test}]
 end
 ```
 
-You'll need to install [ChromeDriver](https://chromedriver.chromium.org/downloads) and [Google Chrome](https://www.google.com/chrome/).
-
-Ensure that Wallabidi is started in your `test_helper.exs`:
-
 ```elixir
+# test/test_helper.exs
 {:ok, _} = Application.ensure_all_started(:wallabidi)
 ```
 
-When calling `use Wallabidi.Feature` and using Ecto, please configure your `otp_app`.
+### Phoenix
+
+```elixir
+# config/test.exs
+config :your_app, YourAppWeb.Endpoint, server: true
+
+# test/test_helper.exs
+Application.put_env(:wallabidi, :base_url, YourAppWeb.Endpoint.url)
+```
+
+When using Ecto:
 
 ```elixir
 config :wallabidi, otp_app: :your_app
@@ -101,199 +89,49 @@ config :wallabidi, otp_app: :your_app
 
 ### Remote ChromeDriver (Docker)
 
-To connect to a ChromeDriver running in a separate container:
-
 ```elixir
-# config/test.exs
 config :wallabidi,
-  chromedriver: [
-    remote_url: "http://chrome:4444/"
-  ]
+  chromedriver: [remote_url: "http://chrome:4444/"]
 ```
 
-When `remote_url` is set, Wallabidi will not start a local ChromeDriver process and will instead connect to the remote instance.
+### LiveView
 
-### Phoenix
+Add the Ecto sandbox hook as described in the [Wallaby docs](https://hexdocs.pm/wallaby/readme.html#liveview) — the setup is identical, just replace `:wallaby` with `:wallabidi`.
 
-Enable Phoenix to serve endpoints in tests:
-
-```elixir
-# config/test.exs
-
-config :your_app, YourAppWeb.Endpoint,
-  server: true
-```
-
-In your `test_helper.exs` you can provide some configuration to Wallabidi.
-At a minimum, you need to specify a `:base_url`, so Wallabidi knows how to resolve relative paths.
+## Usage
 
 ```elixir
-# test/test_helper.exs
-
-Application.put_env(:wallabidi, :base_url, YourAppWeb.Endpoint.url)
-```
-
-#### Ecto
-
-If you're testing a Phoenix application with Ecto and a database that [supports sandbox mode](https://hexdocs.pm/ecto_sql/Ecto.Adapters.SQL.Sandbox.html), you can enable concurrent testing by adding the `Phoenix.Ecto.SQL.Sandbox` plug to your `Endpoint`.
-It's important that this is at the top of `endpoint.ex` before any other plugs.
-
-```elixir
-# lib/your_app_web/endpoint.ex
-
-defmodule YourAppWeb.Endpoint do
-  use Phoenix.Endpoint, otp_app: :your_app
-
-  if Application.compile_env(:your_app, :sandbox, false) do
-    plug Phoenix.Ecto.SQL.Sandbox
-  end
-
-  # ...
-
-  socket("/live", Phoenix.LiveView.Socket,
-    websocket: [connect_info: [:user_agent, session: @session_options]]
-  )
-```
-
-It's also important to make sure the `user_agent` is passed in the `connect_info` in order to allow the database and browser session to be wired up correctly.
-
-Then make sure sandbox is enabled:
-
-```elixir
-# config/test.exs
-
-config :your_app, :sandbox, Ecto.Adapters.SQL.Sandbox
-```
-
-#### LiveView
-
-In order to test Phoenix LiveView with Wallabidi you'll need to add the sandbox hook to your LiveViews:
-
-```elixir
-defmodule MyApp.Hooks.AllowEctoSandbox do
-  import Phoenix.LiveView
-  import Phoenix.Component
-
-  def on_mount(:default, _params, _session, socket) do
-    allow_ecto_sandbox(socket)
-    {:cont, socket}
-  end
-
-  defp allow_ecto_sandbox(socket) do
-    %{assigns: %{phoenix_ecto_sandbox: metadata}} =
-      assign_new(socket, :phoenix_ecto_sandbox, fn ->
-        if connected?(socket), do: get_connect_info(socket, :user_agent)
-      end)
-
-    Phoenix.Ecto.SQL.Sandbox.allow(metadata, Application.get_env(:your_app, :sandbox))
-  end
-end
-```
-
-Then include it in the router:
-
-```elixir
-live_session :default, on_mount: MyApp.Hooks.AllowEctoSandbox do
-  # ...
-end
-```
-
-### Writing tests
-
-It's easiest to add Wallabidi to your test suite by using the `Wallabidi.Feature` module.
-
-```elixir
-defmodule YourApp.UserListTest do
+defmodule MyApp.Features.TodoTest do
   use ExUnit.Case, async: true
   use Wallabidi.Feature
 
-  feature "users have names", %{session: session} do
+  feature "users can create todos", %{session: session} do
     session
-    |> visit("/users")
-    |> find(Query.css(".user", count: 3))
-    |> List.first()
-    |> assert_has(Query.css(".user-name", text: "Chris"))
+    |> visit("/todos")
+    |> fill_in(Query.text_field("New Todo"), with: "Write a test")
+    |> click(Query.button("Save"))
+    |> settle()
+    |> assert_has(Query.css(".todo", text: "Write a test"))
   end
 end
 ```
 
-## API
+### settle
 
-The full documentation for the DSL is in the [official documentation](https://hexdocs.pm/wallabidi).
-
-### Queries and Actions
-
-Wallabidi's API is broken into 2 concepts: Queries and Actions.
-
-Queries allow us to declaratively describe the elements that we would like to interact with and Actions allow us to use those queries to interact with the DOM.
+Wait for the page to settle after an action. Works with both traditional AJAX and LiveView:
 
 ```elixir
 session
-|> find(css(".user", count: 3))
-|> List.first
-|> assert_has(css(".user-name", count: 1, text: "Ada"))
-```
-
-There are several queries for common html elements defined in the [Query module](https://hexdocs.pm/wallabidi/Wallabidi.Query.html#content).
-All actions accept a query.
-Actions will block until the query is either satisfied or the action times out.
-
-### Navigation
-
-```elixir
-visit(session, "/page.html")
-click(session, link("Page 1"))
-```
-
-### Interacting with forms
-
-```elixir
-fill_in(session, text_field("First Name"), with: "Chris")
-clear(session, text_field("last_name"))
-click(session, option("Some option"))
-click(session, button("Some Button"))
-send_keys(session, ["Example", "Text", :enter])
-```
-
-### Assertions
-
-```elixir
-session
-|> assert_has(css(".signup-form"))
-|> fill_in(text_field("Email", with: "c@keathley.io"))
-|> click(button("Sign up"))
-|> refute_has(css(".error"))
-|> assert_has(css(".alert", text: "Welcome!"))
-```
-
-### Waiting for async operations
-
-Use `settle/2` to wait for the page to settle after actions that trigger async behavior (AJAX, LiveView events, etc.):
-
-```elixir
-session
-|> click(button("Save"))
+|> click(Query.button("Save"))
 |> settle()
-|> assert_has(css(".flash-info", text: "Saved!"))
+|> assert_has(Query.css(".saved"))
 ```
 
-`settle` watches for new network requests and LiveView loading states. When no new requests have started and no `phx-*-loading` classes are present for the idle period, the page is considered settled.
+Checks two signals: no new HTTP requests for the idle period, and no LiveView `phx-*-loading` classes present.
 
-### Console output
+### intercept_request
 
-Register a callback for browser console messages:
-
-```elixir
-session
-|> on_console(fn level, message ->
-  IO.puts("[console.#{level}] #{message}")
-end)
-|> visit("/page")
-```
-
-### Request interception
-
-Mock HTTP responses directly in the browser without a test server:
+Mock HTTP responses in the browser:
 
 ```elixir
 session
@@ -305,117 +143,44 @@ session
 |> visit("/page")
 ```
 
-Dynamic responses:
+### on_console
+
+Stream browser console output:
 
 ```elixir
 session
-|> intercept_request("/api/*", fn _request ->
-  %{status: 200, headers: [], body: "mocked"}
+|> on_console(fn level, message ->
+  IO.puts("[#{level}] #{message}")
 end)
 ```
 
-### Window Size
-
-```elixir
-Wallabidi.start_session(window_size: [width: 1280, height: 720])
-
-resize_window(session, 100, 100)
-window_size(session)
-```
-
-### Screenshots
-
-```elixir
-take_screenshot(session)
-```
-
-Configure the screenshot directory:
-
-```elixir
-config :wallabidi, screenshot_dir: "/file/path"
-```
-
-Automatically take screenshots on failure:
-
-```elixir
-config :wallabidi, screenshot_on_failure: true
-```
-
-## JavaScript
-
-### Asynchronous code
-
-Wallabidi helps solve timing issues by blocking.
-Instead of manually setting timeouts, use `assert_has` and `settle` to wait for the DOM to be ready:
-
-```elixir
-session
-|> click(button("Some Async Button"))
-|> settle()
-|> assert_has(css(".async-result"))
-```
-
-### Interacting with dialogs
-
-```elixir
-alert_message = accept_alert session, fn(session) ->
-  click(session, link("Trigger alert"))
-end
-
-prompt_message = accept_prompt session, [with: "User input"], fn(session) ->
-  click(session, link("Trigger prompt"))
-end
-```
-
-### JavaScript logging and errors
-
-Wallabidi captures both JavaScript logs and errors.
-Any uncaught exceptions in JavaScript will be re-thrown in Elixir.
-This can be disabled by specifying `js_errors: false` in your Wallabidi config.
-
-JavaScript logs are written to :stdio by default.
-This can be changed to any IO device by setting the `:js_logger` option in your Wallabidi config.
-Logging can be disabled by setting `:js_logger` to `nil`.
-
 ## Configuration
-
-### ChromeDriver options
 
 ```elixir
 config :wallabidi,
+  max_wait_time: 5_000,
+  js_errors: true,
+  js_logger: :stdio,
+  screenshot_on_failure: false,
+  screenshot_dir: "screenshots",
   chromedriver: [
-    headless: false,                          # run with visible browser
-    path: "path/to/chromedriver",             # custom chromedriver path
-    binary: "path/to/chrome",                 # custom Chrome path
-    remote_url: "http://chrome:4444/",        # remote ChromeDriver (Docker)
-    capabilities: %{                          # custom capabilities
-      "goog:chromeOptions": %{
-        args: ["--headless", "--no-sandbox"]
-      }
-    }
+    headless: true,
+    path: "chromedriver",
+    binary: "/path/to/chrome",
+    remote_url: "http://chrome:4444/"
   ]
 ```
 
+## Credits
+
+Wallabidi is built on the foundation of [Wallaby](https://github.com/elixir-wallaby/wallaby), created by [Mitchell Hanberg](https://github.com/mhanberg) and [contributors](https://github.com/elixir-wallaby/wallaby/graphs/contributors). The Browser, Query, Element, Feature, and DSL APIs are theirs. Wallabidi adds the BiDi transport layer, new DX features, and removes the Selenium/HTTP legacy code.
+
+Licensed under MIT, same as Wallaby.
+
 ## Contributing
 
-Wallabidi is a community project. Pull Requests (PRs) and reporting issues are greatly welcome.
-
-### Development Dependencies
-
-- ChromeDriver
-- Google Chrome
-
 ```shell
-# Unit tests
-$ mix test
-
-# Integration tests
-$ WALLABY_DRIVER=chrome mix test
-
-# All tests
-$ mix test.all
+mix test              # unit tests
+WALLABY_DRIVER=chrome mix test   # integration tests
+mix test.all          # both
 ```
-
-### Helpful Links
-
-- [ChromeDriver Issue Tracker](https://issues.chromium.org/issues?q=status:open%20componentid:1608258&s=created_time:desc)

@@ -2,8 +2,8 @@ defmodule Wallabidi.Mixfile do
   use Mix.Project
 
   @source_url "https://github.com/u2i/wallabidi"
-  @version "0.30.12"
-  @maintainers ["Mitchell Hanberg"]
+  @version "0.1.0"
+  @maintainers ["Tom Clarke"]
 
   def project do
     [
@@ -14,7 +14,8 @@ defmodule Wallabidi.Mixfile do
       build_embedded: Mix.env() == :prod,
       start_permanent: Mix.env() == :prod,
       package: package(),
-      description: "Concurrent feature tests for elixir",
+      description:
+        "Concurrent browser testing for Elixir, powered by WebDriver BiDi. A fork of Wallaby.",
       deps: deps(),
       docs: docs(),
 
@@ -63,8 +64,8 @@ defmodule Wallabidi.Mixfile do
       maintainers: @maintainers,
       licenses: ["MIT"],
       links: %{
-        "Github" => @source_url,
-        "Sponsor" => "https://github.com/sponsors/mhanberg"
+        "GitHub" => @source_url,
+        "Wallaby (upstream)" => "https://github.com/elixir-wallaby/wallaby"
       }
     ]
   end
