@@ -631,33 +631,44 @@ defmodule Wallaby.Chrome do
         capabilities
 
       true ->
-        update_in(capabilities, [Access.key("goog:chromeOptions", %{}), :args], fn args ->
-          Enum.uniq(args ++ ["--headless"])
-        end)
+        update_in(
+          capabilities,
+          [Access.key("goog:chromeOptions", %{}), Access.key(:args, [])],
+          fn args -> Enum.uniq((args || []) ++ ["--headless"]) end
+        )
 
       false ->
-        update_in(capabilities, [Access.key("goog:chromeOptions", %{}), :args], fn args ->
-          args -- ["--headless"]
-        end)
+        update_in(
+          capabilities,
+          [Access.key("goog:chromeOptions", %{}), Access.key(:args, [])],
+          fn args -> (args || []) -- ["--headless"] end
+        )
     end
   end
 
   defp put_binary_config(capabilities, opts) do
     case resolve_opt(opts, :binary) do
-      nil -> capabilities
-      path -> put_in(capabilities, [Access.key("goog:chromeOptions", %{}), :binary], path)
+      nil ->
+        capabilities
+
+      path ->
+        put_in(capabilities, [Access.key("goog:chromeOptions", %{}), Access.key(:binary)], path)
     end
   end
 
   defp put_beam_metadata(capabilities, opts) do
-    update_in(capabilities, [Access.key("goog:chromeOptions", %{}), :args], fn args ->
-      Enum.map(args, fn
-        "--user-agent=" <> ua ->
-          "--user-agent=#{Metadata.append(ua, opts[:metadata])}"
+    update_in(capabilities, [Access.key("goog:chromeOptions", %{}), Access.key(:args, [])], fn
+      args when is_list(args) ->
+        Enum.map(args, fn
+          "--user-agent=" <> ua ->
+            "--user-agent=#{Metadata.append(ua, opts[:metadata])}"
 
-        arg ->
-          arg
-      end)
+          arg ->
+            arg
+        end)
+
+      other ->
+        other
     end)
   end
 
