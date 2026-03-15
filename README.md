@@ -62,7 +62,7 @@ config :wallaby, hackney_options: [...]
 
 ## Setup
 
-Requires Elixir 1.12+, OTP 22+, and either Docker or a local ChromeDriver installation.
+Requires Elixir 1.18+, OTP 27+, and either Docker or a local ChromeDriver installation.
 
 ### Installation
 

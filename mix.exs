@@ -9,7 +9,7 @@ defmodule Wallabidi.Mixfile do
     [
       app: :wallabidi,
       version: @version,
-      elixir: "~> 1.12",
+      elixir: "~> 1.18",
       elixirc_paths: elixirc_paths(Mix.env()),
       build_embedded: Mix.env() == :prod,
       start_permanent: Mix.env() == :prod,
