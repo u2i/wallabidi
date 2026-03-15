@@ -6,18 +6,16 @@ defmodule Wallaby.Chrome.Chromedriver do
 
   def child_spec(_arg) do
     {:ok, chromedriver_path} = Chrome.find_chromedriver_executable()
-    Server.child_spec([chromedriver_path, []])
+    Server.child_spec([chromedriver_path, [name: __MODULE__]])
   end
 
   @spec wait_until_ready(timeout()) :: :ok | {:error, :timeout}
   def wait_until_ready(timeout) do
-    process_name = {:via, PartitionSupervisor, {Wallaby.Chromedrivers, self()}}
-    Server.wait_until_ready(process_name, timeout)
+    Server.wait_until_ready(__MODULE__, timeout)
   end
 
   @spec base_url :: String.t()
   def base_url do
-    process_name = {:via, PartitionSupervisor, {Wallaby.Chromedrivers, self()}}
-    Server.get_base_url(process_name)
+    Server.get_base_url(__MODULE__)
   end
 end

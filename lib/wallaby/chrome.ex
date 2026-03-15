@@ -99,12 +99,7 @@ defmodule Wallaby.Chrome do
       if remote_url() do
         []
       else
-        [
-          {PartitionSupervisor,
-           child_spec: Wallaby.Chrome.Chromedriver,
-           name: Wallaby.Chromedrivers,
-           partitions: min(System.schedulers_online(), 10)}
-        ]
+        [Wallaby.Chrome.Chromedriver]
       end
 
     Supervisor.init(children, strategy: :one_for_one)
