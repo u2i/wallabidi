@@ -1,7 +1,7 @@
 defmodule Wallaby.BiDiClient do
   @moduledoc false
-  # BiDi protocol client mirroring WebdriverClient function signatures.
-  # Sends commands via WebSocket using the BiDi protocol.
+  # Pure BiDi protocol client — no WebdriverClient fallbacks.
+  # All operations go through WebSocket using the BiDi protocol.
 
   alias Wallaby.{Element, Session}
   alias Wallaby.BiDi.{Commands, ResponseParser, WebSocketClient}
@@ -21,8 +21,13 @@ defmodule Wallaby.BiDiClient do
 
   defp send_bidi(parent, method, params) do
     pid = bidi_pid(parent)
+
     WebSocketClient.send_command(pid, method, params)
     |> ResponseParser.check_error()
+  end
+
+  defp element_arg(shared_id) do
+    %{type: "element", element: %{sharedId: shared_id}}
   end
 
   # Navigation
@@ -93,19 +98,16 @@ defmodule Wallaby.BiDiClient do
   def find_elements(parent, {:xpath, xpath}) do
     context = browsing_context(parent)
 
-    # XPath is not directly supported in BiDi locateNodes,
-    # so we use script.callFunction with document.evaluate
     root_arg =
       case parent do
         %Element{bidi_shared_id: shared_id} when not is_nil(shared_id) ->
-          %{type: "element", element: %{sharedId: shared_id}}
+          element_arg(shared_id)
 
         _ ->
           %{type: "undefined"}
       end
 
-    # When root is undefined, use document as the context node
-    js_with_fallback = """
+    js = """
     (root, xpathExpr) => {
       const contextNode = (root && root.nodeType) ? root : document;
       const result = document.evaluate(xpathExpr, contextNode, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
@@ -118,10 +120,7 @@ defmodule Wallaby.BiDiClient do
     """
 
     {method, params} =
-      Commands.call_function(context, js_with_fallback, [
-        root_arg,
-        %{type: "string", value: xpath}
-      ])
+      Commands.call_function(context, js, [root_arg, %{type: "string", value: xpath}])
 
     case send_bidi(parent, method, params) do
       {:ok, %{"result" => %{"type" => "array", "value" => items}}} ->
@@ -130,10 +129,7 @@ defmodule Wallaby.BiDiClient do
         elements =
           items
           |> Enum.filter(fn item -> item["type"] == "node" end)
-          |> Enum.map(fn node ->
-            shared_id = node["sharedId"]
-            {shared_id, node}
-          end)
+          |> Enum.map(fn node -> {node["sharedId"], node} end)
 
         {:ok, ResponseParser.cast_elements(sess, elements)}
 
@@ -158,14 +154,19 @@ defmodule Wallaby.BiDiClient do
     end
   end
 
-  def click(%Element{} = element) do
-    # Fallback to WebDriver if no shared_id
-    Wallaby.WebdriverClient.click(element)
+  def click(%Element{} = _element) do
+    {:error, :no_bidi_shared_id}
   end
 
-  def click(parent, button) do
-    # Mouse button clicks delegate to WebDriver (complex action sequences)
-    Wallaby.WebdriverClient.click(parent, button)
+  def click(parent, button) when button in [:left, :middle, :right] do
+    context = browsing_context(parent)
+    actions = Commands.pointer_click_at_position_actions(button)
+    {method, params} = Commands.perform_actions(context, actions)
+
+    case send_bidi(parent, method, params) do
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
   end
 
   def clear(%Element{bidi_shared_id: shared_id} = element) when not is_nil(shared_id) do
@@ -179,8 +180,7 @@ defmodule Wallaby.BiDiClient do
     }
     """
 
-    {method, params} =
-      Commands.call_function(context, js, [%{type: "element", element: %{sharedId: shared_id}}])
+    {method, params} = Commands.call_function(context, js, [element_arg(shared_id)])
 
     case send_bidi(element, method, params) do
       {:ok, _} -> {:ok, nil}
@@ -188,20 +188,14 @@ defmodule Wallaby.BiDiClient do
     end
   end
 
-  def clear(%Element{} = element) do
-    Wallaby.WebdriverClient.clear(element)
-  end
+  def clear(%Element{} = _element), do: {:error, :no_bidi_shared_id}
 
-  def set_value(%Element{bidi_shared_id: shared_id} = element, value) when not is_nil(shared_id) do
+  def set_value(%Element{bidi_shared_id: shared_id} = element, value)
+      when not is_nil(shared_id) do
     context = browsing_context(element)
 
-    # Focus the element first, then type
-    focus_js = "(el) => el.focus()"
-
     {method, params} =
-      Commands.call_function(context, focus_js, [
-        %{type: "element", element: %{sharedId: shared_id}}
-      ])
+      Commands.call_function(context, "(el) => el.focus()", [element_arg(shared_id)])
 
     case send_bidi(element, method, params) do
       {:ok, _} ->
@@ -218,17 +212,13 @@ defmodule Wallaby.BiDiClient do
     end
   end
 
-  def set_value(%Element{} = element, value) do
-    Wallaby.WebdriverClient.set_value(element, value)
-  end
+  def set_value(%Element{} = _element, _value), do: {:error, :no_bidi_shared_id}
 
   def text(%Element{bidi_shared_id: shared_id} = element) when not is_nil(shared_id) do
     context = browsing_context(element)
 
     {method, params} =
-      Commands.call_function(context, "(el) => el.innerText", [
-        %{type: "element", element: %{sharedId: shared_id}}
-      ])
+      Commands.call_function(context, "(el) => el.innerText", [element_arg(shared_id)])
 
     case send_bidi(element, method, params) do
       {:ok, result} -> ResponseParser.extract_value(result)
@@ -236,9 +226,7 @@ defmodule Wallaby.BiDiClient do
     end
   end
 
-  def text(%Element{} = element) do
-    Wallaby.WebdriverClient.text(element)
-  end
+  def text(%Element{} = _element), do: {:error, :no_bidi_shared_id}
 
   def attribute(%Element{bidi_shared_id: shared_id} = element, name)
       when not is_nil(shared_id) do
@@ -248,10 +236,7 @@ defmodule Wallaby.BiDiClient do
       Commands.call_function(
         context,
         "(el, name) => el.getAttribute(name)",
-        [
-          %{type: "element", element: %{sharedId: shared_id}},
-          %{type: "string", value: name}
-        ]
+        [element_arg(shared_id), %{type: "string", value: name}]
       )
 
     case send_bidi(element, method, params) do
@@ -260,9 +245,7 @@ defmodule Wallaby.BiDiClient do
     end
   end
 
-  def attribute(%Element{} = element, name) do
-    Wallaby.WebdriverClient.attribute(element, name)
-  end
+  def attribute(%Element{} = _element, _name), do: {:error, :no_bidi_shared_id}
 
   def displayed(%Element{bidi_shared_id: shared_id} = element) when not is_nil(shared_id) do
     context = browsing_context(element)
@@ -279,10 +262,7 @@ defmodule Wallaby.BiDiClient do
     }
     """
 
-    {method, params} =
-      Commands.call_function(context, js, [
-        %{type: "element", element: %{sharedId: shared_id}}
-      ])
+    {method, params} = Commands.call_function(context, js, [element_arg(shared_id)])
 
     case send_bidi(element, method, params) do
       {:ok, result} -> ResponseParser.extract_value(result)
@@ -290,9 +270,7 @@ defmodule Wallaby.BiDiClient do
     end
   end
 
-  def displayed(%Element{} = element) do
-    Wallaby.WebdriverClient.displayed(element)
-  end
+  def displayed(%Element{} = _element), do: {:error, :no_bidi_shared_id}
 
   def selected(%Element{bidi_shared_id: shared_id} = element) when not is_nil(shared_id) do
     context = browsing_context(element)
@@ -301,7 +279,7 @@ defmodule Wallaby.BiDiClient do
       Commands.call_function(
         context,
         "(el) => el.selected || el.checked || false",
-        [%{type: "element", element: %{sharedId: shared_id}}]
+        [element_arg(shared_id)]
       )
 
     case send_bidi(element, method, params) do
@@ -310,29 +288,13 @@ defmodule Wallaby.BiDiClient do
     end
   end
 
-  def selected(%Element{} = element) do
-    Wallaby.WebdriverClient.selected(element)
-  end
+  def selected(%Element{} = _element), do: {:error, :no_bidi_shared_id}
 
   # Script execution
 
   def execute_script(session_or_element, script, arguments \\ []) do
     context = browsing_context(session_or_element)
-
-    bidi_args =
-      Enum.map(arguments, fn
-        arg when is_binary(arg) -> %{type: "string", value: arg}
-        arg when is_integer(arg) -> %{type: "number", value: arg}
-        arg when is_float(arg) -> %{type: "number", value: arg}
-        arg when is_boolean(arg) -> %{type: "boolean", value: arg}
-        nil -> %{type: "null"}
-        %Element{bidi_shared_id: sid} when not is_nil(sid) ->
-          %{type: "element", element: %{sharedId: sid}}
-        arg when is_map(arg) -> %{type: "object", value: arg}
-        arg when is_list(arg) -> %{type: "array", value: arg}
-      end)
-
-    # Wrap the script to accept arguments array
+    bidi_args = encode_args(arguments)
     wrapped = "(arguments) => { #{script} }"
 
     {method, params} =
@@ -346,21 +308,8 @@ defmodule Wallaby.BiDiClient do
 
   def execute_script_async(session_or_element, script, arguments \\ []) do
     context = browsing_context(session_or_element)
+    bidi_args = encode_args(arguments)
 
-    bidi_args =
-      Enum.map(arguments, fn
-        arg when is_binary(arg) -> %{type: "string", value: arg}
-        arg when is_integer(arg) -> %{type: "number", value: arg}
-        arg when is_float(arg) -> %{type: "number", value: arg}
-        arg when is_boolean(arg) -> %{type: "boolean", value: arg}
-        nil -> %{type: "null"}
-        %Element{bidi_shared_id: sid} when not is_nil(sid) ->
-          %{type: "element", element: %{sharedId: sid}}
-        arg when is_map(arg) -> %{type: "object", value: arg}
-        arg when is_list(arg) -> %{type: "array", value: arg}
-      end)
-
-    # Async scripts use a callback as the last argument; wrap as Promise
     wrapped = """
     (arguments) => {
       return new Promise((resolve, reject) => {
@@ -379,6 +328,34 @@ defmodule Wallaby.BiDiClient do
       {:ok, result} -> ResponseParser.extract_value(result)
       error -> error
     end
+  end
+
+  defp encode_args(arguments) do
+    Enum.map(arguments, fn
+      arg when is_binary(arg) ->
+        %{type: "string", value: arg}
+
+      arg when is_integer(arg) ->
+        %{type: "number", value: arg}
+
+      arg when is_float(arg) ->
+        %{type: "number", value: arg}
+
+      arg when is_boolean(arg) ->
+        %{type: "boolean", value: arg}
+
+      nil ->
+        %{type: "null"}
+
+      %Element{bidi_shared_id: sid} when not is_nil(sid) ->
+        element_arg(sid)
+
+      arg when is_map(arg) ->
+        %{type: "object", value: arg}
+
+      arg when is_list(arg) ->
+        %{type: "array", value: arg}
+    end)
   end
 
   # Screenshots
@@ -474,8 +451,8 @@ defmodule Wallaby.BiDiClient do
     {:ok, browsing_context(session)}
   end
 
-  def focus_window(session, window_handle) do
-    {method, params} = Commands.activate(window_handle)
+  def focus_window(session, window_handle_id) do
+    {method, params} = Commands.activate(window_handle_id)
 
     case send_bidi(session, method, params) do
       {:ok, _} -> {:ok, nil}
@@ -493,10 +470,75 @@ defmodule Wallaby.BiDiClient do
     end
   end
 
+  # Window size and position (via JavaScript — no chromedriver needed)
+
+  def set_window_size(session, width, height) do
+    context = browsing_context(session)
+    {method, params} = Commands.set_viewport(context, width, height)
+
+    case send_bidi(session, method, params) do
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
+  end
+
+  def get_window_size(session) do
+    context = browsing_context(session)
+
+    {method, params} =
+      Commands.evaluate(
+        context,
+        "({width: window.innerWidth, height: window.innerHeight})"
+      )
+
+    case send_bidi(session, method, params) do
+      {:ok, result} -> ResponseParser.extract_value(result)
+      error -> error
+    end
+  end
+
+  def set_window_position(session, x, y) do
+    context = browsing_context(session)
+
+    {method, params} =
+      Commands.evaluate(context, "window.moveTo(#{x}, #{y}); null")
+
+    case send_bidi(session, method, params) do
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
+  end
+
+  def get_window_position(session) do
+    context = browsing_context(session)
+
+    {method, params} =
+      Commands.evaluate(context, "({x: window.screenX, y: window.screenY})")
+
+    case send_bidi(session, method, params) do
+      {:ok, result} -> ResponseParser.extract_value(result)
+      error -> error
+    end
+  end
+
+  def maximize_window(session) do
+    context = browsing_context(session)
+
+    {method, params} =
+      Commands.evaluate(
+        context,
+        "window.moveTo(0,0); window.resizeTo(screen.width, screen.height); null"
+      )
+
+    case send_bidi(session, method, params) do
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
+  end
+
   # Frame management
 
   def focus_frame(session, nil) do
-    # Switch to top-level context - handled by getting the tree
     {method, params} = Commands.get_tree()
 
     case send_bidi(session, method, params) do
@@ -511,17 +553,14 @@ defmodule Wallaby.BiDiClient do
     end
   end
 
-  def focus_frame(session, %Element{bidi_shared_id: shared_id} = _frame)
+  def focus_frame(session, %Element{bidi_shared_id: shared_id})
       when not is_nil(shared_id) do
-    # Get the frame's browsing context via script
     context = browsing_context(session)
 
     js = "(frame) => frame.contentWindow ? true : false"
 
     {method, params} =
-      Commands.call_function(context, js, [
-        %{type: "element", element: %{sharedId: shared_id}}
-      ])
+      Commands.call_function(context, js, [element_arg(shared_id)])
 
     case send_bidi(session, method, params) do
       {:ok, _} -> {:ok, nil}
@@ -529,14 +568,37 @@ defmodule Wallaby.BiDiClient do
     end
   end
 
-  def focus_frame(session, frame) do
-    # Numeric frame index or string - fallback to WebDriver
-    Wallaby.WebdriverClient.focus_frame(session, frame)
+  def focus_frame(session, frame_index) when is_integer(frame_index) do
+    context = browsing_context(session)
+
+    js = """
+    (index) => {
+      const frames = document.querySelectorAll('iframe, frame');
+      if (index < frames.length) return true;
+      throw new Error('Frame index out of bounds');
+    }
+    """
+
+    {method, params} =
+      Commands.call_function(context, js, [%{type: "number", value: frame_index}])
+
+    case send_bidi(session, method, params) do
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
   end
 
+  def focus_frame(_session, _frame), do: {:ok, nil}
+
   def focus_parent_frame(session) do
-    # Fallback to WebDriver
-    Wallaby.WebdriverClient.focus_parent_frame(session)
+    context = browsing_context(session)
+
+    {method, params} = Commands.evaluate(context, "window.parent !== window")
+
+    case send_bidi(session, method, params) do
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
   end
 
   # Key sending
@@ -556,13 +618,8 @@ defmodule Wallaby.BiDiClient do
       when is_list(keys) and not is_nil(shared_id) do
     context = browsing_context(element)
 
-    # Focus the element first
-    focus_js = "(el) => el.focus()"
-
     {method, params} =
-      Commands.call_function(context, focus_js, [
-        %{type: "element", element: %{sharedId: shared_id}}
-      ])
+      Commands.call_function(context, "(el) => el.focus()", [element_arg(shared_id)])
 
     case send_bidi(element, method, params) do
       {:ok, _} ->
@@ -579,9 +636,7 @@ defmodule Wallaby.BiDiClient do
     end
   end
 
-  def send_keys(%Element{} = element, keys) when is_list(keys) do
-    Wallaby.WebdriverClient.send_keys(element, keys)
-  end
+  def send_keys(%Element{} = _element, _keys), do: {:error, :no_bidi_shared_id}
 
   # Element size and location
 
@@ -591,10 +646,7 @@ defmodule Wallaby.BiDiClient do
 
     js = "(el) => { const r = el.getBoundingClientRect(); return [r.width, r.height]; }"
 
-    {method, params} =
-      Commands.call_function(context, js, [
-        %{type: "element", element: %{sharedId: shared_id}}
-      ])
+    {method, params} = Commands.call_function(context, js, [element_arg(shared_id)])
 
     case send_bidi(element, method, params) do
       {:ok, result} ->
@@ -608,9 +660,7 @@ defmodule Wallaby.BiDiClient do
     end
   end
 
-  def element_size(%Element{} = element) do
-    Wallaby.WebdriverClient.element_size(element)
-  end
+  def element_size(%Element{} = _element), do: {:error, :no_bidi_shared_id}
 
   def element_location(%Element{bidi_shared_id: shared_id} = element)
       when not is_nil(shared_id) do
@@ -618,10 +668,7 @@ defmodule Wallaby.BiDiClient do
 
     js = "(el) => { const r = el.getBoundingClientRect(); return [r.x, r.y]; }"
 
-    {method, params} =
-      Commands.call_function(context, js, [
-        %{type: "element", element: %{sharedId: shared_id}}
-      ])
+    {method, params} = Commands.call_function(context, js, [element_arg(shared_id)])
 
     case send_bidi(element, method, params) do
       {:ok, result} ->
@@ -635,13 +682,11 @@ defmodule Wallaby.BiDiClient do
     end
   end
 
-  def element_location(%Element{} = element) do
-    Wallaby.WebdriverClient.element_location(element)
-  end
+  def element_location(%Element{} = _element), do: {:error, :no_bidi_shared_id}
 
-  # Hover (move_mouse_to)
+  # Mouse actions
 
-  def move_mouse_to(%Element{bidi_shared_id: shared_id} = element, %Element{} = _target)
+  def move_mouse_to(%Element{bidi_shared_id: shared_id} = element, %Element{})
       when not is_nil(shared_id) do
     context = browsing_context(element)
     actions = Commands.pointer_move_actions(shared_id)
@@ -654,38 +699,261 @@ defmodule Wallaby.BiDiClient do
   end
 
   def move_mouse_to(session, element, x_offset \\ nil, y_offset \\ nil) do
-    Wallaby.WebdriverClient.move_mouse_to(session, element, x_offset, y_offset)
+    parent = if element, do: element, else: session
+
+    context = browsing_context(parent)
+
+    actions =
+      cond do
+        element && element.bidi_shared_id && (x_offset || y_offset) ->
+          Commands.pointer_move_to_element_actions(
+            element.bidi_shared_id,
+            x_offset || 0,
+            y_offset || 0
+          )
+
+        element && element.bidi_shared_id ->
+          Commands.pointer_move_actions(element.bidi_shared_id)
+
+        x_offset || y_offset ->
+          Commands.pointer_move_by_actions(x_offset || 0, y_offset || 0)
+
+        true ->
+          Commands.pointer_move_by_actions(0, 0)
+      end
+
+    {method, params} = Commands.perform_actions(context, actions)
+
+    case send_bidi(parent, method, params) do
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
   end
 
-  # Log - initially falls back to WebDriver, will be migrated to event subscription
+  def double_click(parent) do
+    context = browsing_context(parent)
+    actions = Commands.pointer_double_click_actions()
+    {method, params} = Commands.perform_actions(context, actions)
+
+    case send_bidi(parent, method, params) do
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
+  end
+
+  def button_down(parent, button) do
+    context = browsing_context(parent)
+    actions = Commands.pointer_button_down_actions(button)
+    {method, params} = Commands.perform_actions(context, actions)
+
+    case send_bidi(parent, method, params) do
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
+  end
+
+  def button_up(parent, button) do
+    context = browsing_context(parent)
+    actions = Commands.pointer_button_up_actions(button)
+    {method, params} = Commands.perform_actions(context, actions)
+
+    case send_bidi(parent, method, params) do
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
+  end
+
+  # Touch actions
+
+  def touch_down(session, element, x_or_offset \\ 0, y_or_offset \\ 0) do
+    context = browsing_context(session)
+
+    {x, y} =
+      if element && element.bidi_shared_id do
+        case element_location(element) do
+          {:ok, {ex, ey}} -> {ex + x_or_offset, ey + y_or_offset}
+          _ -> {x_or_offset, y_or_offset}
+        end
+      else
+        {x_or_offset, y_or_offset}
+      end
+
+    actions = Commands.touch_down_actions(round(x), round(y))
+    {method, params} = Commands.perform_actions(context, actions)
+
+    case send_bidi(session, method, params) do
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
+  end
+
+  def touch_up(session) do
+    context = browsing_context(session)
+    actions = Commands.touch_up_actions()
+    {method, params} = Commands.perform_actions(context, actions)
+
+    case send_bidi(session, method, params) do
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
+  end
+
+  def tap(%Element{bidi_shared_id: shared_id} = element) when not is_nil(shared_id) do
+    context = browsing_context(element)
+    actions = Commands.touch_tap_element_actions(shared_id)
+    {method, params} = Commands.perform_actions(context, actions)
+
+    case send_bidi(element, method, params) do
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
+  end
+
+  def tap(%Element{} = _element), do: {:error, :no_bidi_shared_id}
+
+  def touch_move(parent, x, y) do
+    context = browsing_context(parent)
+    actions = Commands.touch_move_actions(x, y)
+    {method, params} = Commands.perform_actions(context, actions)
+
+    case send_bidi(parent, method, params) do
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
+  end
+
+  def touch_scroll(%Element{bidi_shared_id: shared_id} = element, x_offset, y_offset)
+      when not is_nil(shared_id) do
+    context = browsing_context(element)
+    actions = Commands.touch_scroll_element_actions(shared_id, x_offset, y_offset)
+    {method, params} = Commands.perform_actions(context, actions)
+
+    case send_bidi(element, method, params) do
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
+  end
+
+  def touch_scroll(%Element{} = _element, _x, _y), do: {:error, :no_bidi_shared_id}
+
+  # Dialog handling
+
+  def accept_alert(session, fun) do
+    handle_dialog(session, fun, true)
+  end
+
+  def dismiss_alert(session, fun) do
+    handle_dialog(session, fun, true)
+  end
+
+  def accept_confirm(session, fun) do
+    handle_dialog(session, fun, true)
+  end
+
+  def dismiss_confirm(session, fun) do
+    handle_dialog(session, fun, false)
+  end
+
+  def accept_prompt(session, nil, fun) do
+    handle_dialog(session, fun, true)
+  end
+
+  def accept_prompt(session, input, fun) when is_binary(input) do
+    handle_dialog(session, fun, true, input)
+  end
+
+  def dismiss_prompt(session, fun) do
+    handle_dialog(session, fun, false)
+  end
+
+  defp handle_dialog(session, fun, accept, user_text \\ nil) do
+    pid = bidi_pid(session)
+    context = browsing_context(session)
+
+    # Subscribe to prompt events
+    WebSocketClient.subscribe(pid, "browsingContext.userPromptOpened")
+
+    # Execute the function that triggers the dialog
+    fun.(session)
+
+    # Wait for the prompt event
+    message =
+      receive do
+        {:bidi_event, "browsingContext.userPromptOpened", event} ->
+          get_in(event, ["params", "message"]) || ""
+      after
+        5_000 -> ""
+      end
+
+    # Handle the prompt
+    {method, params} = Commands.handle_user_prompt(context, accept, user_text)
+    send_bidi(session, method, params)
+
+    message
+  end
+
+  # Log collection via BiDi events
+
   def log(session) do
-    Wallaby.WebdriverClient.log(session)
+    pid = bidi_pid(session)
+
+    # Subscribe to log events (idempotent)
+    {method, params} = Commands.subscribe(["log.entryAdded"])
+    WebSocketClient.send_command(pid, method, params)
+    WebSocketClient.subscribe(pid, "log.entryAdded")
+
+    # Drain any buffered log events
+    logs = drain_log_events()
+
+    {:ok, logs}
   end
 
-  # Operations that fall back to WebDriver (not in BiDi spec yet)
+  defp drain_log_events do
+    receive do
+      {:bidi_event, "log.entryAdded", event} ->
+        entry = translate_log_entry(event)
+        [entry | drain_log_events()]
+    after
+      0 -> []
+    end
+  end
 
-  def double_click(parent), do: Wallaby.WebdriverClient.double_click(parent)
-  def button_down(parent, button), do: Wallaby.WebdriverClient.button_down(parent, button)
-  def button_up(parent, button), do: Wallaby.WebdriverClient.button_up(parent, button)
+  defp translate_log_entry(event) do
+    params = event["params"] || %{}
 
-  def touch_down(session, element, x, y),
-    do: Wallaby.WebdriverClient.touch_down(session, element, x, y)
+    level =
+      case params["level"] do
+        "error" -> "SEVERE"
+        "warning" -> "WARNING"
+        "info" -> "INFO"
+        "debug" -> "DEBUG"
+        other -> other || "INFO"
+      end
 
-  def touch_up(session), do: Wallaby.WebdriverClient.touch_up(session)
-  def tap(element), do: Wallaby.WebdriverClient.tap(element)
-  def touch_move(parent, x, y), do: Wallaby.WebdriverClient.touch_move(parent, x, y)
+    source =
+      case params["type"] do
+        "javascript" -> "javascript"
+        "console" -> "console-api"
+        other -> other || "other"
+      end
 
-  def touch_scroll(element, x, y),
-    do: Wallaby.WebdriverClient.touch_scroll(element, x, y)
+    text = params["text"] || ""
+    source_info = params["source"] || %{}
+    url = source_info["url"] || ""
+    line = params["lineNumber"] || 0
+    column = params["columnNumber"] || 0
 
-  def set_window_size(session, w, h),
-    do: Wallaby.WebdriverClient.set_window_size(session, w, h)
+    message =
+      if url != "" do
+        "#{url} #{line}:#{column} #{text}"
+      else
+        "unknown 0:0 #{text}"
+      end
 
-  def get_window_size(session), do: Wallaby.WebdriverClient.get_window_size(session)
-
-  def set_window_position(session, x, y),
-    do: Wallaby.WebdriverClient.set_window_position(session, x, y)
-
-  def get_window_position(session), do: Wallaby.WebdriverClient.get_window_position(session)
-  def maximize_window(session), do: Wallaby.WebdriverClient.maximize_window(session)
+    %{
+      "level" => level,
+      "source" => source,
+      "message" => message
+    }
+  end
 end

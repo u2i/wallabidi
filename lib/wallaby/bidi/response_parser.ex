@@ -15,12 +15,13 @@ defmodule Wallaby.BiDi.ResponseParser do
   def extract_value(%{"type" => "undefined"}), do: {:ok, nil}
 
   def extract_value(%{"type" => "array", "value" => items}) do
-    results = Enum.map(items, fn item ->
-      case extract_value(item) do
-        {:ok, v} -> v
-        {:error, _} -> nil
-      end
-    end)
+    results =
+      Enum.map(items, fn item ->
+        case extract_value(item) do
+          {:ok, v} -> v
+          {:error, _} -> nil
+        end
+      end)
 
     {:ok, results}
   end
@@ -55,8 +56,13 @@ defmodule Wallaby.BiDi.ResponseParser do
   def extract_value(%{"type" => "window"}), do: {:ok, nil}
   def extract_value(%{"type" => "regexp", "value" => value}), do: {:ok, value}
   def extract_value(%{"type" => "date", "value" => value}), do: {:ok, value}
-  def extract_value(%{"type" => "map", "value" => value}), do: extract_value(%{"type" => "object", "value" => value})
-  def extract_value(%{"type" => "set", "value" => items}), do: extract_value(%{"type" => "array", "value" => items})
+
+  def extract_value(%{"type" => "map", "value" => value}),
+    do: extract_value(%{"type" => "object", "value" => value})
+
+  def extract_value(%{"type" => "set", "value" => items}),
+    do: extract_value(%{"type" => "array", "value" => items})
+
   def extract_value(%{"type" => "bigint", "value" => value}), do: {:ok, value}
 
   def extract_value(other), do: {:error, {:unexpected_value, other}}

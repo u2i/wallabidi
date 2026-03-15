@@ -343,7 +343,7 @@ defmodule Wallaby.Chrome do
       |> Keyword.get_lazy(:capabilities, fn -> capabilities_from_config(opts) end)
       |> put_beam_metadata(opts)
 
-    create_session_fn = user_create_session_fn || &WebdriverClient.create_session/2
+    create_session_fn = user_create_session_fn || (&WebdriverClient.create_session/2)
 
     with {:ok, response} <- create_session_fn.(base_url, capabilities) do
       id = response["sessionId"]
@@ -448,17 +448,47 @@ defmodule Wallaby.Chrome do
   defp bidi_session?(_), do: false
 
   @doc false
-  defdelegate accept_alert(session, fun), to: WebdriverClient
+  def accept_alert(session, fun) do
+    if bidi_session?(session),
+      do: BiDiClient.accept_alert(session, fun),
+      else: WebdriverClient.accept_alert(session, fun)
+  end
+
   @doc false
-  defdelegate dismiss_alert(session, fun), to: WebdriverClient
+  def dismiss_alert(session, fun) do
+    if bidi_session?(session),
+      do: BiDiClient.dismiss_alert(session, fun),
+      else: WebdriverClient.dismiss_alert(session, fun)
+  end
+
   @doc false
-  defdelegate accept_confirm(session, fun), to: WebdriverClient
+  def accept_confirm(session, fun) do
+    if bidi_session?(session),
+      do: BiDiClient.accept_confirm(session, fun),
+      else: WebdriverClient.accept_confirm(session, fun)
+  end
+
   @doc false
-  defdelegate dismiss_confirm(session, fun), to: WebdriverClient
+  def dismiss_confirm(session, fun) do
+    if bidi_session?(session),
+      do: BiDiClient.dismiss_confirm(session, fun),
+      else: WebdriverClient.dismiss_confirm(session, fun)
+  end
+
   @doc false
-  defdelegate accept_prompt(session, input, fun), to: WebdriverClient
+  def accept_prompt(session, input, fun) do
+    if bidi_session?(session),
+      do: BiDiClient.accept_prompt(session, input, fun),
+      else: WebdriverClient.accept_prompt(session, input, fun)
+  end
+
   @doc false
-  defdelegate dismiss_prompt(session, fun), to: WebdriverClient
+  def dismiss_prompt(session, fun) do
+    if bidi_session?(session),
+      do: BiDiClient.dismiss_prompt(session, fun),
+      else: WebdriverClient.dismiss_prompt(session, fun)
+  end
+
   @doc false
   defdelegate parse_log(log), to: Wallaby.Chrome.Logger
 
@@ -595,7 +625,11 @@ defmodule Wallaby.Chrome do
   @doc false
   def take_screenshot(session_or_element), do: delegate(:take_screenshot, session_or_element)
   @doc false
-  defdelegate log(session_or_element), to: WebdriverClient
+  def log(session_or_element) do
+    if bidi_session?(session_or_element),
+      do: BiDiClient.log(session_or_element),
+      else: WebdriverClient.log(session_or_element)
+  end
 
   @doc false
   def default_capabilities do
