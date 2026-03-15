@@ -166,14 +166,17 @@ defmodule Wallaby.BiDiClient do
             _ -> nil
           end
 
+        {:error, :stale_reference} ->
+          {:error, :stale_reference}
+
         _ ->
           nil
       end
 
-    if tag_name == "OPTION" do
-      click_option(element, shared_id, context)
-    else
-      click_with_pointer(element, shared_id, context)
+    case tag_name do
+      {:error, _} = error -> error
+      "OPTION" -> click_option(element, shared_id, context)
+      _ -> click_with_pointer(element, shared_id, context)
     end
   end
 
@@ -399,10 +402,6 @@ defmodule Wallaby.BiDiClient do
   def displayed(%Element{bidi_shared_id: shared_id} = element) when not is_nil(shared_id) do
     context = browsing_context(element)
 
-    # Match the W3C WebDriver "element displayed" algorithm:
-    # An element is displayed if it has non-zero dimensions, is not hidden
-    # via CSS, and is connected to the DOM. Viewport position is NOT checked
-    # (an off-screen element is still "displayed").
     js = """
     (el) => {
       function isVisible(node) {
@@ -413,11 +412,10 @@ defmodule Wallaby.BiDiClient do
         }
         const style = window.getComputedStyle(node);
         if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
-        if (node.offsetWidth <= 0 && node.offsetHeight <= 0) {
-          // Zero-size but might have overflow content or be inline
-          const rect = node.getBoundingClientRect();
-          if (rect.width <= 0 && rect.height <= 0) return false;
-        }
+        const rect = node.getBoundingClientRect();
+        if (rect.width <= 0 && rect.height <= 0) return false;
+        // Elements positioned entirely off-screen (negative right/bottom) are not visible
+        if (rect.right <= 0 || rect.bottom <= 0) return false;
         return true;
       }
       return isVisible(el);
@@ -427,8 +425,19 @@ defmodule Wallaby.BiDiClient do
     {method, params} = Commands.call_function(context, js, [element_arg(shared_id)])
 
     case send_bidi(element, method, params) do
-      {:ok, result} -> ResponseParser.extract_value(result)
-      error -> error
+      {:ok, result} ->
+        case ResponseParser.extract_value(result) do
+          {:ok, val} -> {:ok, val}
+          # Script errors during visibility check = treat as not visible
+          {:error, :stale_reference} -> {:error, :stale_reference}
+          _ -> {:ok, false}
+        end
+
+      {:error, :stale_reference} = error ->
+        error
+
+      _ ->
+        {:ok, false}
     end
   end
 
@@ -1232,16 +1241,21 @@ defmodule Wallaby.BiDiClient do
       spawn_link(fn ->
         WebSocketClient.subscribe(pid, "browsingContext.userPromptOpened")
 
-        message =
+        {message, default_value} =
           receive do
             {:bidi_event, "browsingContext.userPromptOpened", event} ->
-              get_in(event, ["params", "message"]) || ""
+              msg = get_in(event, ["params", "message"]) || ""
+              default = get_in(event, ["params", "defaultValue"])
+              {msg, default}
           after
-            5_000 -> ""
+            5_000 -> {"", nil}
           end
 
+        # For prompts without explicit user text, use the default value
+        effective_text = user_text || default_value
+
         # Handle the prompt
-        {m, p} = Commands.handle_user_prompt(context, accept, user_text)
+        {m, p} = Commands.handle_user_prompt(context, accept, effective_text)
 
         WebSocketClient.send_command(pid, m, p)
         |> ResponseParser.check_error()
