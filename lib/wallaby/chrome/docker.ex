@@ -82,16 +82,16 @@ defmodule Wallabidi.Chrome.Docker do
   end
 
   defp run_container(port) do
-    args = [
-      "run",
-      "-d",
-      "--name",
-      @container_name,
-      "-p",
-      "#{port}:#{@container_port}",
-      "--shm-size=512m",
-      @image
-    ]
+    args =
+      [
+        "run",
+        "-d",
+        "--name",
+        @container_name,
+        "-p",
+        "#{port}:#{@container_port}",
+        "--shm-size=512m"
+      ] ++ host_gateway_args() ++ [@image]
 
     case System.cmd("docker", args, stderr_to_stdout: true) do
       {_, 0} -> :ok
@@ -154,6 +154,36 @@ defmodule Wallabidi.Chrome.Docker do
       _ -> false
     end
   end
+
+  defp host_gateway_args do
+    # Allow Chrome in Docker to reach the host machine's services
+    # (e.g. the Phoenix test server). Docker Desktop supports
+    # host.docker.internal natively; Linux needs --add-host.
+    case :os.type() do
+      {:unix, :linux} ->
+        ["--add-host=host.docker.internal:host-gateway"]
+
+      _ ->
+        # Docker Desktop (macOS, Windows) supports host.docker.internal natively
+        []
+    end
+  end
+
+  @doc """
+  Rewrites a localhost base_url to use host.docker.internal so that
+  Chrome running inside Docker can reach the host's test server.
+  """
+  def rewrite_base_url(base_url) when is_binary(base_url) do
+    uri = URI.parse(base_url)
+
+    if uri.host in ["localhost", "127.0.0.1"] do
+      URI.to_string(%{uri | host: "host.docker.internal"})
+    else
+      base_url
+    end
+  end
+
+  def rewrite_base_url(other), do: other
 
   defp find_available_port do
     {:ok, listen} = :gen_tcp.listen(0, [])

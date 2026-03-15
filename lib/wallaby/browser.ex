@@ -1520,7 +1520,15 @@ defmodule Wallabidi.Browser do
   end
 
   defp base_url do
-    Application.get_env(:wallabidi, :base_url) || ""
+    url = Application.get_env(:wallabidi, :base_url) || ""
+
+    # When using Docker, rewrite localhost URLs so Chrome in the
+    # container can reach the host's test server
+    if Application.get_env(:wallabidi, :chromedriver, []) |> Keyword.get(:remote_url) do
+      Wallabidi.Chrome.Docker.rewrite_base_url(url)
+    else
+      url
+    end
   end
 
   defp path_for_screenshot(name) do

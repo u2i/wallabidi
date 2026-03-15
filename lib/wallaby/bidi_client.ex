@@ -37,6 +37,14 @@ defmodule Wallabidi.BiDiClient do
     %{sharedId: shared_id}
   end
 
+  # When using Docker, Chrome sees host.docker.internal URLs but tests
+  # expect localhost. Rewrite back so assertions work transparently.
+  defp normalize_docker_url(url) when is_binary(url) do
+    String.replace(url, "host.docker.internal", "localhost")
+  end
+
+  defp normalize_docker_url(url), do: url
+
   # Navigation
 
   def visit(session, url) do
@@ -54,8 +62,14 @@ defmodule Wallabidi.BiDiClient do
     {method, params} = Commands.evaluate(context, "window.location.href")
 
     case send_bidi(session, method, params) do
-      {:ok, result} -> ResponseParser.extract_value(result)
-      error -> error
+      {:ok, result} ->
+        case ResponseParser.extract_value(result) do
+          {:ok, url} -> {:ok, normalize_docker_url(url)}
+          error -> error
+        end
+
+      error ->
+        error
     end
   end
 
