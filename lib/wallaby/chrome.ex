@@ -133,7 +133,11 @@ defmodule Wallaby.Chrome do
       |> Map.put(:webSocketUrl, true)
 
     with {:ok, response} <- create_session(base_url, capabilities) do
-      id = response["sessionId"]
+      # W3C format nests under "value", legacy puts sessionId at top level
+      id =
+        get_in(response, ["value", "sessionId"]) ||
+          response["sessionId"] ||
+          raise "chromedriver did not return a sessionId"
 
       session = %Wallaby.Session{
         session_url: base_url <> "session/#{id}",
