@@ -31,6 +31,7 @@ defmodule Wallaby.Integration.JSErrorsTest do
       session
       |> visit("/logs.html")
       |> click(button("Print Log"))
+      |> settle()
     end
 
     assert capture_io(fun) == output
