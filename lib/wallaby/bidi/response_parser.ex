@@ -6,6 +6,20 @@ defmodule Wallaby.BiDi.ResponseParser do
   Extracts a primitive value from a BiDi script result.
   BiDi returns results like %{"type" => "string", "value" => "hello"}.
   """
+  def extract_value(%{"type" => "exception", "exceptionDetails" => details}) do
+    # Script threw an error — check if it's a stale element reference
+    message = get_in(details, ["text"]) || ""
+    exception = details["exception"] || %{}
+    exception_message = get_in(exception, ["value", "message"]) || ""
+    full_message = message <> " " <> exception_message
+
+    if String.contains?(full_message, "stale element") do
+      {:error, :stale_reference}
+    else
+      {:error, {:script_exception, full_message}}
+    end
+  end
+
   def extract_value(%{"result" => result}), do: extract_value(result)
 
   def extract_value(%{"type" => "string", "value" => value}), do: {:ok, value}
@@ -98,6 +112,11 @@ defmodule Wallaby.BiDi.ResponseParser do
       value = node["value"] || %{}
       backend_node_id = to_string(value["backendNodeId"] || shared_id)
 
+      # Store the mapping from element ID to shared ID so that
+      # WebDriver-style element references (used in execute_script args)
+      # can be resolved back to BiDi shared IDs.
+      Process.put({:wallaby_element_shared_id, backend_node_id}, shared_id)
+
       %Wallaby.Element{
         id: backend_node_id,
         session_url: parent.session_url,
@@ -164,8 +183,19 @@ defmodule Wallaby.BiDi.ResponseParser do
   """
   def check_error({:error, {"no such element", _}}), do: {:error, :stale_reference}
   def check_error({:error, {"stale element reference", _}}), do: {:error, :stale_reference}
+  def check_error({:error, {"no such node", _}}), do: {:error, :stale_reference}
   def check_error({:error, {"invalid selector", _}}), do: {:error, :invalid_selector}
   def check_error({:error, {"element click intercepted", _}}), do: {:error, :obscured}
   def check_error({:error, {"element not interactable", _msg}}), do: {:error, :obscured}
+  def check_error({:error, {"no such frame", _}}), do: {:error, :no_such_frame}
+
+  def check_error({:error, {_error, message}} = original) when is_binary(message) do
+    if String.contains?(message, "stale element") do
+      {:error, :stale_reference}
+    else
+      original
+    end
+  end
+
   def check_error(other), do: other
 end

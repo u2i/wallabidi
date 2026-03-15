@@ -280,7 +280,7 @@ defmodule Wallaby.BiDi.Commands do
     ]
   end
 
-  # Helper: Build pointer move by offset (relative to viewport or element)
+  # Helper: Build pointer move by offset relative to current cursor position
   def pointer_move_by_actions(x_offset, y_offset) do
     [
       %{
@@ -288,7 +288,7 @@ defmodule Wallaby.BiDi.Commands do
         id: "mouse",
         parameters: %{pointerType: "mouse"},
         actions: [
-          %{type: "pointerMove", origin: "viewport", x: x_offset, y: y_offset}
+          %{type: "pointerMove", origin: "pointer", x: x_offset, y: y_offset}
         ]
       }
     ]

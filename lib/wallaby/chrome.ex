@@ -430,7 +430,7 @@ defmodule Wallaby.Chrome do
       })
 
     %{
-      unhandledPromptBehavior: "accept",
+      unhandledPromptBehavior: "ignore",
       "goog:chromeOptions": chrome_options,
       "goog:loggingPrefs": %{
         browser: "ALL"

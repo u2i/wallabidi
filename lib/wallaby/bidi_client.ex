@@ -14,8 +14,11 @@ defmodule Wallaby.BiDiClient do
   defp bidi_pid(%Element{parent: parent}), do: bidi_pid(parent)
 
   defp browsing_context(%Session{browsing_context: ctx} = session) do
-    # Frame-focused context overrides the session's default
-    Process.get({:wallaby_frame_context, session.id}, ctx)
+    # Frame-focused context overrides window-focused context which overrides session default
+    Process.get(
+      {:wallaby_frame_context, session.id},
+      Process.get({:wallaby_focused_context, session.id}, ctx)
+    )
   end
 
   defp browsing_context(%Element{parent: parent}), do: browsing_context(parent)
@@ -149,8 +152,49 @@ defmodule Wallaby.BiDiClient do
 
   def click(%Element{bidi_shared_id: shared_id} = element) when not is_nil(shared_id) do
     context = browsing_context(element)
-    actions = Commands.pointer_click_actions(shared_id)
-    {method, params} = Commands.perform_actions(context, actions)
+
+    # Check if this is an <option> element — they can't be clicked via pointer actions.
+    # Instead, set the parent <select>'s value via JavaScript.
+    {tag_method, tag_params} =
+      Commands.call_function(context, "(el) => el.tagName", [element_arg(shared_id)])
+
+    tag_name =
+      case send_bidi(element, tag_method, tag_params) do
+        {:ok, result} ->
+          case ResponseParser.extract_value(result) do
+            {:ok, t} when is_binary(t) -> String.upcase(t)
+            _ -> nil
+          end
+
+        _ ->
+          nil
+      end
+
+    if tag_name == "OPTION" do
+      click_option(element, shared_id, context)
+    else
+      click_with_pointer(element, shared_id, context)
+    end
+  end
+
+  def click(%Element{} = _element) do
+    {:error, :no_bidi_shared_id}
+  end
+
+  defp click_option(element, shared_id, context) do
+    js = """
+    (option) => {
+      const select = option.closest('select');
+      if (select) {
+        option.selected = true;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      } else {
+        option.click();
+      }
+    }
+    """
+
+    {method, params} = Commands.call_function(context, js, [element_arg(shared_id)])
 
     case send_bidi(element, method, params) do
       {:ok, _} -> {:ok, nil}
@@ -158,8 +202,31 @@ defmodule Wallaby.BiDiClient do
     end
   end
 
-  def click(%Element{} = _element) do
-    {:error, :no_bidi_shared_id}
+  defp click_with_pointer(element, shared_id, context) do
+    actions = Commands.pointer_click_actions(shared_id)
+    {method, params} = Commands.perform_actions(context, actions)
+
+    case send_bidi(element, method, params) do
+      {:ok, _} ->
+        {:ok, nil}
+
+      {:error, :obscured} ->
+        # Fall back to JavaScript click for elements that can't receive pointer events
+        click_with_js(element, shared_id, context)
+
+      error ->
+        error
+    end
+  end
+
+  defp click_with_js(element, shared_id, context) do
+    {method, params} =
+      Commands.call_function(context, "(el) => el.click()", [element_arg(shared_id)])
+
+    case send_bidi(element, method, params) do
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
   end
 
   def click(parent, button) when button in [:left, :middle, :right] do
@@ -243,34 +310,45 @@ defmodule Wallaby.BiDiClient do
   end
 
   defp set_file_value(element, shared_id, context, path) do
-    # Use input.setFiles BiDi command for file inputs
-    {method, params} =
-      Commands.call_function(
-        context,
-        """
-        (el, path) => {
-          const dt = new DataTransfer();
-          const file = new File([''], path.split('/').pop() || path.split('\\\\').pop(), {type: 'application/octet-stream'});
-          dt.items.add(file);
-          el.files = dt.files;
-          el.dispatchEvent(new Event('change', { bubbles: true }));
-          return el.value;
-        }
-        """,
-        [element_arg(shared_id), %{type: "string", value: path}]
-      )
+    # Only set the file if the path actually exists on disk
+    if File.exists?(path) do
+      {method, params} =
+        Commands.call_function(
+          context,
+          """
+          (el, path) => {
+            const dt = new DataTransfer();
+            const file = new File([''], path.split('/').pop() || path.split('\\\\').pop(), {type: 'application/octet-stream'});
+            dt.items.add(file);
+            el.files = dt.files;
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            return el.value;
+          }
+          """,
+          [element_arg(shared_id), %{type: "string", value: path}]
+        )
 
-    case send_bidi(element, method, params) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
+      case send_bidi(element, method, params) do
+        {:ok, _} -> {:ok, nil}
+        error -> error
+      end
+    else
+      # Non-existent file: do nothing, matching WebDriver behavior
+      {:ok, nil}
     end
   end
 
   def text(%Element{bidi_shared_id: shared_id} = element) when not is_nil(shared_id) do
     context = browsing_context(element)
 
-    {method, params} =
-      Commands.call_function(context, "(el) => el.innerText", [element_arg(shared_id)])
+    js = """
+    (el) => {
+      if (!el || !el.isConnected) throw new Error('stale element reference');
+      return el.innerText;
+    }
+    """
+
+    {method, params} = Commands.call_function(context, js, [element_arg(shared_id)])
 
     case send_bidi(element, method, params) do
       {:ok, result} -> ResponseParser.extract_value(result)
@@ -287,8 +365,12 @@ defmodule Wallaby.BiDiClient do
     # Mirror W3C WebDriver Get Element Attribute: return the property value
     # for IDL attributes (value, checked, selected, etc.) and the HTML
     # attribute for everything else.
+    # Throws for detached nodes to match WebDriver stale element behavior.
     js = """
     (el, name) => {
+      if (!el || !el.ownerDocument || !el.isConnected) {
+        throw new Error('stale element reference');
+      }
       if (name in el && typeof el[name] !== 'object') {
         const v = el[name];
         if (v === true) return 'true';
@@ -317,6 +399,10 @@ defmodule Wallaby.BiDiClient do
   def displayed(%Element{bidi_shared_id: shared_id} = element) when not is_nil(shared_id) do
     context = browsing_context(element)
 
+    # Match the W3C WebDriver "element displayed" algorithm:
+    # An element is displayed if it has non-zero dimensions, is not hidden
+    # via CSS, and is connected to the DOM. Viewport position is NOT checked
+    # (an off-screen element is still "displayed").
     js = """
     (el) => {
       function isVisible(node) {
@@ -327,10 +413,11 @@ defmodule Wallaby.BiDiClient do
         }
         const style = window.getComputedStyle(node);
         if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
-        if (node.offsetWidth <= 0 && node.offsetHeight <= 0) return false;
-        const rect = node.getBoundingClientRect();
-        if (rect.right <= 0 || rect.bottom <= 0) return false;
-        if (rect.left >= window.innerWidth || rect.top >= window.innerHeight) return false;
+        if (node.offsetWidth <= 0 && node.offsetHeight <= 0) {
+          // Zero-size but might have overflow content or be inline
+          const rect = node.getBoundingClientRect();
+          if (rect.width <= 0 && rect.height <= 0) return false;
+        }
         return true;
       }
       return isVisible(el);
@@ -405,6 +492,8 @@ defmodule Wallaby.BiDiClient do
     end
   end
 
+  @web_element_identifier "element-6066-11e4-a52e-4f735466cecf"
+
   defp encode_args(arguments) do
     Enum.map(arguments, fn
       arg when is_binary(arg) ->
@@ -425,12 +514,36 @@ defmodule Wallaby.BiDiClient do
       %Element{bidi_shared_id: sid} when not is_nil(sid) ->
         element_arg(sid)
 
+      %{@web_element_identifier => _id} = arg ->
+        # WebDriver-style element reference — look up the shared ID from session store
+        # If we have a matching element, use its shared ID for BiDi
+        encode_webdriver_element_ref(arg)
+
       arg when is_map(arg) ->
         %{type: "object", value: arg}
 
       arg when is_list(arg) ->
         %{type: "array", value: arg}
     end)
+  end
+
+  defp encode_webdriver_element_ref(%{@web_element_identifier => id} = _ref) do
+    # The element ID in our system is the backendNodeId.
+    # We need to find the corresponding shared ID. Since the session store
+    # keeps elements by shared ID, and we used backendNodeId as the element ID,
+    # we look up elements from the process's session store.
+    #
+    # For now, use script.evaluate with a backendNodeId lookup.
+    # BiDi doesn't directly support backendNodeId in element references,
+    # so we'll use the sharedId if we stored it, otherwise fall back.
+    case Process.get({:wallaby_element_shared_id, id}) do
+      nil ->
+        # No mapping found — pass as a plain object (might not resolve)
+        %{type: "object", value: %{}}
+
+      shared_id ->
+        element_arg(shared_id)
+    end
   end
 
   # Screenshots
@@ -523,25 +636,58 @@ defmodule Wallaby.BiDiClient do
   end
 
   def window_handle(session) do
-    {:ok, browsing_context(session)}
+    sess = session(session)
+    # Return the currently-focused context if set, otherwise the session's default
+    focused = Process.get({:wallaby_focused_context, sess.id})
+    {:ok, focused || sess.browsing_context}
   end
 
   def focus_window(session, window_handle_id) do
+    sess = session(session)
     {method, params} = Commands.activate(window_handle_id)
 
     case send_bidi(session, method, params) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
+      {:ok, _} ->
+        Process.put({:wallaby_focused_context, sess.id}, window_handle_id)
+        {:ok, nil}
+
+      {:error, :no_such_frame} ->
+        # The context might have been replaced after tab open/close.
+        # Retry after a short delay.
+        Process.sleep(100)
+
+        case send_bidi(session, method, params) do
+          {:ok, _} ->
+            Process.put({:wallaby_focused_context, sess.id}, window_handle_id)
+            {:ok, nil}
+
+          error ->
+            error
+        end
+
+      error ->
+        error
     end
   end
 
   def close_window(session) do
     context = browsing_context(session)
+    sess = session(session)
     {method, params} = Commands.close_context(context)
 
     case send_bidi(session, method, params) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
+      {:ok, _} ->
+        # Clear the focused context since the window was closed.
+        # Reset to the session's default context so subsequent commands
+        # target a still-valid context.
+        Process.delete({:wallaby_focused_context, sess.id})
+
+        # Give chromedriver a moment to reconcile its context list
+        Process.sleep(50)
+        {:ok, nil}
+
+      error ->
+        error
     end
   end
 
@@ -628,19 +774,38 @@ defmodule Wallaby.BiDiClient do
     sess = session(session)
     context = browsing_context(session)
 
-    # Get the frame element's content window browsing context
+    # Get the frame element's src URL to match against child contexts
     js = """
     (frame) => {
-      if (!frame.contentWindow) return null;
-      return frame.contentWindow.document.title || '__wallaby_frame__';
+      if (frame.contentWindow) {
+        try { return frame.contentWindow.location.href; } catch(e) {}
+      }
+      return frame.src || null;
     }
     """
 
     {method, params} = Commands.call_function(context, js, [element_arg(shared_id)])
 
-    case send_bidi(session, method, params) do
-      {:ok, _} ->
-        # Find the child context from the context tree
+    frame_url =
+      case send_bidi(session, method, params) do
+        {:ok, result} ->
+          case ResponseParser.extract_value(result) do
+            {:ok, url} when is_binary(url) -> url
+            _ -> nil
+          end
+
+        _ ->
+          nil
+      end
+
+    # Find the child context from the context tree that matches this frame's URL
+    case find_frame_context_by_url(session, context, frame_url) do
+      {:ok, frame_context} ->
+        Process.put({:wallaby_frame_context, sess.id}, frame_context)
+        {:ok, nil}
+
+      _ ->
+        # Fallback: use order-based matching
         case find_frame_context(session, shared_id) do
           {:ok, frame_context} ->
             Process.put({:wallaby_frame_context, sess.id}, frame_context)
@@ -649,9 +814,6 @@ defmodule Wallaby.BiDiClient do
           _ ->
             {:ok, nil}
         end
-
-      error ->
-        error
     end
   end
 
@@ -694,6 +856,35 @@ defmodule Wallaby.BiDiClient do
         {:ok, nil}
     end
   end
+
+  defp find_frame_context_by_url(session, parent_context, frame_url)
+       when is_binary(frame_url) do
+    {method, params} = Commands.get_tree(%{root: parent_context})
+
+    case send_bidi(session, method, params) do
+      {:ok, %{"contexts" => [ctx | _]}} ->
+        children = ctx["children"] || []
+
+        match =
+          Enum.find(children, fn child ->
+            child_url = child["url"] || ""
+            # Match by URL suffix (frame_url might be absolute, child URL might differ)
+            String.ends_with?(child_url, URI.parse(frame_url).path || "") or
+              child_url == frame_url
+          end)
+
+        case match do
+          nil -> {:error, :frame_not_found}
+          child -> {:ok, child["context"]}
+        end
+
+      _ ->
+        {:error, :tree_not_found}
+    end
+  end
+
+  defp find_frame_context_by_url(_session, _parent_context, _frame_url),
+    do: {:error, :no_frame_url}
 
   defp find_frame_context(session, _shared_id) do
     context = session(session).browsing_context
@@ -970,8 +1161,22 @@ defmodule Wallaby.BiDiClient do
   def touch_scroll(%Element{bidi_shared_id: shared_id} = element, x_offset, y_offset)
       when not is_nil(shared_id) do
     context = browsing_context(element)
-    actions = Commands.touch_scroll_element_actions(shared_id, x_offset, y_offset)
-    {method, params} = Commands.perform_actions(context, actions)
+
+    # Use JavaScript scrollBy for reliable scrolling — touch pointer actions
+    # don't reliably trigger scroll in headless Chrome.
+    js = """
+    (el, dx, dy) => {
+      el.scrollIntoView();
+      window.scrollBy(dx, dy);
+    }
+    """
+
+    {method, params} =
+      Commands.call_function(context, js, [
+        element_arg(shared_id),
+        %{type: "number", value: x_offset},
+        %{type: "number", value: y_offset}
+      ])
 
     case send_bidi(element, method, params) do
       {:ok, _} -> {:ok, nil}
@@ -1014,27 +1219,49 @@ defmodule Wallaby.BiDiClient do
   defp handle_dialog(session, fun, accept, user_text \\ nil) do
     pid = bidi_pid(session)
     context = browsing_context(session)
+    caller = self()
 
     # Subscribe at BiDi protocol level and register to receive events
     {method, params} = Commands.subscribe(["browsingContext.userPromptOpened"])
     WebSocketClient.send_command(pid, method, params)
-    WebSocketClient.subscribe(pid, "browsingContext.userPromptOpened")
+
+    # Spawn a handler that listens for the dialog event and handles it.
+    # This avoids deadlocking when the click action blocks until the dialog
+    # is handled (which happens with some chromedriver implementations).
+    handler =
+      spawn_link(fn ->
+        WebSocketClient.subscribe(pid, "browsingContext.userPromptOpened")
+
+        message =
+          receive do
+            {:bidi_event, "browsingContext.userPromptOpened", event} ->
+              get_in(event, ["params", "message"]) || ""
+          after
+            5_000 -> ""
+          end
+
+        # Handle the prompt
+        {m, p} = Commands.handle_user_prompt(context, accept, user_text)
+
+        WebSocketClient.send_command(pid, m, p)
+        |> ResponseParser.check_error()
+
+        send(caller, {:dialog_handled, message})
+      end)
 
     # Execute the function that triggers the dialog
     fun.(session)
 
-    # Wait for the prompt event
+    # Wait for the handler to finish
     message =
       receive do
-        {:bidi_event, "browsingContext.userPromptOpened", event} ->
-          get_in(event, ["params", "message"]) || ""
+        {:dialog_handled, msg} -> msg
       after
-        5_000 -> ""
+        10_000 -> ""
       end
 
-    # Handle the prompt
-    {method, params} = Commands.handle_user_prompt(context, accept, user_text)
-    send_bidi(session, method, params)
+    # Ensure handler is done
+    Process.unlink(handler)
 
     message
   end

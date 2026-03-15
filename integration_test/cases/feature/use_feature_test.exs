@@ -27,12 +27,12 @@ defmodule Wallaby.Integration.Browser.UseFeatureTest do
 
   @expected_capabilities Map.put(
                            Wallaby.Chrome.default_capabilities(),
-                           :test,
+                           :"wallaby:test",
                            "I'm a capability"
                          )
   @sessions [[capabilities: @expected_capabilities]]
   feature "reads capabilities from session attribute", %{session: %{capabilities: capabilities}} do
-    assert capabilities.test == @expected_capabilities.test
+    assert capabilities[:"wallaby:test"] == @expected_capabilities[:"wallaby:test"]
   end
 
   test "does not set up a session for non-feature tests", context do
