@@ -3,8 +3,6 @@ defmodule Wallaby.Mixfile do
 
   @source_url "https://github.com/elixir-wallaby/wallaby"
   @version "0.30.12"
-  @drivers ~w(selenium chrome)
-  @selected_driver System.get_env("WALLABY_DRIVER")
   @maintainers ["Mitchell Hanberg"]
 
   def project do
@@ -21,8 +19,8 @@ defmodule Wallaby.Mixfile do
       docs: docs(),
 
       # Custom testing
-      aliases: ["test.all": ["test", "test.drivers"], "test.drivers": &test_drivers/1],
-      test_paths: test_paths(@selected_driver),
+      aliases: ["test.all": ["test", "test.chrome"], "test.chrome": &test_chrome/1],
+      test_paths: test_paths(System.get_env("WALLABY_DRIVER")),
       dialyzer: dialyzer()
     ]
   end
@@ -31,7 +29,7 @@ defmodule Wallaby.Mixfile do
     [
       preferred_envs: [
         "test.all": :test,
-        "test.drivers": :test
+        "test.chrome": :test
       ]
     ]
   end
@@ -48,10 +46,8 @@ defmodule Wallaby.Mixfile do
   defp deps do
     [
       {:jason, "~> 1.1"},
-      {:httpoison, "~> 0.12 or ~> 1.0 or ~> 2.0"},
       {:mint, "~> 1.6"},
       {:mint_web_socket, "~> 1.0"},
-      {:web_driver_client, "~> 0.2.0"},
       {:dialyxir, "~> 1.0", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:bypass, "~> 1.0.0", only: :test},
@@ -91,22 +87,18 @@ defmodule Wallaby.Mixfile do
     ]
   end
 
-  defp test_paths(driver) when driver in @drivers, do: ["integration_test/#{driver}"]
+  defp test_paths("chrome"), do: ["integration_test/chrome"]
   defp test_paths(_), do: ["test"]
 
-  defp test_drivers(args) do
-    for driver <- @drivers, do: run_integration_test(driver, args)
-  end
-
-  defp run_integration_test(driver, args) do
+  defp test_chrome(args) do
     args = if IO.ANSI.enabled?(), do: ["--color" | args], else: ["--no-color" | args]
 
-    IO.puts("==> Running tests for WALLABY_DRIVER=#{driver} mix test")
+    IO.puts("==> Running tests for WALLABY_DRIVER=chrome mix test")
 
     {_, res} =
       System.cmd("mix", ["test" | args],
         into: IO.binstream(:stdio, :line),
-        env: [{"WALLABY_DRIVER", driver}]
+        env: [{"WALLABY_DRIVER", "chrome"}]
       )
 
     if res > 0 do

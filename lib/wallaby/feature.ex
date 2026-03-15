@@ -26,9 +26,7 @@ defmodule Wallaby.Feature do
         if context[:test_type] == :feature do
           metadata = unquote(__MODULE__).Utils.maybe_checkout_repos(context[:async])
 
-          start_session_opts =
-            [metadata: metadata]
-            |> unquote(__MODULE__).Utils.put_create_session_fn(context[:create_session_fn])
+          start_session_opts = [metadata: metadata]
 
           get_in(context, [:registered, :sessions])
           |> unquote(__MODULE__).Utils.sessions_iterable()
@@ -166,9 +164,6 @@ defmodule Wallaby.Feature do
 
       session
     end
-
-    def put_create_session_fn(opts, nil), do: opts
-    def put_create_session_fn(opts, func), do: Keyword.put(opts, :create_session_fn, func)
 
     if @includes_ecto do
       def maybe_checkout_repos(async?) do

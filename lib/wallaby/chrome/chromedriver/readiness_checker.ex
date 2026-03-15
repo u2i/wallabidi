@@ -1,9 +1,6 @@
 defmodule Wallaby.Chrome.Chromedriver.ReadinessChecker do
   @moduledoc false
 
-  alias WebDriverClient.Config
-  alias WebDriverClient.ServerStatus
-
   @type url :: String.t()
 
   @spec wait_until_ready(url, non_neg_integer()) :: :ok
@@ -17,35 +14,46 @@ defmodule Wallaby.Chrome.Chromedriver.ReadinessChecker do
     end
   end
 
-  @spec ready?(url) :: boolean
   defp ready?(base_url) do
-    base_url
-    |> build_config()
-    |> WebDriverClient.fetch_server_status()
-    |> case do
-      {:ok, %ServerStatus{ready?: true}} -> true
+    uri = URI.parse("#{base_url}status")
+    port = uri.port || 80
+
+    with {:ok, conn} <- Mint.HTTP.connect(:http, uri.host, port),
+         {:ok, conn, ref} <- Mint.HTTP.request(conn, "GET", uri.path, [], ""),
+         {:ok, body} <- receive_body(conn, ref) do
+      case Jason.decode(body) do
+        {:ok, %{"value" => %{"ready" => true}}} -> true
+        _ -> false
+      end
+    else
       _ -> false
     end
   end
 
-  # @spec build_config(url) :: Config.t()
-  def build_config(base_url) do
-    # Chromedriver responds to the status endpoint check in w3c
-    # protocol.
-    Config.build(base_url,
-      protocol: :w3c,
-      http_client_options: hackney_options()
-    )
-  end
+  defp receive_body(conn, ref, acc \\ "") do
+    receive do
+      message ->
+        case Mint.HTTP.stream(conn, message) do
+          {:ok, conn, responses} ->
+            {done?, acc} =
+              Enum.reduce(responses, {false, acc}, fn
+                {:data, ^ref, data}, {_, a} -> {false, a <> data}
+                {:done, ^ref}, {_, a} -> {true, a}
+                _, acc -> acc
+              end)
 
-  @default_httpoison_options [hackney: [pool: :wallaby_pool]]
+            if done? do
+              Mint.HTTP.close(conn)
+              {:ok, acc}
+            else
+              receive_body(conn, ref, acc)
+            end
 
-  # The :hackney_options key in the environment is misnamed. These
-  # are actually the options as they're passed to HTTPoison.
-  @spec hackney_options() :: list
-  defp hackney_options do
-    :wallaby
-    |> Application.get_env(:hackney_options, @default_httpoison_options)
-    |> Keyword.get(:hackney, [])
+          _ ->
+            {:error, :stream_error}
+        end
+    after
+      2_000 -> {:error, :timeout}
+    end
   end
 end

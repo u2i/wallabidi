@@ -154,13 +154,13 @@ defmodule Wallaby.Chrome.Chromedriver.ServerTest do
   end
 
   defp assert_webdriver_api_ready(base_url) when is_binary(base_url) do
-    assert {:ok, %WebDriverClient.ServerStatus{ready?: true}} =
-             base_url |> build_webdriver_client_config() |> WebDriverClient.fetch_server_status()
+    assert :ok = Wallaby.Chrome.Chromedriver.ReadinessChecker.wait_until_ready(base_url)
   end
 
   defp refute_webdriver_api_ready(base_url) when is_binary(base_url) do
-    assert {:error, %WebDriverClient.ConnectionError{reason: :econnrefused}} =
-             base_url |> build_webdriver_client_config() |> WebDriverClient.fetch_server_status()
+    uri = URI.parse("#{base_url}status")
+
+    assert {:error, _} = Mint.HTTP.connect(:http, uri.host, uri.port)
   end
 
   defp kill_os_process(pid) when is_integer(pid) do
@@ -176,9 +176,5 @@ defmodule Wallaby.Chrome.Chromedriver.ServerTest do
       _ ->
         false
     end
-  end
-
-  defp build_webdriver_client_config(base_url) when is_binary(base_url) do
-    WebDriverClient.Config.build(base_url, protocol: :w3c)
   end
 end

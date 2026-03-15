@@ -3,9 +3,6 @@ defmodule Wallaby.SessionStore do
   use GenServer
   use EventEmitter, :emitter
 
-  alias Wallaby.BiDi.WebSocketClient
-  alias Wallaby.WebdriverClient
-
   def start_link(opts \\ []) do
     {opts, args} = Keyword.split(opts, [:name])
 
@@ -42,7 +39,7 @@ defmodule Wallaby.SessionStore do
     ExUnit.after_suite(fn _ ->
       try do
         :ets.tab2list(tid)
-        |> Enum.each(&delete_sessions/1)
+        |> Enum.each(&cleanup_session/1)
       rescue
         _ -> nil
       end
@@ -85,8 +82,7 @@ defmodule Wallaby.SessionStore do
         {{{:"$1", :_, :_}, :"$4"}, [{:==, :"$1", ref}], [:"$4"]}
       ])
 
-    close_bidi(session)
-    WebdriverClient.delete_session(session)
+    Wallaby.Chrome.end_session(session)
 
     :ets.delete(state.ets_table, {ref, session.id, pid})
 
@@ -95,11 +91,9 @@ defmodule Wallaby.SessionStore do
     {:noreply, state}
   end
 
-  defp delete_sessions({_, session}) do
-    close_bidi(session)
-    WebdriverClient.delete_session(session)
+  defp cleanup_session({_, session}) do
+    Wallaby.Chrome.end_session(session)
+  rescue
+    _ -> :ok
   end
-
-  defp close_bidi(%{bidi_pid: pid}) when is_pid(pid), do: WebSocketClient.close(pid)
-  defp close_bidi(_), do: :ok
 end

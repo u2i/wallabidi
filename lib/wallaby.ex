@@ -14,11 +14,6 @@ defmodule Wallaby do
   * `:js_logger` - IO device where JavaScript console logs are written to. Defaults to :stdio. This option can also be set to a file or any other io device. You can disable JavaScript console logging by setting this to `nil`.
   """
 
-  @drivers %{
-    "chrome" => Wallaby.Chrome,
-    "selenium" => Wallaby.Selenium
-  }
-
   use Application
 
   alias Wallaby.Session
@@ -26,19 +21,13 @@ defmodule Wallaby do
 
   @doc false
   def start(_type, _args) do
-    import Supervisor.Spec, warn: false
-
-    case driver().validate() do
+    case Wallaby.Chrome.validate() do
       :ok -> :ok
       {:error, exception} -> raise exception
     end
 
     children = [
-      {driver(), [name: Wallaby.Driver.Supervisor]},
-      :hackney_pool.child_spec(:wallaby_pool,
-        timeout: 15_000,
-        max_connections: System.schedulers_online()
-      ),
+      {Wallaby.Chrome, [name: Wallaby.Driver.Supervisor]},
       {Wallaby.SessionStore, [name: Wallaby.SessionStore]}
     ]
 
@@ -82,7 +71,7 @@ defmodule Wallaby do
   """
   @spec start_session([start_session_opts]) :: {:ok, Session.t()} | {:error, reason}
   def start_session(opts \\ []) do
-    with {:ok, session} <- driver().start_session(opts),
+    with {:ok, session} <- Wallaby.Chrome.start_session(opts),
          :ok <- SessionStore.monitor(session),
          do: {:ok, session}
   end
@@ -91,9 +80,9 @@ defmodule Wallaby do
   Ends a browser session.
   """
   @spec end_session(Session.t()) :: :ok | {:error, reason}
-  def end_session(%Session{driver: driver} = session) do
+  def end_session(%Session{} = session) do
     with :ok <- SessionStore.demonitor(session) do
-      driver.end_session(session)
+      Wallaby.Chrome.end_session(session)
     end
   end
 
@@ -110,13 +99,5 @@ defmodule Wallaby do
   @doc false
   def js_logger do
     Application.get_env(:wallaby, :js_logger, :stdio)
-  end
-
-  def driver do
-    Map.get(
-      @drivers,
-      System.get_env("WALLABY_DRIVER"),
-      Application.get_env(:wallaby, :driver, Wallaby.Chrome)
-    )
   end
 end
