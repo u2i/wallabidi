@@ -27,7 +27,7 @@ defmodule Wallaby.Chrome do
   config :wallaby,
     chromedriver: [
       capabilities: %{
-        chromeOptions: %{args: ["--headless"]}
+        "goog:chromeOptions": %{args: ["--headless"]}
       }
     ]
   ```
@@ -419,19 +419,11 @@ defmodule Wallaby.Chrome do
       })
 
     %{
-      javascriptEnabled: false,
-      loadImages: false,
-      version: "",
-      rotatable: false,
-      takesScreenshot: true,
-      cssSelectorsEnabled: true,
-      nativeEvents: false,
-      platform: "ANY",
       unhandledPromptBehavior: "accept",
-      loggingPrefs: %{
-        browser: "DEBUG"
-      },
-      chromeOptions: chrome_options
+      "goog:chromeOptions": chrome_options,
+      "goog:loggingPrefs": %{
+        browser: "ALL"
+      }
     }
   end
 
@@ -639,12 +631,12 @@ defmodule Wallaby.Chrome do
         capabilities
 
       true ->
-        update_in(capabilities, [:chromeOptions, :args], fn args ->
+        update_in(capabilities, [Access.key("goog:chromeOptions", %{}), :args], fn args ->
           Enum.uniq(args ++ ["--headless"])
         end)
 
       false ->
-        update_in(capabilities, [:chromeOptions, :args], fn args ->
+        update_in(capabilities, [Access.key("goog:chromeOptions", %{}), :args], fn args ->
           args -- ["--headless"]
         end)
     end
@@ -653,12 +645,12 @@ defmodule Wallaby.Chrome do
   defp put_binary_config(capabilities, opts) do
     case resolve_opt(opts, :binary) do
       nil -> capabilities
-      path -> put_in(capabilities, [:chromeOptions, :binary], path)
+      path -> put_in(capabilities, [Access.key("goog:chromeOptions", %{}), :binary], path)
     end
   end
 
   defp put_beam_metadata(capabilities, opts) do
-    update_in(capabilities, [:chromeOptions, :args], fn args ->
+    update_in(capabilities, [Access.key("goog:chromeOptions", %{}), :args], fn args ->
       Enum.map(args, fn
         "--user-agent=" <> ua ->
           "--user-agent=#{Metadata.append(ua, opts[:metadata])}"
