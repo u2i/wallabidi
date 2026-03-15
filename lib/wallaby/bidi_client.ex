@@ -892,12 +892,23 @@ defmodule Wallaby.BiDiClient do
     message
   end
 
-  # Network idle waiting
+  # Settle — wait for the page to be idle after an action.
   #
-  # Watches for new network request activity. When no new requests have
-  # started for `idle_time` ms, the network is considered idle. This works
-  # correctly with persistent connections (WebSockets, SSE, long-polling)
-  # since those are established once and don't fire new request events.
+  # Two signals:
+  # 1. Network: no new HTTP requests for `idle_time` ms
+  # 2. LiveView: no phx-*-loading attributes on any element
+  #
+  # Works correctly with persistent connections (WebSockets, SSE)
+  # since those don't fire new request events.
+
+  @liveview_settled_js """
+  (() => {
+    const loading = document.querySelector('[data-phx-main-loading], [class*="phx-"][class*="-loading"]');
+    const connected = document.querySelector('[data-phx-main]');
+    if (!connected) return true;
+    return !loading;
+  })()
+  """
 
   def settle(session, timeout, idle_time) do
     pid = bidi_pid(session)
@@ -907,26 +918,46 @@ defmodule Wallaby.BiDiClient do
     WebSocketClient.subscribe(pid, "network.beforeRequestSent")
 
     deadline = System.monotonic_time(:millisecond) + timeout
-    do_settle(idle_time, deadline)
+    do_settle(session, idle_time, deadline)
   end
 
-  defp do_settle(idle_time, deadline) do
+  defp do_settle(session, idle_time, deadline) do
     remaining = deadline - System.monotonic_time(:millisecond)
 
     if remaining <= 0 do
-      raise RuntimeError, "Timed out waiting for network idle"
+      raise RuntimeError, "Timed out waiting for page to settle"
     end
 
     wait_ms = min(idle_time, remaining)
 
     receive do
       {:bidi_event, "network.beforeRequestSent", _event} ->
-        # New request started — reset the idle timer
-        do_settle(idle_time, deadline)
+        do_settle(session, idle_time, deadline)
     after
       wait_ms ->
-        # No new requests for idle_time — network is idle
-        :ok
+        # Network is quiet — check if LiveView is also settled
+        if liveview_settled?(session) do
+          :ok
+        else
+          do_settle(session, idle_time, deadline)
+        end
+    end
+  end
+
+  defp liveview_settled?(session) do
+    context = browsing_context(session)
+    {method, params} = Commands.evaluate(context, @liveview_settled_js)
+
+    case send_bidi(session, method, params) do
+      {:ok, result} ->
+        case ResponseParser.extract_value(result) do
+          {:ok, true} -> true
+          _ -> false
+        end
+
+      _ ->
+        # If we can't check, assume settled
+        true
     end
   end
 

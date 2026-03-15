@@ -1556,29 +1556,39 @@ defmodule Wallaby.Browser do
   @doc """
   Waits for the page to settle after an action.
 
-  Watches for new HTTP request activity via BiDi network events. When no
-  new requests have started for the duration of `idle_time`, the page is
-  considered settled. This replaces `Process.sleep` and element-polling
-  workarounds for waiting on async operations.
+  Checks two signals before returning:
+
+  1. **Network idle** — no new HTTP requests have started for `idle_time` ms
+  2. **LiveView idle** — no `phx-*-loading` classes are present on any element
+
+  This means `settle` works for both traditional apps (waits for XHR/fetch)
+  and LiveView apps (waits for the server to process events and patch the DOM).
+  For pages without LiveView, the LiveView check is a no-op.
 
   Works correctly with persistent connections (LiveView WebSockets, SSE,
-  long-polling) since those are established once and don't fire new request
-  events during the idle window.
+  long-polling) since those don't fire new request events.
 
   For non-BiDi sessions this is a no-op and returns the session immediately.
 
   ## Options
 
     * `:timeout` - Maximum time in milliseconds to wait (default: 5000)
-    * `:idle_time` - How long in milliseconds with no new requests before
+    * `:idle_time` - How long in milliseconds with no activity before
       the page is considered settled (default: 500)
 
   ## Examples
 
+      # LiveView — wait for server roundtrip
       session
       |> click(Query.button("Save"))
       |> settle()
-      |> assert_has(Query.css(".saved"))
+      |> assert_has(Query.css(".flash-info", text: "Saved!"))
+
+      # Traditional — wait for AJAX
+      session
+      |> click(Query.button("Load Data"))
+      |> settle()
+      |> assert_has(Query.css(".data-loaded"))
   """
   @spec settle(session, keyword()) :: session
   def settle(%Session{} = session, opts \\ []) do
