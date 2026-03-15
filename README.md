@@ -12,7 +12,7 @@ Wallaby is excellent. We forked because the changes we wanted were too invasive 
 
 We also wanted features that only make sense with BiDi: `settle()` for LiveView, request interception, event-driven log capture. Building these on top of Wallaby's HTTP polling model would have been the wrong abstraction.
 
-If you're starting a new project or are willing to do a find-and-replace, Wallabidi gives you a simpler dependency tree, better LiveView support, and access to modern browser APIs. If you need Selenium or Firefox support, stay with Wallaby.
+If you're starting a new project or are willing to do a find-and-replace, Wallabidi gives you a simpler dependency tree, better LiveView support, and access to modern browser APIs. If you need Selenium (the Java server) support, stay with Wallaby. Firefox support via GeckoDriver is architecturally possible (it also speaks BiDi) but not yet implemented.
 
 ## What's different from Wallaby?
 
