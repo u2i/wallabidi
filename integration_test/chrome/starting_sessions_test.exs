@@ -14,6 +14,10 @@ defmodule Wallabidi.Integration.Chrome.StartingSessionsTest do
 
   @moduletag :capture_log
 
+  if !match?({:ok, _}, Wallabidi.Chrome.find_chromedriver_executable()) do
+    @moduletag :skip
+  end
+
   setup [:restart_wallaby_on_exit!, :stop_wallaby]
 
   setup do

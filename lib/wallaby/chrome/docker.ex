@@ -7,7 +7,8 @@ defmodule Wallabidi.Chrome.Docker do
   require Logger
 
   @container_name "wallabidi-chrome"
-  @image "selenium/standalone-chromium:latest"
+  @image "erseco/alpine-chromedriver:latest"
+  @container_port 9515
   @startup_timeout 30_000
 
   def start do
@@ -61,7 +62,7 @@ defmodule Wallabidi.Chrome.Docker do
   defp container_url do
     case System.cmd(
            "docker",
-           ["port", @container_name, "4444"],
+           ["port", @container_name, to_string(@container_port)],
            stderr_to_stdout: true
          ) do
       {output, 0} ->
@@ -87,8 +88,8 @@ defmodule Wallabidi.Chrome.Docker do
       "--name",
       @container_name,
       "-p",
-      "#{port}:4444",
-      "--shm-size=2g",
+      "#{port}:#{@container_port}",
+      "--shm-size=512m",
       @image
     ]
 

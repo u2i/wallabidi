@@ -11,6 +11,12 @@ defmodule Wallabidi.Chrome.Chromedriver.ServerTest do
 
   @moduletag :capture_log
 
+  # These tests require a local chromedriver installation.
+  # Skip when using Docker or remote chromedriver.
+  if !match?({:ok, _}, Wallabidi.Chrome.find_chromedriver_executable()) do
+    @moduletag :skip
+  end
+
   test "starts up successfully before timeout" do
     test_script_path =
       TestWorkspace.mkdir!()
