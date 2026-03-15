@@ -62,13 +62,7 @@ config :wallaby, hackney_options: [...]
 
 ## Setup
 
-### Requirements
-
-Elixir 1.12+, OTP 22+, and one of:
-
-- **ChromeDriver + Chrome** installed locally, OR
-- **Docker** — Wallabidi will automatically start a `selenium/standalone-chromium` container if chromedriver isn't found, OR
-- A **remote ChromeDriver** URL (e.g. in your Docker Compose stack)
+Requires Elixir 1.12+, OTP 22+, and either Docker or a local ChromeDriver installation.
 
 ### Installation
 
@@ -81,6 +75,66 @@ end
 ```elixir
 # test/test_helper.exs
 {:ok, _} = Application.ensure_all_started(:wallabidi)
+```
+
+### How Chrome is managed
+
+Wallabidi needs ChromeDriver + Chrome to run tests. There are three modes, tried in this order:
+
+#### 1. Automatic Docker (zero config)
+
+If no local ChromeDriver is installed, Wallabidi will automatically start a Docker container with ChromeDriver and Chromium. No configuration needed — just have Docker running.
+
+```
+$ mix test  # Just works. Docker container starts and stops automatically.
+```
+
+The container (`erseco/alpine-chromedriver`) is lightweight (~750MB), multi-arch (ARM64 + AMD64), and is cleaned up when your test suite finishes. URLs are automatically rewritten so Chrome in the container can reach your local test server.
+
+This is the recommended mode for teams — no local dependencies to install beyond Docker.
+
+#### 2. Docker Compose (explicit remote)
+
+When Chrome runs as a service in your Docker Compose stack (e.g. in a devcontainer), point Wallabidi at it:
+
+```elixir
+# config/test.exs
+config :wallabidi,
+  chromedriver: [remote_url: "http://chrome:9515/"]
+```
+
+Example `compose.yml`:
+
+```yaml
+services:
+  app:
+    # your Elixir app
+    depends_on: [chrome]
+
+  chrome:
+    image: erseco/alpine-chromedriver:latest
+    shm_size: 512m
+```
+
+No automatic container management — you control the lifecycle via Compose. Wallabidi polls the `/status` endpoint until the service is ready.
+
+#### 3. Local ChromeDriver
+
+If ChromeDriver and Chrome are installed locally, Wallabidi uses them directly. This is the fastest mode (no Docker overhead) and how CI typically works (GitHub Actions has Chrome pre-installed).
+
+```
+$ brew install chromedriver  # macOS
+$ mix test                   # Uses local chromedriver
+```
+
+Configure the binary paths if they're not in your PATH:
+
+```elixir
+config :wallabidi,
+  chromedriver: [
+    path: "/path/to/chromedriver",
+    binary: "/path/to/chrome"
+  ]
 ```
 
 ### Phoenix
@@ -97,13 +151,6 @@ When using Ecto:
 
 ```elixir
 config :wallabidi, otp_app: :your_app
-```
-
-### Remote ChromeDriver (Docker)
-
-```elixir
-config :wallabidi,
-  chromedriver: [remote_url: "http://chrome:4444/"]
 ```
 
 ### LiveView
