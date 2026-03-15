@@ -27,10 +27,15 @@ defmodule Wallaby.BiDi.WebSocketClient do
 
   def send_command(pid, method, params, timeout \\ @default_timeout) do
     GenServer.call(pid, {:send_command, method, params}, timeout)
+  catch
+    :exit, {:noproc, _} -> {:error, :session_closed}
+    :exit, {:normal, _} -> {:error, :session_closed}
   end
 
   def subscribe(pid, event_method) do
     GenServer.call(pid, {:subscribe, event_method})
+  catch
+    :exit, _ -> :ok
   end
 
   def close(pid) do

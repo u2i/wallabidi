@@ -283,8 +283,9 @@ defimpl Inspect, for: Wallaby.Element do
           IO.ANSI.yellow() <> outer_html <> IO.ANSI.reset()
         ]
       rescue
-        _ ->
-          []
+        _ -> []
+      catch
+        _, _ -> []
       end
 
     element

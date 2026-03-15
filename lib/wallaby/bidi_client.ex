@@ -232,10 +232,25 @@ defmodule Wallaby.BiDiClient do
       when not is_nil(shared_id) do
     context = browsing_context(element)
 
+    # Mirror W3C WebDriver Get Element Attribute: return the property value
+    # for IDL attributes (value, checked, selected, etc.) and the HTML
+    # attribute for everything else.
+    js = """
+    (el, name) => {
+      if (name in el && typeof el[name] !== 'object') {
+        const v = el[name];
+        if (v === true) return 'true';
+        if (v === false) return null;
+        return v == null ? null : String(v);
+      }
+      return el.getAttribute(name);
+    }
+    """
+
     {method, params} =
       Commands.call_function(
         context,
-        "(el, name) => el.getAttribute(name)",
+        js,
         [element_arg(shared_id), %{type: "string", value: name}]
       )
 
