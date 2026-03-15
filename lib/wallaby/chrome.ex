@@ -170,7 +170,7 @@ defmodule Wallaby.Chrome do
 
   @doc false
   def end_session(%Wallaby.Session{} = session, _opts \\ []) do
-    WebSocketClient.close(session.bidi_pid)
+    if session.bidi_pid, do: WebSocketClient.close(session.bidi_pid)
     delete_session(session)
     :ok
   end
