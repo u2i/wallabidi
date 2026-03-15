@@ -164,26 +164,7 @@ defmodule Wallaby.BiDi.WebSocketClient do
   defp process_frame({:text, text}, state) do
     case Jason.decode(text) do
       {:ok, %{"id" => id} = response} ->
-        case Map.pop(state.pending, id) do
-          {nil, _pending} ->
-            state
-
-          {from, pending} ->
-            result =
-              case response do
-                %{"error" => error, "message" => message} ->
-                  {:error, {error, message}}
-
-                %{"result" => result} ->
-                  {:ok, result}
-
-                other ->
-                  {:ok, other}
-              end
-
-            GenServer.reply(from, result)
-            %{state | pending: pending}
-        end
+        handle_command_response(state, id, response)
 
       {:ok, %{"method" => method} = event} ->
         broadcast_event(state, method, event)
@@ -215,6 +196,24 @@ defmodule Wallaby.BiDi.WebSocketClient do
       GenServer.reply(from, reply)
     end)
   end
+
+  defp handle_command_response(state, id, response) do
+    case Map.pop(state.pending, id) do
+      {nil, _pending} ->
+        state
+
+      {from, pending} ->
+        result = parse_bidi_response(response)
+        GenServer.reply(from, result)
+        %{state | pending: pending}
+    end
+  end
+
+  defp parse_bidi_response(%{"error" => error, "message" => message}),
+    do: {:error, {error, message}}
+
+  defp parse_bidi_response(%{"result" => result}), do: {:ok, result}
+  defp parse_bidi_response(other), do: {:ok, other}
 
   defp send_frame(state, frame) do
     case Mint.WebSocket.encode(state.websocket, frame) do

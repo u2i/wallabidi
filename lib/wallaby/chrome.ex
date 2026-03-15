@@ -372,29 +372,19 @@ defmodule Wallaby.Chrome do
         get_in(response, ["capabilities", "webSocketUrl"])
 
     if ws_url do
-      case WebSocketClient.start_link(ws_url) do
-        {:ok, bidi_pid} ->
-          case WebSocketClient.send_command(bidi_pid, "browsingContext.getTree", %{}) do
-            {:ok, result} ->
-              case ResponseParser.extract_context(result) do
-                {:ok, context_id} ->
-                  %{session | bidi_pid: bidi_pid, browsing_context: context_id}
-
-                _ ->
-                  WebSocketClient.close(bidi_pid)
-                  session
-              end
-
-            _ ->
-              WebSocketClient.close(bidi_pid)
-              session
-          end
-
-        _ ->
-          session
-      end
+      connect_bidi(session, ws_url)
     else
       session
+    end
+  end
+
+  defp connect_bidi(session, ws_url) do
+    with {:ok, bidi_pid} <- WebSocketClient.start_link(ws_url),
+         {:ok, result} <- WebSocketClient.send_command(bidi_pid, "browsingContext.getTree", %{}),
+         {:ok, context_id} <- ResponseParser.extract_context(result) do
+      %{session | bidi_pid: bidi_pid, browsing_context: context_id}
+    else
+      _ -> session
     end
   end
 

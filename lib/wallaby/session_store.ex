@@ -3,8 +3,8 @@ defmodule Wallaby.SessionStore do
   use GenServer
   use EventEmitter, :emitter
 
-  alias Wallaby.WebdriverClient
   alias Wallaby.BiDi.WebSocketClient
+  alias Wallaby.WebdriverClient
 
   def start_link(opts \\ []) do
     {opts, args} = Keyword.split(opts, [:name])
