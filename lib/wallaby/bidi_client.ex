@@ -213,12 +213,12 @@ defmodule Wallaby.BiDiClient do
       {:ok, _} ->
         {:ok, nil}
 
-      {:error, :obscured} ->
+      {:error, :stale_reference} = error ->
+        error
+
+      {:error, _} ->
         # Fall back to JavaScript click for elements that can't receive pointer events
         click_with_js(element, shared_id, context)
-
-      error ->
-        error
     end
   end
 
