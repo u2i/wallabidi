@@ -26,7 +26,7 @@ defmodule Wallaby.Integration.Browser.UseFeatureTest do
   end
 
   @expected_capabilities Map.put(
-                           Wallaby.driver().default_capabilities(),
+                           Wallaby.Chrome.default_capabilities(),
                            :test,
                            "I'm a capability"
                          )

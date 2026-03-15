@@ -160,7 +160,39 @@ defmodule Wallaby.Chrome.Chromedriver.ServerTest do
   defp refute_webdriver_api_ready(base_url) when is_binary(base_url) do
     uri = URI.parse("#{base_url}status")
 
-    assert {:error, _} = Mint.HTTP.connect(:http, uri.host, uri.port)
+    ready =
+      with {:ok, conn} <- Mint.HTTP.connect(:http, uri.host, uri.port),
+           {:ok, conn, ref} <- Mint.HTTP.request(conn, "GET", uri.path, [], "") do
+        result =
+          receive do
+            message ->
+              case Mint.HTTP.stream(conn, message) do
+                {:ok, _conn, responses} ->
+                  Enum.any?(responses, fn
+                    {:data, ^ref, data} ->
+                      case Jason.decode(data) do
+                        {:ok, %{"value" => %{"ready" => true}}} -> true
+                        _ -> false
+                      end
+
+                    _ ->
+                      false
+                  end)
+
+                _ ->
+                  false
+              end
+          after
+            1_000 -> false
+          end
+
+        Mint.HTTP.close(conn)
+        result
+      else
+        _ -> false
+      end
+
+    refute ready, "Expected chromedriver at #{base_url} to NOT be ready"
   end
 
   defp kill_os_process(pid) when is_integer(pid) do
