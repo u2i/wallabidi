@@ -193,7 +193,11 @@ defmodule Wallaby.Chrome do
   end
 
   defp create_session(base_url, capabilities) do
-    params = Jason.encode!(%{desiredCapabilities: capabilities})
+    params =
+      Jason.encode!(%{
+        capabilities: %{alwaysMatch: capabilities}
+      })
+
     url = "#{base_url}session"
 
     case mint_request(:post, url, params) do
