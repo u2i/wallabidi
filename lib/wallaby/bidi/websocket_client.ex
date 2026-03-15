@@ -231,5 +231,4 @@ defmodule Wallaby.BiDi.WebSocketClient do
         {:error, %{state | websocket: websocket}, reason}
     end
   end
-
 end
