@@ -49,6 +49,8 @@ defmodule Wallaby.Mixfile do
     [
       {:jason, "~> 1.1"},
       {:httpoison, "~> 0.12 or ~> 1.0 or ~> 2.0"},
+      {:mint, "~> 1.6"},
+      {:mint_web_socket, "~> 1.0"},
       {:web_driver_client, "~> 0.2.0"},
       {:dialyxir, "~> 1.0", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

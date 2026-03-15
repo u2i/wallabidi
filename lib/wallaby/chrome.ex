@@ -109,8 +109,9 @@ defmodule Wallaby.Chrome do
   @default_readiness_timeout 10_000
 
   alias Wallaby.Chrome.Chromedriver
-  alias Wallaby.WebdriverClient
+  alias Wallaby.{BiDiClient, WebdriverClient}
   alias Wallaby.{DependencyError, Metadata}
+  alias Wallaby.BiDi.{ResponseParser, WebSocketClient}
   import Wallaby.Driver.LogChecker
 
   @typedoc """
@@ -341,6 +342,7 @@ defmodule Wallaby.Chrome do
       opts
       |> Keyword.get_lazy(:capabilities, fn -> capabilities_from_config(opts) end)
       |> put_beam_metadata(opts)
+      |> put_bidi_capabilities()
 
     with {:ok, response} <- create_session_fn.(base_url, capabilities) do
       id = response["sessionId"]
@@ -354,10 +356,52 @@ defmodule Wallaby.Chrome do
         capabilities: capabilities
       }
 
+      session = maybe_start_bidi(session, response)
+
       if window_size = Keyword.get(opts, :window_size),
         do: {:ok, _} = set_window_size(session, window_size[:width], window_size[:height])
 
       {:ok, session}
+    end
+  end
+
+  defp put_bidi_capabilities(capabilities) do
+    capabilities
+    |> Map.put(:webSocketUrl, true)
+    |> update_in([:chromeOptions, :args], fn args ->
+      args ++ ["--remote-debugging-pipe"] |> Enum.uniq()
+    end)
+  end
+
+  defp maybe_start_bidi(session, response) do
+    ws_url =
+      get_in(response, ["value", "capabilities", "webSocketUrl"]) ||
+        get_in(response, ["capabilities", "webSocketUrl"])
+
+    if ws_url do
+      case WebSocketClient.start_link(ws_url) do
+        {:ok, bidi_pid} ->
+          case WebSocketClient.send_command(bidi_pid, "browsingContext.getTree", %{}) do
+            {:ok, result} ->
+              case ResponseParser.extract_context(result) do
+                {:ok, context_id} ->
+                  %{session | bidi_pid: bidi_pid, browsing_context: context_id}
+
+                _ ->
+                  WebSocketClient.close(bidi_pid)
+                  session
+              end
+
+            _ ->
+              WebSocketClient.close(bidi_pid)
+              session
+          end
+
+        _ ->
+          session
+      end
+    else
+      session
     end
   end
 
@@ -379,6 +423,7 @@ defmodule Wallaby.Chrome do
 
   @doc false
   def end_session(%Wallaby.Session{} = session, opts \\ []) do
+    if session.bidi_pid, do: WebSocketClient.close(session.bidi_pid)
     end_session_fn = Keyword.get(opts, :end_session_fn, &WebdriverClient.delete_session/1)
     end_session_fn.(session)
     :ok
@@ -397,9 +442,17 @@ defmodule Wallaby.Chrome do
 
   defp delegate(fun, element_or_session, args \\ []) do
     check_logs!(element_or_session, fn ->
-      apply(WebdriverClient, fun, [element_or_session | args])
+      if bidi_session?(element_or_session) do
+        apply(BiDiClient, fun, [element_or_session | args])
+      else
+        apply(WebdriverClient, fun, [element_or_session | args])
+      end
     end)
   end
+
+  defp bidi_session?(%Wallaby.Session{bidi_pid: pid}) when not is_nil(pid), do: true
+  defp bidi_session?(%Wallaby.Element{parent: parent}), do: bidi_session?(parent)
+  defp bidi_session?(_), do: false
 
   @doc false
   defdelegate accept_alert(session, fun), to: WebdriverClient
@@ -504,8 +557,11 @@ defmodule Wallaby.Chrome do
   def execute_script(session_or_element, script, args \\ [], opts \\ []) do
     check_logs = Keyword.get(opts, :check_logs, true)
 
+    client =
+      if bidi_session?(session_or_element), do: BiDiClient, else: WebdriverClient
+
     request_fn = fn ->
-      WebdriverClient.execute_script(session_or_element, script, args)
+      client.execute_script(session_or_element, script, args)
     end
 
     if check_logs do
@@ -519,8 +575,11 @@ defmodule Wallaby.Chrome do
   def execute_script_async(session_or_element, script, args \\ [], opts \\ []) do
     check_logs = Keyword.get(opts, :check_logs, true)
 
+    client =
+      if bidi_session?(session_or_element), do: BiDiClient, else: WebdriverClient
+
     request_fn = fn ->
-      WebdriverClient.execute_script_async(session_or_element, script, args)
+      client.execute_script_async(session_or_element, script, args)
     end
 
     if check_logs do

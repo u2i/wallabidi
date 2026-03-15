@@ -27,7 +27,7 @@ defmodule Wallaby.Element do
 
   alias Wallaby.StaleReferenceError
 
-  defstruct [:url, :session_url, :parent, :id, :driver, screenshots: []]
+  defstruct [:url, :session_url, :parent, :id, :driver, :bidi_shared_id, screenshots: []]
 
   @type value ::
           String.t()
@@ -41,7 +41,8 @@ defmodule Wallaby.Element do
           url: String.t(),
           id: String.t(),
           screenshots: list,
-          driver: module
+          driver: module,
+          bidi_shared_id: String.t() | nil
         }
 
   @doc """

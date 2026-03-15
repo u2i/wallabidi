@@ -4,6 +4,7 @@ defmodule Wallaby.SessionStore do
   use EventEmitter, :emitter
 
   alias Wallaby.WebdriverClient
+  alias Wallaby.BiDi.WebSocketClient
 
   def start_link(opts \\ []) do
     {opts, args} = Keyword.split(opts, [:name])
@@ -84,6 +85,7 @@ defmodule Wallaby.SessionStore do
         {{{:"$1", :_, :_}, :"$4"}, [{:==, :"$1", ref}], [:"$4"]}
       ])
 
+    close_bidi(session)
     WebdriverClient.delete_session(session)
 
     :ets.delete(state.ets_table, {ref, session.id, pid})
@@ -94,6 +96,10 @@ defmodule Wallaby.SessionStore do
   end
 
   defp delete_sessions({_, session}) do
+    close_bidi(session)
     WebdriverClient.delete_session(session)
   end
+
+  defp close_bidi(%{bidi_pid: pid}) when is_pid(pid), do: WebSocketClient.close(pid)
+  defp close_bidi(_), do: :ok
 end
