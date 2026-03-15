@@ -1556,17 +1556,21 @@ defmodule Wallaby.Browser do
   @doc """
   Waits until network activity has settled.
 
-  Subscribes to BiDi network events and waits until there are no pending
-  requests for the duration of `idle_time`. This is useful after triggering
-  actions that cause background fetches (XHR, fetch API, etc.).
+  Watches for new HTTP request activity via BiDi network events. When no
+  new requests have started for the duration of `idle_time`, the network
+  is considered idle.
+
+  Works correctly with persistent connections (LiveView WebSockets, SSE,
+  long-polling) since those are established once and don't fire new request
+  events during the idle window.
 
   For non-BiDi sessions this is a no-op and returns the session immediately.
 
   ## Options
 
     * `:timeout` - Maximum time in milliseconds to wait (default: 5000)
-    * `:idle_time` - How long in milliseconds the network must be quiet
-      before it is considered idle (default: 500)
+    * `:idle_time` - How long in milliseconds with no new requests before
+      the network is considered idle (default: 500)
 
   ## Examples
 
@@ -1574,6 +1578,7 @@ defmodule Wallaby.Browser do
       |> visit("/page")
       |> click(Query.button("Load Data"))
       |> wait_for_network_idle()
+      |> assert_has(Query.css(".data-loaded"))
   """
   @spec wait_for_network_idle(session, keyword()) :: session
   def wait_for_network_idle(%Session{} = session, opts \\ []) do
