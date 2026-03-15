@@ -623,9 +623,14 @@ defmodule Wallaby.Chrome do
   end
 
   defp maybe_put_chrome_executable(chrome_options) do
-    case find_chrome_executable() do
-      {:ok, binary} -> Map.put(chrome_options, :binary, binary)
-      _ -> chrome_options
+    if remote_url() do
+      # Don't set local Chrome binary when using remote chromedriver
+      chrome_options
+    else
+      case find_chrome_executable() do
+        {:ok, binary} -> Map.put(chrome_options, :binary, binary)
+        _ -> chrome_options
+      end
     end
   end
 
