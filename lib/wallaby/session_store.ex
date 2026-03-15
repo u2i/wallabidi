@@ -85,7 +85,8 @@ defmodule Wallaby.SessionStore do
         {{{:"$1", :_, :_}, :"$4"}, [{:==, :"$1", ref}], [:"$4"]}
       ])
 
-    cleanup_session(session)
+    close_bidi(session)
+    WebdriverClient.delete_session(session)
 
     :ets.delete(state.ets_table, {ref, session.id, pid})
 
@@ -95,20 +96,10 @@ defmodule Wallaby.SessionStore do
   end
 
   defp delete_sessions({_, session}) do
-    cleanup_session(session)
-  end
-
-  defp cleanup_session(%{bidi_pid: pid, server: server} = session) when is_pid(pid) do
-    WebSocketClient.close(pid)
-    if is_pid(server), do: GenServer.stop(server, :normal, 5_000)
-
-    # Legacy sessions also need HTTP cleanup
-    unless String.starts_with?(session.id || "", "bidi-") do
-      WebdriverClient.delete_session(session)
-    end
-  end
-
-  defp cleanup_session(session) do
+    close_bidi(session)
     WebdriverClient.delete_session(session)
   end
+
+  defp close_bidi(%{bidi_pid: pid}) when is_pid(pid), do: WebSocketClient.close(pid)
+  defp close_bidi(_), do: :ok
 end
