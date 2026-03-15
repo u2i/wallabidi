@@ -9,6 +9,11 @@ defmodule Wallaby.Integration.JSErrorsTest do
       session
       |> visit("/errors.html")
       |> click(button("Throw an Error"))
+
+      # BiDi error events are async — allow them to arrive then trigger
+      # another log drain
+      Process.sleep(100)
+      Browser.page_title(session)
     end
   end
 
@@ -31,7 +36,12 @@ defmodule Wallaby.Integration.JSErrorsTest do
       session
       |> visit("/logs.html")
       |> click(button("Print Log"))
-      |> settle()
+
+      # BiDi log events are async — allow them to arrive then trigger
+      # another log drain via a no-op action
+      Process.sleep(100)
+      Browser.page_title(session)
+      session
     end
 
     assert capture_io(fun) == output
