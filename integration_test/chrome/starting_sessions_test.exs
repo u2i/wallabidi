@@ -125,7 +125,7 @@ defmodule Wallaby.Integration.Chrome.StartingSessionsTest do
         assert :ok == Application.start(:wallaby)
       end)
 
-    assert log =~ "Looks like you're trying to run Wallaby with a mismatched version of Chrome"
+    assert log =~ "don't match"
   end
 
   test "application does not start when chrome version != chromedriver version", %{
@@ -148,7 +148,7 @@ defmodule Wallaby.Integration.Chrome.StartingSessionsTest do
         assert :ok == Application.start(:wallaby)
       end)
 
-    assert log =~ "Looks like you're trying to run Wallaby with a mismatched version of Chrome"
+    assert log =~ "don't match"
   end
 
   test "works with a path in the home directory" do

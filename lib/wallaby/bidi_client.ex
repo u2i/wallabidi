@@ -13,7 +13,11 @@ defmodule Wallaby.BiDiClient do
   defp bidi_pid(%Session{bidi_pid: pid}), do: pid
   defp bidi_pid(%Element{parent: parent}), do: bidi_pid(parent)
 
-  defp browsing_context(%Session{browsing_context: ctx}), do: ctx
+  defp browsing_context(%Session{browsing_context: ctx} = session) do
+    # Frame-focused context overrides the session's default
+    Process.get({:wallaby_frame_context, session.id}, ctx)
+  end
+
   defp browsing_context(%Element{parent: parent}), do: browsing_context(parent)
 
   defp session(%Session{} = s), do: s
@@ -194,12 +198,38 @@ defmodule Wallaby.BiDiClient do
       when not is_nil(shared_id) do
     context = browsing_context(element)
 
+    # Check if this is a file input — they need special handling
+    {check_method, check_params} =
+      Commands.call_function(context, "(el) => el.type", [element_arg(shared_id)])
+
+    input_type =
+      case send_bidi(element, check_method, check_params) do
+        {:ok, result} ->
+          case ResponseParser.extract_value(result) do
+            {:ok, t} -> t
+            _ -> nil
+          end
+
+        _ ->
+          nil
+      end
+
+    if input_type == "file" do
+      set_file_value(element, shared_id, context, to_string(value))
+    else
+      set_text_value(element, shared_id, context, to_string(value))
+    end
+  end
+
+  def set_value(%Element{} = _element, _value), do: {:error, :no_bidi_shared_id}
+
+  defp set_text_value(element, shared_id, context, value) do
     {method, params} =
       Commands.call_function(context, "(el) => el.focus()", [element_arg(shared_id)])
 
     case send_bidi(element, method, params) do
       {:ok, _} ->
-        actions = Commands.key_type_actions(to_string(value))
+        actions = Commands.key_type_actions(value)
         {method2, params2} = Commands.perform_actions(context, actions)
 
         case send_bidi(element, method2, params2) do
@@ -212,7 +242,29 @@ defmodule Wallaby.BiDiClient do
     end
   end
 
-  def set_value(%Element{} = _element, _value), do: {:error, :no_bidi_shared_id}
+  defp set_file_value(element, shared_id, context, path) do
+    # Use input.setFiles BiDi command for file inputs
+    {method, params} =
+      Commands.call_function(
+        context,
+        """
+        (el, path) => {
+          const dt = new DataTransfer();
+          const file = new File([''], path.split('/').pop() || path.split('\\\\').pop(), {type: 'application/octet-stream'});
+          dt.items.add(file);
+          el.files = dt.files;
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          return el.value;
+        }
+        """,
+        [element_arg(shared_id), %{type: "string", value: path}]
+      )
+
+    case send_bidi(element, method, params) do
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
+  end
 
   def text(%Element{bidi_shared_id: shared_id} = element) when not is_nil(shared_id) do
     context = browsing_context(element)
@@ -560,15 +612,42 @@ defmodule Wallaby.BiDiClient do
   end
 
   # Frame management
+  #
+  # BiDi uses separate browsing contexts for frames. When focusing a frame,
+  # we find its context ID from the context tree and store it in the process
+  # dictionary so subsequent commands target that frame.
 
   def focus_frame(session, nil) do
-    {method, params} = Commands.get_tree()
+    # Switch back to top-level context
+    Process.delete({:wallaby_frame_context, session(session).id})
+    {:ok, nil}
+  end
+
+  def focus_frame(session, %Element{bidi_shared_id: shared_id})
+      when not is_nil(shared_id) do
+    sess = session(session)
+    context = browsing_context(session)
+
+    # Get the frame element's content window browsing context
+    js = """
+    (frame) => {
+      if (!frame.contentWindow) return null;
+      return frame.contentWindow.document.title || '__wallaby_frame__';
+    }
+    """
+
+    {method, params} = Commands.call_function(context, js, [element_arg(shared_id)])
 
     case send_bidi(session, method, params) do
-      {:ok, result} ->
-        case ResponseParser.extract_context(result) do
-          {:ok, _context} -> {:ok, nil}
-          error -> error
+      {:ok, _} ->
+        # Find the child context from the context tree
+        case find_frame_context(session, shared_id) do
+          {:ok, frame_context} ->
+            Process.put({:wallaby_frame_context, sess.id}, frame_context)
+            {:ok, nil}
+
+          _ ->
+            {:ok, nil}
         end
 
       error ->
@@ -576,52 +655,95 @@ defmodule Wallaby.BiDiClient do
     end
   end
 
-  def focus_frame(session, %Element{bidi_shared_id: shared_id})
-      when not is_nil(shared_id) do
-    context = browsing_context(session)
-
-    js = "(frame) => frame.contentWindow ? true : false"
-
-    {method, params} =
-      Commands.call_function(context, js, [element_arg(shared_id)])
-
-    case send_bidi(session, method, params) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
-    end
-  end
-
   def focus_frame(session, frame_index) when is_integer(frame_index) do
-    context = browsing_context(session)
+    sess = session(session)
 
-    js = """
-    (index) => {
-      const frames = document.querySelectorAll('iframe, frame');
-      if (index < frames.length) return true;
-      throw new Error('Frame index out of bounds');
-    }
-    """
+    case get_child_contexts(session) do
+      {:ok, contexts} when length(contexts) > frame_index ->
+        frame_context = Enum.at(contexts, frame_index)
+        Process.put({:wallaby_frame_context, sess.id}, frame_context)
+        {:ok, nil}
 
-    {method, params} =
-      Commands.call_function(context, js, [%{type: "number", value: frame_index}])
-
-    case send_bidi(session, method, params) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
+      _ ->
+        {:ok, nil}
     end
   end
 
   def focus_frame(_session, _frame), do: {:ok, nil}
 
   def focus_parent_frame(session) do
-    context = browsing_context(session)
+    sess = session(session)
+    current = browsing_context(session)
 
-    {method, params} = Commands.evaluate(context, "window.parent !== window")
+    # Find parent context from the tree
+    {method, params} = Commands.get_tree()
 
     case send_bidi(session, method, params) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
+      {:ok, result} ->
+        parent = find_parent_context(result, current)
+
+        if parent do
+          Process.put({:wallaby_frame_context, sess.id}, parent)
+        else
+          Process.delete({:wallaby_frame_context, sess.id})
+        end
+
+        {:ok, nil}
+
+      _ ->
+        {:ok, nil}
     end
+  end
+
+  defp find_frame_context(session, _shared_id) do
+    context = session(session).browsing_context
+
+    # Get the tree and look for child contexts of the current context
+    {method, params} = Commands.get_tree(%{root: context})
+
+    case send_bidi(session, method, params) do
+      {:ok, %{"contexts" => [ctx | _]}} ->
+        children = ctx["children"] || []
+
+        case children do
+          [child | _] ->
+            # Match by order — BiDi doesn't directly map shared IDs to contexts
+            # For now, find the child context that has a different URL
+            {:ok, child["context"]}
+
+          [] ->
+            {:error, :no_child_contexts}
+        end
+
+      _ ->
+        {:error, :tree_not_found}
+    end
+  end
+
+  defp get_child_contexts(session) do
+    context = browsing_context(session)
+    {method, params} = Commands.get_tree(%{root: context})
+
+    case send_bidi(session, method, params) do
+      {:ok, %{"contexts" => [ctx | _]}} ->
+        children = ctx["children"] || []
+        {:ok, Enum.map(children, & &1["context"])}
+
+      _ ->
+        {:ok, []}
+    end
+  end
+
+  defp find_parent_context(%{"contexts" => contexts}, target) do
+    Enum.find_value(contexts, fn ctx ->
+      children = ctx["children"] || []
+
+      if Enum.any?(children, &(&1["context"] == target)) do
+        ctx["context"]
+      else
+        Enum.find_value(children, &find_parent_context(%{"contexts" => [&1]}, target))
+      end
+    end)
   end
 
   # Key sending
