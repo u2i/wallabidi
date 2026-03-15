@@ -267,13 +267,21 @@ defmodule Wallaby.BiDiClient do
 
     js = """
     (el) => {
-      if (!el.ownerDocument) return false;
-      const style = window.getComputedStyle(el);
-      return style.display !== 'none' &&
-             style.visibility !== 'hidden' &&
-             style.opacity !== '0' &&
-             el.offsetWidth > 0 &&
-             el.offsetHeight > 0;
+      function isVisible(node) {
+        if (!node.ownerDocument || !node.isConnected) return false;
+        if (node.tagName === 'OPTION' || node.tagName === 'OPTGROUP') {
+          const select = node.closest('select');
+          return select ? isVisible(select) : false;
+        }
+        const style = window.getComputedStyle(node);
+        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+        if (node.offsetWidth <= 0 && node.offsetHeight <= 0) return false;
+        const rect = node.getBoundingClientRect();
+        if (rect.right <= 0 || rect.bottom <= 0) return false;
+        if (rect.left >= window.innerWidth || rect.top >= window.innerHeight) return false;
+        return true;
+      }
+      return isVisible(el);
     }
     """
 
@@ -885,7 +893,9 @@ defmodule Wallaby.BiDiClient do
     pid = bidi_pid(session)
     context = browsing_context(session)
 
-    # Subscribe to prompt events
+    # Subscribe at BiDi protocol level and register to receive events
+    {method, params} = Commands.subscribe(["browsingContext.userPromptOpened"])
+    WebSocketClient.send_command(pid, method, params)
     WebSocketClient.subscribe(pid, "browsingContext.userPromptOpened")
 
     # Execute the function that triggers the dialog

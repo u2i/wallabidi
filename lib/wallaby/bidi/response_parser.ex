@@ -30,11 +30,7 @@ defmodule Wallaby.BiDi.ResponseParser do
     map =
       pairs
       |> Enum.map(fn [key, value] ->
-        key_str =
-          case extract_value(key) do
-            {:ok, v} -> v
-            _ -> inspect(key)
-          end
+        key_str = extract_object_key(key)
 
         val =
           case extract_value(value) do
@@ -66,6 +62,15 @@ defmodule Wallaby.BiDi.ResponseParser do
   def extract_value(%{"type" => "bigint", "value" => value}), do: {:ok, value}
 
   def extract_value(other), do: {:error, {:unexpected_value, other}}
+
+  defp extract_object_key(key) when is_binary(key), do: key
+
+  defp extract_object_key(key) do
+    case extract_value(key) do
+      {:ok, v} -> to_string(v)
+      _ -> inspect(key)
+    end
+  end
 
   @doc """
   Extracts element nodes from a locateNodes response.
