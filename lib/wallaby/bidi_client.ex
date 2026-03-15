@@ -27,7 +27,7 @@ defmodule Wallaby.BiDiClient do
   end
 
   defp element_arg(shared_id) do
-    %{type: "element", element: %{sharedId: shared_id}}
+    %{sharedId: shared_id}
   end
 
   # Navigation
