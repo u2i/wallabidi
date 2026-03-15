@@ -1553,6 +1553,106 @@ defmodule Wallaby.Browser do
     Application.get_env(:wallaby, :screenshot_dir, "#{File.cwd!()}/screenshots")
   end
 
+  @doc """
+  Waits until network activity has settled.
+
+  Subscribes to BiDi network events and waits until there are no pending
+  requests for the duration of `idle_time`. This is useful after triggering
+  actions that cause background fetches (XHR, fetch API, etc.).
+
+  For non-BiDi sessions this is a no-op and returns the session immediately.
+
+  ## Options
+
+    * `:timeout` - Maximum time in milliseconds to wait (default: 5000)
+    * `:idle_time` - How long in milliseconds the network must be quiet
+      before it is considered idle (default: 500)
+
+  ## Examples
+
+      session
+      |> visit("/page")
+      |> click(Query.button("Load Data"))
+      |> wait_for_network_idle()
+  """
+  @spec wait_for_network_idle(session, keyword()) :: session
+  def wait_for_network_idle(%Session{} = session, opts \\ []) do
+    if bidi_session?(session) do
+      timeout = Keyword.get(opts, :timeout, 5_000)
+      idle_time = Keyword.get(opts, :idle_time, 500)
+
+      Wallaby.BiDiClient.wait_for_network_idle(session, timeout, idle_time)
+    end
+
+    session
+  end
+
+  @doc """
+  Registers a callback that is invoked for each browser console message.
+
+  The callback receives two arguments: the log level (e.g. `"log"`, `"warn"`,
+  `"error"`) and the message text.
+
+  For non-BiDi sessions this is a no-op and returns the session immediately.
+
+  ## Examples
+
+      session
+      |> on_console(fn level, message ->
+        IO.puts("[console.\#{level}] \#{message}")
+      end)
+      |> visit("/page")
+  """
+  @spec on_console(session, (String.t(), String.t() -> any())) :: session
+  def on_console(%Session{} = session, callback) when is_function(callback, 2) do
+    if bidi_session?(session) do
+      Wallaby.BiDiClient.on_console(session, callback)
+    end
+
+    session
+  end
+
+  @doc """
+  Intercepts network requests matching `url_pattern` and responds with a
+  custom response.
+
+  `response` may be a map with `:status`, `:headers`, and `:body` keys, or a
+  function that receives the request event and returns such a map.
+
+  Only supported for BiDi sessions. Raises `RuntimeError` for non-BiDi
+  sessions.
+
+  ## Examples
+
+      # Static response
+      session
+      |> intercept_request("/api/users", %{
+        status: 200,
+        headers: [%{name: "content-type", value: "application/json"}],
+        body: ~s({"users": []})
+      })
+
+      # Dynamic response
+      session
+      |> intercept_request("/api/*", fn _request ->
+        %{status: 200, headers: [], body: "mocked"}
+      end)
+  """
+  @spec intercept_request(session, String.t(), map() | (map() -> map())) :: session
+  def intercept_request(%Session{} = session, url_pattern, response) do
+    if bidi_session?(session) do
+      Wallaby.BiDiClient.intercept_request(session, url_pattern, response)
+      session
+    else
+      raise RuntimeError,
+            "intercept_request/3 requires a BiDi-capable session. " <>
+              "Make sure your browser supports the WebDriver BiDi protocol."
+    end
+  end
+
+  defp bidi_session?(%Session{bidi_pid: pid}) when not is_nil(pid), do: true
+  defp bidi_session?(_), do: false
+
   @doc false
   def build_file_url(path) do
     "file://" <> (path |> Path.expand() |> URI.encode())

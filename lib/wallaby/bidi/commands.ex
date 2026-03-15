@@ -95,6 +95,33 @@ defmodule Wallaby.BiDi.Commands do
     {"session.subscribe", params}
   end
 
+  # Network commands
+
+  def add_intercept(url_pattern, phases \\ ["beforeRequestSent"]) do
+    {"network.addIntercept",
+     %{
+       phases: phases,
+       urlPatterns: [%{type: "pattern", pattern: url_pattern}]
+     }}
+  end
+
+  def provide_response(request_id, opts \\ %{}) do
+    params =
+      %{request: request_id}
+      |> maybe_merge(:statusCode, opts[:status])
+      |> maybe_merge(:headers, opts[:headers])
+      |> maybe_merge(:body, encode_body(opts[:body]))
+
+    {"network.provideResponse", params}
+  end
+
+  defp maybe_merge(map, _key, nil), do: map
+  defp maybe_merge(map, key, value), do: Map.put(map, key, value)
+
+  defp encode_body(nil), do: nil
+  defp encode_body(body) when is_binary(body), do: %{type: "string", value: body}
+  defp encode_body(body), do: body
+
   # Storage commands
 
   def get_cookies(opts \\ %{}) do

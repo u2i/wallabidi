@@ -393,6 +393,12 @@ defmodule Wallaby.Chrome do
          {:ok, result} <-
            WebSocketClient.send_command(bidi_pid, "browsingContext.getTree", %{}),
          {:ok, context_id} <- ResponseParser.extract_context(result) do
+      # Subscribe to log events at session creation so they buffer from the start.
+      # This enables event-driven log checking without per-command HTTP polling.
+      {method, params} = Wallaby.BiDi.Commands.subscribe(["log.entryAdded"])
+      WebSocketClient.send_command(bidi_pid, method, params)
+      WebSocketClient.subscribe(bidi_pid, "log.entryAdded")
+
       %{session | bidi_pid: bidi_pid, browsing_context: context_id}
     else
       _ -> session

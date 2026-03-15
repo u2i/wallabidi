@@ -892,6 +892,154 @@ defmodule Wallaby.BiDiClient do
     message
   end
 
+  # Network idle waiting
+
+  def wait_for_network_idle(session, timeout, idle_time) do
+    pid = bidi_pid(session)
+
+    # Subscribe to network events
+    {method, params} =
+      Commands.subscribe(["network.beforeRequestSent", "network.responseCompleted"])
+
+    WebSocketClient.send_command(pid, method, params)
+    WebSocketClient.subscribe(pid, "network.beforeRequestSent")
+    WebSocketClient.subscribe(pid, "network.responseCompleted")
+
+    deadline = System.monotonic_time(:millisecond) + timeout
+    do_wait_for_network_idle(0, idle_time, deadline)
+  end
+
+  defp do_wait_for_network_idle(pending, idle_time, deadline) do
+    remaining = deadline - System.monotonic_time(:millisecond)
+
+    if remaining <= 0 do
+      raise RuntimeError, "Timed out waiting for network idle"
+    end
+
+    wait_ms = min(idle_time, remaining)
+
+    receive do
+      {:bidi_event, "network.beforeRequestSent", _event} ->
+        do_wait_for_network_idle(pending + 1, idle_time, deadline)
+
+      {:bidi_event, "network.responseCompleted", _event} ->
+        do_wait_for_network_idle(max(pending - 1, 0), idle_time, deadline)
+    after
+      wait_ms ->
+        if pending == 0 do
+          :ok
+        else
+          do_wait_for_network_idle(pending, idle_time, deadline)
+        end
+    end
+  end
+
+  # Console event listener
+
+  def on_console(session, callback) do
+    pid = bidi_pid(session)
+
+    # Subscribe to log events at the BiDi protocol level (idempotent)
+    {method, params} = Commands.subscribe(["log.entryAdded"])
+    WebSocketClient.send_command(pid, method, params)
+
+    # Spawn a listener process that subscribes itself and calls the callback
+    caller = self()
+
+    spawn_link(fn ->
+      # Subscribe this spawned process to receive log events
+      WebSocketClient.subscribe(pid, "log.entryAdded")
+      console_listener_loop(caller, callback)
+    end)
+
+    :ok
+  end
+
+  defp console_listener_loop(caller, callback) do
+    # Monitor the caller so we stop when the test process exits
+    ref = Process.monitor(caller)
+    do_console_listener_loop(ref, callback)
+  end
+
+  defp do_console_listener_loop(ref, callback) do
+    receive do
+      {:bidi_event, "log.entryAdded", event} ->
+        params = event["params"] || %{}
+        level = params["level"] || "info"
+        text = params["text"] || ""
+        callback.(level, text)
+        do_console_listener_loop(ref, callback)
+
+      {:DOWN, ^ref, :process, _pid, _reason} ->
+        :ok
+    end
+  end
+
+  # Request interception
+
+  def intercept_request(session, url_pattern, response) do
+    pid = bidi_pid(session)
+
+    # Subscribe to network events at the BiDi protocol level
+    {sub_method, sub_params} = Commands.subscribe(["network.beforeRequestSent"])
+    WebSocketClient.send_command(pid, sub_method, sub_params)
+
+    # Add the intercept
+    {method, params} = Commands.add_intercept(url_pattern)
+
+    case send_bidi(session, method, params) do
+      {:ok, _result} ->
+        # Spawn a handler process that subscribes itself and handles intercepted requests
+        caller = self()
+
+        spawn_link(fn ->
+          WebSocketClient.subscribe(pid, "network.beforeRequestSent")
+          intercept_handler_loop(caller, session, response)
+        end)
+
+        :ok
+
+      error ->
+        error
+    end
+  end
+
+  defp intercept_handler_loop(caller, session, response) do
+    ref = Process.monitor(caller)
+    do_intercept_handler_loop(ref, session, response)
+  end
+
+  defp do_intercept_handler_loop(ref, session, response) do
+    receive do
+      {:bidi_event, "network.beforeRequestSent", event} ->
+        request_id = get_in(event, ["params", "request"])
+        is_blocked = get_in(event, ["params", "isBlocked"])
+
+        if request_id && is_blocked do
+          response_map =
+            if is_function(response, 1) do
+              response.(event)
+            else
+              response
+            end
+
+          {method, params} =
+            Commands.provide_response(request_id, %{
+              status: response_map[:status] || 200,
+              headers: response_map[:headers] || [],
+              body: response_map[:body]
+            })
+
+          send_bidi(session, method, params)
+        end
+
+        do_intercept_handler_loop(ref, session, response)
+
+      {:DOWN, ^ref, :process, _pid, _reason} ->
+        :ok
+    end
+  end
+
   # Log collection via BiDi events
 
   def log(session) do
