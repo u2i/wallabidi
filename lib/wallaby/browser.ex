@@ -1554,11 +1554,12 @@ defmodule Wallaby.Browser do
   end
 
   @doc """
-  Waits until network activity has settled.
+  Waits for the page to settle after an action.
 
   Watches for new HTTP request activity via BiDi network events. When no
-  new requests have started for the duration of `idle_time`, the network
-  is considered idle.
+  new requests have started for the duration of `idle_time`, the page is
+  considered settled. This replaces `Process.sleep` and element-polling
+  workarounds for waiting on async operations.
 
   Works correctly with persistent connections (LiveView WebSockets, SSE,
   long-polling) since those are established once and don't fire new request
@@ -1570,23 +1571,22 @@ defmodule Wallaby.Browser do
 
     * `:timeout` - Maximum time in milliseconds to wait (default: 5000)
     * `:idle_time` - How long in milliseconds with no new requests before
-      the network is considered idle (default: 500)
+      the page is considered settled (default: 500)
 
   ## Examples
 
       session
-      |> visit("/page")
-      |> click(Query.button("Load Data"))
-      |> wait_for_network_idle()
-      |> assert_has(Query.css(".data-loaded"))
+      |> click(Query.button("Save"))
+      |> settle()
+      |> assert_has(Query.css(".saved"))
   """
-  @spec wait_for_network_idle(session, keyword()) :: session
-  def wait_for_network_idle(%Session{} = session, opts \\ []) do
+  @spec settle(session, keyword()) :: session
+  def settle(%Session{} = session, opts \\ []) do
     if bidi_session?(session) do
       timeout = Keyword.get(opts, :timeout, 5_000)
       idle_time = Keyword.get(opts, :idle_time, 500)
 
-      Wallaby.BiDiClient.wait_for_network_idle(session, timeout, idle_time)
+      Wallaby.BiDiClient.settle(session, timeout, idle_time)
     end
 
     session

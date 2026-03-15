@@ -899,7 +899,7 @@ defmodule Wallaby.BiDiClient do
   # correctly with persistent connections (WebSockets, SSE, long-polling)
   # since those are established once and don't fire new request events.
 
-  def wait_for_network_idle(session, timeout, idle_time) do
+  def settle(session, timeout, idle_time) do
     pid = bidi_pid(session)
 
     {method, params} = Commands.subscribe(["network.beforeRequestSent"])
@@ -907,10 +907,10 @@ defmodule Wallaby.BiDiClient do
     WebSocketClient.subscribe(pid, "network.beforeRequestSent")
 
     deadline = System.monotonic_time(:millisecond) + timeout
-    do_wait_for_network_idle(idle_time, deadline)
+    do_settle(idle_time, deadline)
   end
 
-  defp do_wait_for_network_idle(idle_time, deadline) do
+  defp do_settle(idle_time, deadline) do
     remaining = deadline - System.monotonic_time(:millisecond)
 
     if remaining <= 0 do
@@ -922,7 +922,7 @@ defmodule Wallaby.BiDiClient do
     receive do
       {:bidi_event, "network.beforeRequestSent", _event} ->
         # New request started — reset the idle timer
-        do_wait_for_network_idle(idle_time, deadline)
+        do_settle(idle_time, deadline)
     after
       wait_ms ->
         # No new requests for idle_time — network is idle
