@@ -911,16 +911,30 @@ defmodule Wallaby.BiDiClient do
   defp drain_log_events do
     receive do
       {:bidi_event, "log.entryAdded", event} ->
-        entry = translate_log_entry(event)
-        [entry | drain_log_events()]
+        case translate_log_entry(event) do
+          :skip -> drain_log_events()
+          entry -> [entry | drain_log_events()]
+        end
     after
       0 -> []
     end
   end
 
+  # Filter out chromedriver internal messages (BiDi mapper noise)
+  @internal_log_patterns ["Launching Mapper instance"]
+
   defp translate_log_entry(event) do
     params = event["params"] || %{}
+    text = params["text"] || ""
 
+    if Enum.any?(@internal_log_patterns, &String.contains?(text, &1)) do
+      :skip
+    else
+      do_translate_log_entry(params, text)
+    end
+  end
+
+  defp do_translate_log_entry(params, text) do
     level =
       case params["level"] do
         "error" -> "SEVERE"
@@ -937,7 +951,6 @@ defmodule Wallaby.BiDiClient do
         other -> other || "other"
       end
 
-    text = params["text"] || ""
     source_info = params["source"] || %{}
     url = source_info["url"] || ""
     line = params["lineNumber"] || 0

@@ -157,9 +157,10 @@ defmodule Wallaby.Chrome do
   @doc false
   @spec validate() :: :ok | {:error, DependencyError.t()}
   def validate do
-    case find_chrome_executable() do
-      {:ok, _} -> :ok
-      {:error, _} = error -> error
+    with {:ok, chromedriver_version} <- get_chromedriver_version(),
+         {:ok, chrome_version} <- get_chrome_version(),
+         :ok <- minimum_version_check(chromedriver_version) do
+      version_compare(chrome_version, chromedriver_version)
     end
   end
 
@@ -284,6 +285,49 @@ defmodule Wallaby.Chrome do
       end
 
     Enum.map(result, &String.to_integer/1)
+  end
+
+  defp version_compare(chrome_version, chromedriver_version) do
+    case chrome_version == chromedriver_version do
+      true ->
+        :ok
+
+      _ ->
+        exception =
+          DependencyError.exception("""
+          Looks like you're trying to run Wallaby with a mismatched version of Chrome: #{Enum.join(chrome_version, ".")} and chromedriver: #{Enum.join(chromedriver_version, ".")}.
+          Chrome and chromedriver must match to a major, minor, and build version.
+          """)
+
+        IO.warn(exception.message)
+
+        :ok
+    end
+  end
+
+  defp minimum_version_check([major_version, _minor_version, _build_version])
+       when major_version > 2 do
+    :ok
+  end
+
+  defp minimum_version_check([major_version, minor_version, _build_version])
+       when major_version == 2 and minor_version >= 30 do
+    :ok
+  end
+
+  defp minimum_version_check([major_version, minor_version])
+       when major_version == 2 and minor_version >= 30 do
+    :ok
+  end
+
+  defp minimum_version_check(_version) do
+    exception =
+      DependencyError.exception("""
+      Looks like you're trying to run an older version of chromedriver. Wallaby needs at least
+      chromedriver 2.30 to run correctly.
+      """)
+
+    {:error, exception}
   end
 
   @doc false
