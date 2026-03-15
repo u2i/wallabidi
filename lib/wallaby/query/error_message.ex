@@ -1,7 +1,7 @@
-defmodule Wallaby.Query.ErrorMessage do
+defmodule Wallabidi.Query.ErrorMessage do
   @moduledoc false
 
-  alias Wallaby.Query
+  alias Wallabidi.Query
 
   @doc """
   Compose an error message based on the error method and query information

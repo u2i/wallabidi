@@ -1,8 +1,8 @@
-defmodule Wallaby.SessionStoreTest do
+defmodule Wallabidi.SessionStoreTest do
   @moduledoc false
   use ExUnit.Case
-  alias Wallaby.SessionStore
-  alias Wallaby.Session
+  alias Wallabidi.SessionStore
+  alias Wallabidi.Session
 
   use EventEmitter, :receiver
 
@@ -139,7 +139,7 @@ defmodule Wallaby.SessionStoreTest do
           await(
             :monitor,
             %{monitored_session: %Session{id: "session#{i}#{j}"}},
-            Wallaby.SessionStore
+            Wallabidi.SessionStore
           )
 
     # assert the correct number of sessions are being monitored
@@ -159,7 +159,7 @@ defmodule Wallaby.SessionStoreTest do
           await(
             :DOWN,
             %{monitored_session: %Session{id: "session#{i}#{j}"}},
-            Wallaby.SessionStore
+            Wallabidi.SessionStore
           )
 
     # assert there are no longer any sessions being monitored

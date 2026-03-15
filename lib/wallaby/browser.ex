@@ -1,4 +1,4 @@
-defmodule Wallaby.Browser do
+defmodule Wallabidi.Browser do
   @moduledoc """
   The Browser module is the entrypoint for interacting with a real browser.
 
@@ -67,7 +67,7 @@ defmodule Wallaby.Browser do
   page
   |> find(Query.css(".todo-form"), fn(form) ->
     form
-    |> fill_in(Query.text_field("What needs doing?"), with: "Write Wallaby Documentation")
+    |> fill_in(Query.text_field("What needs doing?"), with: "Write Wallabidi Documentation")
     |> click(Query.button("Save"))
   end)
   |> find(Query.css(".success-notification"), fn(notification) ->
@@ -99,19 +99,19 @@ defmodule Wallaby.Browser do
   end
 
   assert page
-  |> create_todo("Write Wallaby Documentation")
+  |> create_todo("Write Wallabidi Documentation")
   |> todo_was_created?
   ```
   """
 
-  alias Wallaby.CookieError
-  alias Wallaby.Element
-  alias Wallaby.ExpectationNotMetError
-  alias Wallaby.NoBaseUrlError
-  alias Wallaby.Query
-  alias Wallaby.Query.ErrorMessage
-  alias Wallaby.Session
-  alias Wallaby.StaleReferenceError
+  alias Wallabidi.CookieError
+  alias Wallabidi.Element
+  alias Wallabidi.ExpectationNotMetError
+  alias Wallabidi.NoBaseUrlError
+  alias Wallabidi.Query
+  alias Wallabidi.Query.ErrorMessage
+  alias Wallabidi.Session
+  alias Wallabidi.StaleReferenceError
 
   @type t :: any()
 
@@ -643,13 +643,13 @@ defmodule Wallaby.Browser do
   list of atoms, which are automatically converted into the corresponding key
   codes.
 
-  For a list of available key codes see `Wallaby.Helpers.KeyCodes`.
+  For a list of available key codes see `Wallabidi.Helpers.KeyCodes`.
 
   ## Example
 
-      iex> Wallaby.Browser.send_keys(session, ["Example Text", :enter])
-      iex> Wallaby.Browser.send_keys(session, [:enter])
-      iex> Wallaby.Browser.send_keys(session, [:shift, :enter])
+      iex> Wallabidi.Browser.send_keys(session, ["Example Text", :enter])
+      iex> Wallabidi.Browser.send_keys(session, [:enter])
+      iex> Wallabidi.Browser.send_keys(session, [:shift, :enter])
 
   ### Note
 
@@ -945,14 +945,14 @@ defmodule Wallaby.Browser do
 
         case validate_html(parent, query) do
           {:ok, _} ->
-            raise Wallaby.QueryError, ErrorMessage.message(query, :not_found)
+            raise Wallabidi.QueryError, ErrorMessage.message(query, :not_found)
 
           {:error, html_error} ->
-            raise Wallaby.QueryError, ErrorMessage.message(query, html_error)
+            raise Wallabidi.QueryError, ErrorMessage.message(query, html_error)
         end
 
       {:error, e} ->
-        raise Wallaby.QueryError, ErrorMessage.message(query, e)
+        raise Wallabidi.QueryError, ErrorMessage.message(query, e)
     end
   end
 
@@ -1164,12 +1164,12 @@ defmodule Wallaby.Browser do
                     Query.ErrorMessage.message(query, :not_found)
 
             {:error, e} ->
-              raise Wallaby.QueryError,
+              raise Wallabidi.QueryError,
                     Query.ErrorMessage.message(query, e)
 
             _ ->
-              raise Wallaby.ExpectationNotMetError,
-                    "Wallaby has encountered an internal error: #{inspect(error)} with session: #{inspect(parent)}"
+              raise Wallabidi.ExpectationNotMetError,
+                    "Wallabidi has encountered an internal error: #{inspect(error)} with session: #{inspect(parent)}"
           end
       end
     end
@@ -1194,14 +1194,14 @@ defmodule Wallaby.Browser do
 
       case execute_query(parent, query) do
         {:error, :invalid_selector} ->
-          raise Wallaby.QueryError,
+          raise Wallabidi.QueryError,
                 Query.ErrorMessage.message(query, :invalid_selector)
 
         {:error, _not_found} ->
           parent
 
         {:ok, query} ->
-          raise Wallaby.ExpectationNotMetError,
+          raise Wallabidi.ExpectationNotMetError,
                 Query.ErrorMessage.message(query, :found)
       end
     end
@@ -1509,7 +1509,7 @@ defmodule Wallaby.Browser do
   end
 
   defp max_wait_time do
-    Application.get_env(:wallaby, :max_wait_time, @default_max_wait_time)
+    Application.get_env(:wallabidi, :max_wait_time, @default_max_wait_time)
   end
 
   defp request_url(path) do
@@ -1520,7 +1520,7 @@ defmodule Wallaby.Browser do
   end
 
   defp base_url do
-    Application.get_env(:wallaby, :base_url) || ""
+    Application.get_env(:wallabidi, :base_url) || ""
   end
 
   defp path_for_screenshot(name) do
@@ -1537,7 +1537,7 @@ defmodule Wallaby.Browser do
   end
 
   defp screenshot_dir do
-    Application.get_env(:wallaby, :screenshot_dir, "#{File.cwd!()}/screenshots")
+    Application.get_env(:wallabidi, :screenshot_dir, "#{File.cwd!()}/screenshots")
   end
 
   @doc """
@@ -1583,7 +1583,7 @@ defmodule Wallaby.Browser do
       timeout = Keyword.get(opts, :timeout, 5_000)
       idle_time = Keyword.get(opts, :idle_time, 500)
 
-      Wallaby.BiDiClient.settle(session, timeout, idle_time)
+      Wallabidi.BiDiClient.settle(session, timeout, idle_time)
     end
 
     session
@@ -1608,7 +1608,7 @@ defmodule Wallaby.Browser do
   @spec on_console(session, (String.t(), String.t() -> any())) :: session
   def on_console(%Session{} = session, callback) when is_function(callback, 2) do
     if bidi_session?(session) do
-      Wallaby.BiDiClient.on_console(session, callback)
+      Wallabidi.BiDiClient.on_console(session, callback)
     end
 
     session
@@ -1643,7 +1643,7 @@ defmodule Wallaby.Browser do
   @spec intercept_request(session, String.t(), map() | (map() -> map())) :: session
   def intercept_request(%Session{} = session, url_pattern, response) do
     if bidi_session?(session) do
-      Wallaby.BiDiClient.intercept_request(session, url_pattern, response)
+      Wallabidi.BiDiClient.intercept_request(session, url_pattern, response)
       session
     else
       raise RuntimeError,

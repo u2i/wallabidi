@@ -1,7 +1,7 @@
-defmodule Wallaby.Driver.LogCheckerTest do
+defmodule Wallabidi.Driver.LogCheckerTest do
   use ExUnit.Case, async: true
 
-  alias Wallaby.Driver.LogChecker
+  alias Wallabidi.Driver.LogChecker
 
   defmodule FakeDriver do
     def parse_log(%{"level" => "SEVERE", "source" => "javascript", "message" => msg}) do

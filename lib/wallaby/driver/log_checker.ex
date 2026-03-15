@@ -1,4 +1,4 @@
-defmodule Wallaby.Driver.LogChecker do
+defmodule Wallabidi.Driver.LogChecker do
   @moduledoc false
 
   # Drains buffered BiDi log events from the process mailbox and

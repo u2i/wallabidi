@@ -1,4 +1,4 @@
-defmodule Wallaby.SettingsTestHelpers do
+defmodule Wallabidi.SettingsTestHelpers do
   @moduledoc """
   Test helpers for working with app environments
   """

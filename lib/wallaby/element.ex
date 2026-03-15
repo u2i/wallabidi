@@ -1,4 +1,4 @@
-defmodule Wallaby.Element do
+defmodule Wallabidi.Element do
   @moduledoc """
   Defines an Element Struct and interactions with Elements.
 
@@ -25,7 +25,7 @@ defmodule Wallaby.Element do
   Unlike `Browser` the actions in `Element` do not retry if the element becomes stale. Instead an exception will be raised.
   """
 
-  alias Wallaby.StaleReferenceError
+  alias Wallabidi.StaleReferenceError
 
   defstruct [:url, :session_url, :parent, :id, :driver, :bidi_shared_id, screenshots: []]
 
@@ -80,7 +80,7 @@ defmodule Wallaby.Element do
     case driver.click(element) do
       {:error, :obscured} ->
         if retry_count > 4 do
-          raise Wallaby.ExpectationNotMetError, """
+          raise Wallabidi.ExpectationNotMetError, """
           The element you tried to click is obscured by another element.
           """
         else
@@ -269,13 +269,13 @@ defmodule Wallaby.Element do
   defp raise_error(error), do: raise(RuntimeError, inspect(error))
 end
 
-defimpl Inspect, for: Wallaby.Element do
+defimpl Inspect, for: Wallabidi.Element do
   import Inspect.Algebra
 
   def inspect(element, opts) do
     additional_output =
       try do
-        outer_html = Wallaby.Element.attr(element, "outerHTML")
+        outer_html = Wallabidi.Element.attr(element, "outerHTML")
 
         [
           "\n\n",

@@ -1,5 +1,5 @@
-defmodule Wallaby.Integration.Browser.PageSourceTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.Browser.PageSourceTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
   test "page_source/1 retrieves the source of the current page", %{session: session} do
     source =

@@ -1,5 +1,5 @@
-defmodule Wallaby.Integration.Browser.AttrTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.Browser.AttrTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
   test "can get the attributes of a query", %{session: session} do
     class =

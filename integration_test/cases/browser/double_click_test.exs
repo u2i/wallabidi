@@ -1,5 +1,5 @@
-defmodule Wallaby.Integration.Browser.DoubleClickTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.Browser.DoubleClickTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
   setup %{session: session} do
     page = visit(session, "click.html")

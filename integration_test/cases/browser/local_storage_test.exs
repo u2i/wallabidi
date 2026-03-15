@@ -1,8 +1,8 @@
-defmodule Wallaby.Integration.Browser.LocalStorageTest do
+defmodule Wallabidi.Integration.Browser.LocalStorageTest do
   use ExUnit.Case, async: false
-  import Wallaby.Integration.SessionCase, only: [start_test_session: 0]
+  import Wallabidi.Integration.SessionCase, only: [start_test_session: 0]
 
-  use Wallaby.DSL
+  use Wallabidi.DSL
 
   @get_value_script "return localStorage.getItem('test')"
   @set_value_script "localStorage.setItem('test', 'foo')"
@@ -35,7 +35,7 @@ defmodule Wallaby.Integration.Browser.LocalStorageTest do
 
     assert_received {:callback2, nil}
 
-    Wallaby.end_session(session)
+    Wallabidi.end_session(session)
     {:ok, new_session} = start_test_session()
 
     assert session.server == new_session.server

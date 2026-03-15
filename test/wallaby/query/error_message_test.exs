@@ -1,8 +1,8 @@
-defmodule Wallaby.Query.ErrorMessageTest do
+defmodule Wallabidi.Query.ErrorMessageTest do
   use ExUnit.Case, async: true
 
-  alias Wallaby.Query
-  alias Wallaby.Query.ErrorMessage
+  alias Wallabidi.Query
+  alias Wallabidi.Query.ErrorMessage
 
   describe "message/1" do
     test "inclusion of binary 'text' condition when present in css query" do

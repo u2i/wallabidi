@@ -1,8 +1,8 @@
-defmodule Wallaby.BiDiClientTest do
+defmodule Wallabidi.BiDiClientTest do
   use ExUnit.Case, async: true
 
-  alias Wallaby.BiDiClient
-  alias Wallaby.{Element, Session}
+  alias Wallabidi.BiDiClient
+  alias Wallabidi.{Element, Session}
 
   # These tests verify the settle logic which uses process mailbox
   # messages rather than requiring a real browser connection.

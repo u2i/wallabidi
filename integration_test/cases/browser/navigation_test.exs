@@ -1,5 +1,5 @@
-defmodule Wallaby.Integration.Browser.NavigationTest do
-  use Wallaby.Integration.SessionCase, async: false
+defmodule Wallabidi.Integration.Browser.NavigationTest do
+  use Wallabidi.Integration.SessionCase, async: false
 
   test "navigating by path only", %{session: session} do
     visit(session, "page_1.html")

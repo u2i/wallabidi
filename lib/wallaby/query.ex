@@ -1,9 +1,9 @@
-defmodule Wallaby.Query do
+defmodule Wallabidi.Query do
   @moduledoc ~S"""
   Provides the query DSL.
 
   Queries are used to locate and retrieve DOM elements from a browser (see
-  `Wallaby.Browser`). You create queries like so:
+  `Wallabidi.Browser`). You create queries like so:
 
   ```
   Query.css(".some-css")
@@ -71,18 +71,18 @@ defmodule Wallaby.Query do
   ## What does my query do?
 
   Wanna check out what exactly your query will do? Look no further than
-  `Wallaby.Query.compile/1` - it takes a query and returns the CSS or xpath
+  `Wallabidi.Query.compile/1` - it takes a query and returns the CSS or xpath
   query that will be sent to the driver:
 
-      iex> Wallaby.Query.compile Wallaby.Query.text("my text")
+      iex> Wallabidi.Query.compile Wallabidi.Query.text("my text")
       {:xpath, ".//*[contains(normalize-space(text()), \"my text\")]"}
 
   So, whenever you're not sure whatever a specific query will do just compile
   it to get all the details!
   """
   alias __MODULE__
-  alias Wallaby.Element
-  alias Wallaby.Query.XPath
+  alias Wallabidi.Element
+  alias Wallabidi.Query.XPath
 
   defstruct method: nil,
             selector: nil,
@@ -254,7 +254,7 @@ defmodule Wallaby.Query do
   end
 
   @doc """
-  See `Wallaby.Query.fillable_field/2`.
+  See `Wallabidi.Query.fillable_field/2`.
   """
   def text_field(selector, opts \\ []) do
     %Query{
@@ -461,9 +461,9 @@ defmodule Wallaby.Query do
   @doc """
   Compiles a query into CSS or xpath so its ready to be sent to the driver
 
-      iex> Wallaby.Query.compile Wallaby.Query.text("my text")
+      iex> Wallabidi.Query.compile Wallabidi.Query.text("my text")
       {:xpath, ".//*[contains(normalize-space(text()), \\"my text\\")]"}
-      iex> Wallaby.Query.compile Wallaby.Query.css("#some-id")
+      iex> Wallabidi.Query.compile Wallabidi.Query.css("#some-id")
       {:css, "#some-id"}
   """
   @spec compile(t) :: compiled

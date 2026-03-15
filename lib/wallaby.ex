@@ -1,37 +1,37 @@
-defmodule Wallaby do
+defmodule Wallabidi do
   @moduledoc """
   A concurrent feature testing library.
 
   ## Configuration
 
-  Wallaby supports the following options:
+  Wallabidi supports the following options:
 
   * `:otp_app` - The name of your OTP application. This is used to check out your Ecto repos into the SQL Sandbox.
   * `:screenshot_dir` - The directory to store screenshots.
-  * `:screenshot_on_failure` - if Wallaby should take screenshots on test failures (defaults to `false`).
-  * `:max_wait_time` - The amount of time that Wallaby should wait to find an element on the page. (defaults to `3_000`)
-  * `:js_errors` - if Wallaby should re-throw JavaScript errors in elixir (defaults to true).
+  * `:screenshot_on_failure` - if Wallabidi should take screenshots on test failures (defaults to `false`).
+  * `:max_wait_time` - The amount of time that Wallabidi should wait to find an element on the page. (defaults to `3_000`)
+  * `:js_errors` - if Wallabidi should re-throw JavaScript errors in elixir (defaults to true).
   * `:js_logger` - IO device where JavaScript console logs are written to. Defaults to :stdio. This option can also be set to a file or any other io device. You can disable JavaScript console logging by setting this to `nil`.
   """
 
   use Application
 
-  alias Wallaby.Session
-  alias Wallaby.SessionStore
+  alias Wallabidi.Session
+  alias Wallabidi.SessionStore
 
   @doc false
   def start(_type, _args) do
-    case Wallaby.Chrome.validate() do
+    case Wallabidi.Chrome.validate() do
       :ok -> :ok
       {:error, exception} -> raise exception
     end
 
     children = [
-      {Wallaby.Chrome, [name: Wallaby.Driver.Supervisor]},
-      {Wallaby.SessionStore, [name: Wallaby.SessionStore]}
+      {Wallabidi.Chrome, [name: Wallabidi.Driver.Supervisor]},
+      {Wallabidi.SessionStore, [name: Wallabidi.SessionStore]}
     ]
 
-    opts = [strategy: :one_for_one, name: Wallaby.Supervisor]
+    opts = [strategy: :one_for_one, name: Wallabidi.Supervisor]
     Supervisor.start_link(children, opts)
   end
 
@@ -52,13 +52,13 @@ defmodule Wallaby do
   @message_list Query.css(".messages")
 
   test "That multiple sessions work" do
-    {:ok, user1} = Wallaby.start_session
+    {:ok, user1} = Wallabidi.start_session
     user1
     |> visit("/page.html")
     |> fill_in(@message_field, with: "Hello there!")
     |> click(@share_button)
 
-    {:ok, user2} = Wallaby.start_session
+    {:ok, user2} = Wallabidi.start_session
     user2
     |> visit("/page.html")
     |> fill_in(@message_field, with: "Hello yourself")
@@ -71,7 +71,7 @@ defmodule Wallaby do
   """
   @spec start_session([start_session_opts]) :: {:ok, Session.t()} | {:error, reason}
   def start_session(opts \\ []) do
-    with {:ok, session} <- Wallaby.Chrome.start_session(opts),
+    with {:ok, session} <- Wallabidi.Chrome.start_session(opts),
          :ok <- SessionStore.monitor(session),
          do: {:ok, session}
   end
@@ -82,22 +82,22 @@ defmodule Wallaby do
   @spec end_session(Session.t()) :: :ok | {:error, reason}
   def end_session(%Session{} = session) do
     with :ok <- SessionStore.demonitor(session) do
-      Wallaby.Chrome.end_session(session)
+      Wallabidi.Chrome.end_session(session)
     end
   end
 
   @doc false
   def screenshot_on_failure? do
-    Application.get_env(:wallaby, :screenshot_on_failure)
+    Application.get_env(:wallabidi, :screenshot_on_failure)
   end
 
   @doc false
   def js_errors? do
-    Application.get_env(:wallaby, :js_errors, true)
+    Application.get_env(:wallabidi, :js_errors, true)
   end
 
   @doc false
   def js_logger do
-    Application.get_env(:wallaby, :js_logger, :stdio)
+    Application.get_env(:wallabidi, :js_logger, :stdio)
   end
 end

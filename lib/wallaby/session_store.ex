@@ -1,4 +1,4 @@
-defmodule Wallaby.SessionStore do
+defmodule Wallabidi.SessionStore do
   @moduledoc false
   use GenServer
   use EventEmitter, :emitter
@@ -85,7 +85,7 @@ defmodule Wallaby.SessionStore do
     # Spawn cleanup to avoid blocking the GenServer —
     # end_session uses mint_request which does `receive` and would
     # intercept GenServer messages if run inline.
-    Task.start(fn -> Wallaby.Chrome.end_session(session) end)
+    Task.start(fn -> Wallabidi.Chrome.end_session(session) end)
 
     :ets.delete(state.ets_table, {ref, session.id, pid})
 
@@ -101,7 +101,7 @@ defmodule Wallaby.SessionStore do
 
   defp cleanup_session({_, session}) do
     # Run in a Task so mint_request's `receive` doesn't interfere
-    task = Task.async(fn -> Wallaby.Chrome.end_session(session) end)
+    task = Task.async(fn -> Wallabidi.Chrome.end_session(session) end)
     Task.yield(task, 5_000) || Task.shutdown(task)
   rescue
     _ -> :ok

@@ -1,7 +1,7 @@
-defmodule Wallaby.BiDi.CommandsTest do
+defmodule Wallabidi.BiDi.CommandsTest do
   use ExUnit.Case, async: true
 
-  alias Wallaby.BiDi.Commands
+  alias Wallabidi.BiDi.Commands
 
   describe "navigate/2" do
     test "builds browsingContext.navigate command" do

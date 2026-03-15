@@ -1,6 +1,6 @@
-defmodule Wallaby.BiDi.ResponseParser do
+defmodule Wallabidi.BiDi.ResponseParser do
   @moduledoc false
-  # Translates BiDi response formats into the shapes Wallaby expects.
+  # Translates BiDi response formats into the shapes Wallabidi expects.
 
   @doc """
   Extracts a primitive value from a BiDi script result.
@@ -103,7 +103,7 @@ defmodule Wallaby.BiDi.ResponseParser do
   def extract_nodes(other), do: {:error, {:unexpected_nodes_response, other}}
 
   @doc """
-  Converts BiDi element nodes into Wallaby Element structs.
+  Converts BiDi element nodes into Wallabidi Element structs.
   """
   def cast_elements(parent, nodes) do
     Enum.map(nodes, fn {shared_id, node} ->
@@ -115,9 +115,9 @@ defmodule Wallaby.BiDi.ResponseParser do
       # Store the mapping from element ID to shared ID so that
       # WebDriver-style element references (used in execute_script args)
       # can be resolved back to BiDi shared IDs.
-      Process.put({:wallaby_element_shared_id, backend_node_id}, shared_id)
+      Process.put({:wallabidi_element_shared_id, backend_node_id}, shared_id)
 
-      %Wallaby.Element{
+      %Wallabidi.Element{
         id: backend_node_id,
         session_url: parent.session_url,
         url: parent.session_url <> "/element/#{backend_node_id}",

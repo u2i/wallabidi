@@ -1,9 +1,9 @@
-defmodule Wallaby.Chrome.LoggerTest do
+defmodule Wallabidi.Chrome.LoggerTest do
   use ExUnit.Case, async: false
 
-  alias Wallaby.Chrome.Logger
+  alias Wallabidi.Chrome.Logger
   import ExUnit.CaptureIO
-  alias Wallaby.SettingsTestHelpers
+  alias Wallabidi.SettingsTestHelpers
 
   describe "parse_log/1" do
     test "removes line numbers from the end of INFO logs" do
@@ -55,8 +55,8 @@ defmodule Wallaby.Chrome.LoggerTest do
     end
 
     test "can be disabled" do
-      SettingsTestHelpers.ensure_setting_is_reset(:wallaby, :js_logger)
-      Application.put_env(:wallaby, :js_logger, nil)
+      SettingsTestHelpers.ensure_setting_is_reset(:wallabidi, :js_logger)
+      Application.put_env(:wallabidi, :js_logger, nil)
 
       fun = fn ->
         "test log"

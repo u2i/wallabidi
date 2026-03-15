@@ -1,4 +1,4 @@
-defmodule Wallaby.Helpers.KeyCodes do
+defmodule Wallabidi.Helpers.KeyCodes do
   @moduledoc """
   Shortcuts for various keys.
 

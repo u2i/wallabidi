@@ -1,4 +1,4 @@
-defmodule Wallaby.Chrome.Chromedriver.ReadinessChecker do
+defmodule Wallabidi.Chrome.Chromedriver.ReadinessChecker do
   @moduledoc false
 
   @type url :: String.t()

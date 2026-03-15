@@ -1,5 +1,5 @@
-defmodule Wallaby.Integration.Element.SendKeysTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.Element.SendKeysTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
   setup %{session: session} do
     {:ok, page: visit(session, "forms.html")}

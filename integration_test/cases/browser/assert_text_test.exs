@@ -1,7 +1,7 @@
-defmodule Wallaby.Integration.Browser.AssertTextTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.Browser.AssertTextTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
-  alias Wallaby.ExpectationNotMetError
+  alias Wallabidi.ExpectationNotMetError
 
   test "has_text?/2 waits for presence of text and returns a bool", %{session: session} do
     element =

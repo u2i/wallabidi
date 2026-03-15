@@ -1,11 +1,11 @@
-defmodule Wallaby.Integration.SessionCase do
+defmodule Wallabidi.Integration.SessionCase do
   @moduledoc false
   use ExUnit.CaseTemplate
 
   using do
     quote do
-      use Wallaby.DSL
-      import Wallaby.Integration.SessionCase
+      use Wallabidi.DSL
+      import Wallabidi.Integration.SessionCase
     end
   end
 
@@ -15,7 +15,7 @@ defmodule Wallaby.Integration.SessionCase do
   Starts a test session with the default opts for the given driver
   """
   def start_test_session(opts \\ []) do
-    retry(2, fn -> Wallaby.start_session(opts) end)
+    retry(2, fn -> Wallabidi.start_session(opts) end)
   end
 
   @doc """

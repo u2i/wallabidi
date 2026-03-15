@@ -1,10 +1,10 @@
 import Config
 
-config :wallaby,
-  tmp_dir_prefix: "wallaby_test"
+config :wallabidi,
+  tmp_dir_prefix: "wallabidi_test"
 
-if remote_url = System.get_env("WALLABY_CHROMEDRIVER_REMOTE_URL") do
-  config :wallaby,
+if remote_url = System.get_env("WALLABIDI_CHROMEDRIVER_REMOTE_URL") do
+  config :wallabidi,
     chromedriver: [
       remote_url: remote_url
     ]

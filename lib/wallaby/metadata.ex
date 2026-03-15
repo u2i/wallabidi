@@ -1,4 +1,4 @@
-defmodule Wallaby.Metadata do
+defmodule Wallabidi.Metadata do
   @moduledoc false
 
   # Metadata is used to encode information about the browser and test. This
@@ -48,7 +48,7 @@ defmodule Wallaby.Metadata do
     |> :erlang.binary_to_term()
     |> case do
       {:v1, metadata} -> metadata
-      _ -> raise Wallaby.BadMetadataError, message: "#{encoded_metadata} is not valid"
+      _ -> raise Wallabidi.BadMetadataError, message: "#{encoded_metadata} is not valid"
     end
   end
 end

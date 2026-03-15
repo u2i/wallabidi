@@ -1,11 +1,11 @@
-defmodule Wallaby.Chrome do
+defmodule Wallabidi.Chrome do
   @moduledoc """
   The Chrome driver uses chromedriver and WebDriver BiDi to control Chrome.
 
   ## Usage
 
   ```elixir
-  {:ok, session} = Wallaby.start_session()
+  {:ok, session} = Wallabidi.start_session()
   ```
 
   ## Configuration
@@ -15,7 +15,7 @@ defmodule Wallaby.Chrome do
   Chrome will run in headless mode by default.
 
   ```elixir
-  config :wallaby,
+  config :wallabidi,
     chromedriver: [
       headless: false
     ]
@@ -24,7 +24,7 @@ defmodule Wallaby.Chrome do
   ### Capabilities
 
   ```elixir
-  config :wallaby,
+  config :wallabidi,
     chromedriver: [
       capabilities: %{
         "goog:chromeOptions": %{args: ["--headless"]}
@@ -35,7 +35,7 @@ defmodule Wallaby.Chrome do
   ### ChromeDriver binary
 
   ```elixir
-  config :wallaby,
+  config :wallabidi,
     chromedriver: [
       path: "path/to/chromedriver"
     ]
@@ -44,7 +44,7 @@ defmodule Wallaby.Chrome do
   ### Chrome binary
 
   ```elixir
-  config :wallaby,
+  config :wallabidi,
     chromedriver: [
       binary: "path/to/chrome"
     ]
@@ -55,27 +55,27 @@ defmodule Wallaby.Chrome do
   To connect to a ChromeDriver running in a separate container (e.g. Docker):
 
   ```elixir
-  config :wallaby,
+  config :wallabidi,
     chromedriver: [
       remote_url: "http://chrome:4444/"
     ]
   ```
 
-  When `remote_url` is set, Wallaby will not start a local ChromeDriver process
+  When `remote_url` is set, Wallabidi will not start a local ChromeDriver process
   and will instead connect to the remote instance.
   """
   use Supervisor
 
   @default_readiness_timeout 10_000
 
-  alias Wallaby.BiDi.{Commands, ResponseParser, WebSocketClient}
-  alias Wallaby.BiDiClient
-  alias Wallaby.Chrome.Chromedriver
-  alias Wallaby.{DependencyError, Metadata}
-  import Wallaby.Driver.LogChecker
+  alias Wallabidi.BiDi.{Commands, ResponseParser, WebSocketClient}
+  alias Wallabidi.BiDiClient
+  alias Wallabidi.Chrome.Chromedriver
+  alias Wallabidi.{DependencyError, Metadata}
+  import Wallabidi.Driver.LogChecker
 
   @typedoc """
-  Options to pass to Wallaby.start_session/1
+  Options to pass to Wallabidi.start_session/1
 
   * `:capabilities` - capabilities to pass to chromedriver on session startup
   * `:readiness_timeout` - milliseconds to wait for chromedriver to be ready (default: #{@default_readiness_timeout})
@@ -99,7 +99,7 @@ defmodule Wallaby.Chrome do
       if remote_url() do
         []
       else
-        [Wallaby.Chrome.Chromedriver]
+        [Wallabidi.Chrome.Chromedriver]
       end
 
     Supervisor.init(children, strategy: :one_for_one)
@@ -139,7 +139,7 @@ defmodule Wallaby.Chrome do
           response["sessionId"] ||
           raise "chromedriver did not return a sessionId"
 
-      session = %Wallaby.Session{
+      session = %Wallabidi.Session{
         session_url: base_url <> "session/#{id}",
         url: base_url <> "session/#{id}",
         id: id,
@@ -158,7 +158,7 @@ defmodule Wallaby.Chrome do
   end
 
   defp remote_url do
-    Application.get_env(:wallaby, :chromedriver, []) |> Keyword.get(:remote_url)
+    Application.get_env(:wallabidi, :chromedriver, []) |> Keyword.get(:remote_url)
   end
 
   defp chromedriver_base_url do
@@ -184,7 +184,7 @@ defmodule Wallaby.Chrome do
       # Poll the remote /status endpoint with a timeout
       task =
         Task.async(fn ->
-          Wallaby.Chrome.Chromedriver.ReadinessChecker.wait_until_ready(base_url)
+          Wallabidi.Chrome.Chromedriver.ReadinessChecker.wait_until_ready(base_url)
         end)
 
       case Task.yield(task, timeout) || Task.shutdown(task) do
@@ -237,7 +237,7 @@ defmodule Wallaby.Chrome do
   end
 
   @doc false
-  def end_session(%Wallaby.Session{} = session, _opts \\ []) do
+  def end_session(%Wallabidi.Session{} = session, _opts \\ []) do
     if session.bidi_pid do
       try do
         WebSocketClient.close(session.bidi_pid)
@@ -284,7 +284,7 @@ defmodule Wallaby.Chrome do
   @doc false
   defdelegate dismiss_prompt(session, fun), to: BiDiClient
   @doc false
-  defdelegate parse_log(log), to: Wallaby.Chrome.Logger
+  defdelegate parse_log(log), to: Wallabidi.Chrome.Logger
   @doc false
   defdelegate log(session), to: BiDiClient
 
@@ -527,7 +527,7 @@ defmodule Wallaby.Chrome do
       nil ->
         {:error,
          DependencyError.exception(
-           "Wallaby can't find Chrome. Make sure you have chrome installed and included in your path."
+           "Wallabidi can't find Chrome. Make sure you have chrome installed and included in your path."
          )}
     end
   end
@@ -548,7 +548,7 @@ defmodule Wallaby.Chrome do
       nil ->
         {:error,
          DependencyError.exception(
-           "Wallaby can't find chromedriver. Make sure you have chromedriver installed and included in your path."
+           "Wallabidi can't find chromedriver. Make sure you have chromedriver installed and included in your path."
          )}
     end
   end
@@ -611,7 +611,7 @@ defmodule Wallaby.Chrome do
 
   defp minimum_version_check(_) do
     {:error,
-     DependencyError.exception("Wallaby needs at least chromedriver 2.30 to run correctly.")}
+     DependencyError.exception("Wallabidi needs at least chromedriver 2.30 to run correctly.")}
   end
 
   defp wait_until_ready!(timeout) do
@@ -691,7 +691,7 @@ defmodule Wallaby.Chrome do
   defp resolve_opt(opts, key) do
     case Keyword.fetch(opts, key) do
       {:ok, value} -> value
-      :error -> Application.get_env(:wallaby, :chromedriver, []) |> Keyword.get(key)
+      :error -> Application.get_env(:wallabidi, :chromedriver, []) |> Keyword.get(key)
     end
   end
 end

@@ -1,11 +1,11 @@
-defmodule Wallaby.Integration.JSErrorsTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.JSErrorsTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
   import ExUnit.CaptureIO
-  import Wallaby.Query, only: [button: 1]
+  import Wallabidi.Query, only: [button: 1]
 
   test "it captures javascript errors", %{session: session} do
-    assert_raise Wallaby.JSError, fn ->
+    assert_raise Wallabidi.JSError, fn ->
       session
       |> visit("/errors.html")
       |> click(button("Throw an Error"))

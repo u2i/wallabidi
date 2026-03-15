@@ -1,4 +1,4 @@
-defmodule Wallaby.TestSupport.JSONWireProtocolResponses do
+defmodule Wallabidi.TestSupport.JSONWireProtocolResponses do
   @moduledoc """
   Server response generator for the JSONWireProtocol.
   """

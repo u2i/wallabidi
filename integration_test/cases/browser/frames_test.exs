@@ -1,5 +1,5 @@
-defmodule Wallaby.Integration.Browser.FramesTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.Browser.FramesTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
   test "switching between frames", %{session: session} do
     session

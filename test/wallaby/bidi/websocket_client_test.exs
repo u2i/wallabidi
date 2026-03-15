@@ -1,7 +1,7 @@
-defmodule Wallaby.BiDi.WebSocketClientTest do
+defmodule Wallabidi.BiDi.WebSocketClientTest do
   use ExUnit.Case, async: true
 
-  alias Wallaby.BiDi.WebSocketClient
+  alias Wallabidi.BiDi.WebSocketClient
 
   # These tests verify the GenServer's internal logic by sending it
   # messages directly, without a real WebSocket connection.

@@ -1,6 +1,6 @@
-defmodule Wallaby.Integration.Element.TouchScrollTest do
-  use Wallaby.Integration.SessionCase, async: true
-  alias Wallaby.Integration.Helpers
+defmodule Wallabidi.Integration.Element.TouchScrollTest do
+  use Wallabidi.Integration.SessionCase, async: true
+  alias Wallabidi.Integration.Helpers
 
   setup %{session: session} do
     page = visit(session, "touch.html")

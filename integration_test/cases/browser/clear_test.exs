@@ -1,5 +1,5 @@
-defmodule Wallaby.Integration.Browser.ClearTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.Browser.ClearTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
   test "clearing input", %{session: session} do
     element =

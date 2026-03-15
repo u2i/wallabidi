@@ -1,5 +1,5 @@
-defmodule Wallaby.Integration.Element.TouchDownTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.Element.TouchDownTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
   setup %{session: session} do
     page = visit(session, "touch.html")

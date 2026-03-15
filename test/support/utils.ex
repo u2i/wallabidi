@@ -1,4 +1,4 @@
-defmodule Wallaby.TestSupport.Utils do
+defmodule Wallabidi.TestSupport.Utils do
   @moduledoc """
   This module contains generic testing helpers.
   """

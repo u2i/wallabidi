@@ -1,5 +1,5 @@
-defmodule Wallaby.Integration.Browser.WindowHandlesTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.Browser.WindowHandlesTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
   test "switching between tabs and windows", %{session: session} do
     session

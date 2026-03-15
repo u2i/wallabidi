@@ -1,4 +1,4 @@
-defmodule Wallaby.TestSupport.Chrome.ChromeTestScript do
+defmodule Wallabidi.TestSupport.Chrome.ChromeTestScript do
   @moduledoc """
   Generates scripts that allow testing wallaby's interaction with the
   chromedriver executable

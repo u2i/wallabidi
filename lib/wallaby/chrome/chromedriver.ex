@@ -1,8 +1,8 @@
-defmodule Wallaby.Chrome.Chromedriver do
+defmodule Wallabidi.Chrome.Chromedriver do
   @moduledoc false
 
-  alias Wallaby.Chrome
-  alias Wallaby.Chrome.Chromedriver.Server
+  alias Wallabidi.Chrome
+  alias Wallabidi.Chrome.Chromedriver.Server
 
   def child_spec(_arg) do
     {:ok, chromedriver_path} = Chrome.find_chromedriver_executable()

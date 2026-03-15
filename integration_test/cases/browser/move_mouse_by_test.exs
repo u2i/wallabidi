@@ -1,6 +1,6 @@
-defmodule Wallaby.Integration.Browser.MoveMouseByTest do
-  use Wallaby.Integration.SessionCase, async: true
-  import Wallaby.Browser
+defmodule Wallabidi.Integration.Browser.MoveMouseByTest do
+  use Wallabidi.Integration.SessionCase, async: true
+  import Wallabidi.Browser
 
   setup %{session: session} do
     {:ok, page: visit(session, "move_mouse.html")}

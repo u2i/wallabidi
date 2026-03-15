@@ -1,5 +1,5 @@
-defmodule Wallaby.Integration.Browser.HasCssTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.Browser.HasCssTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
   setup %{session: session} do
     page = visit(session, "page_1.html")

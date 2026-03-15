@@ -1,7 +1,7 @@
-defmodule Wallaby.Driver do
+defmodule Wallabidi.Driver do
   @moduledoc false
 
-  alias Wallaby.{Element, Query, Session}
+  alias Wallabidi.{Element, Query, Session}
 
   @type reason :: :not_implemented | :not_supported | any
   @type url :: String.t()

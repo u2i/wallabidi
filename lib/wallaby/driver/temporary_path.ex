@@ -1,4 +1,4 @@
-defmodule Wallaby.Driver.TemporaryPath do
+defmodule Wallabidi.Driver.TemporaryPath do
   @moduledoc false
 
   @spec generate(String.t()) :: String.t()

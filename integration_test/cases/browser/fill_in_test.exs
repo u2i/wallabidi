@@ -1,5 +1,5 @@
-defmodule Wallaby.Integration.Browser.FillInTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.Browser.FillInTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
   setup %{session: session} do
     page =
@@ -63,13 +63,13 @@ defmodule Wallaby.Integration.Browser.FillInTest do
   end
 
   test "checks for labels without for attributes", %{page: page} do
-    assert_raise Wallaby.QueryError, ~r/label has no 'for'/, fn ->
+    assert_raise Wallabidi.QueryError, ~r/label has no 'for'/, fn ->
       fill_in(page, Query.text_field("Input with bad label"), with: "Test")
     end
   end
 
   test "checks for mismatched ids on labels", %{page: page} do
-    assert_raise Wallaby.QueryError,
+    assert_raise Wallabidi.QueryError,
                  ~r/but the label's 'for' attribute\sdoesn't match the id/,
                  fn ->
                    fill_in(page, Query.text_field("Input with bad id"), with: "Test")
@@ -77,7 +77,7 @@ defmodule Wallaby.Integration.Browser.FillInTest do
   end
 
   test "checks for duplicate ids on labels", %{page: page} do
-    assert_raise Wallaby.QueryError,
+    assert_raise Wallabidi.QueryError,
                  ~r/but the label's 'for' attribute\smatches 3 elements/,
                  fn ->
                    fill_in(page, Query.text_field("Input with duplicate id"), with: "Test")
@@ -85,7 +85,7 @@ defmodule Wallaby.Integration.Browser.FillInTest do
   end
 
   test "provides guidance for labels with type mismatch", %{page: page} do
-    assert_raise Wallaby.QueryError,
+    assert_raise Wallabidi.QueryError,
                  ~r/but the label's 'for' attribute\smatches one element/,
                  fn ->
                    click(page, Query.radio_button("Name"))

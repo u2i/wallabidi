@@ -1,7 +1,7 @@
-defmodule Wallaby.Helpers.KeyCodesTest do
+defmodule Wallabidi.Helpers.KeyCodesTest do
   use ExUnit.Case, async: true
 
-  import Wallaby.Helpers.KeyCodes
+  import Wallabidi.Helpers.KeyCodes
 
   test "encoding unicode values as JSON" do
     assert json([:enter]) == "{\"value\": [\"\\uE007\"]}"

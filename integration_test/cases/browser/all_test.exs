@@ -1,5 +1,5 @@
-defmodule Wallaby.Integration.Browser.AllTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.Browser.AllTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
   describe "all/2" do
     setup %{session: session} do

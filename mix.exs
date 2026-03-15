@@ -1,4 +1,4 @@
-defmodule Wallaby.Mixfile do
+defmodule Wallabidi.Mixfile do
   use Mix.Project
 
   @source_url "https://github.com/elixir-wallaby/wallaby"
@@ -7,7 +7,7 @@ defmodule Wallaby.Mixfile do
 
   def project do
     [
-      app: :wallaby,
+      app: :wallabidi,
       version: @version,
       elixir: "~> 1.12",
       elixirc_paths: elixirc_paths(Mix.env()),
@@ -35,7 +35,7 @@ defmodule Wallaby.Mixfile do
   end
 
   def application do
-    [extra_applications: [:logger], mod: {Wallaby, []}]
+    [extra_applications: [:logger], mod: {Wallabidi, []}]
   end
 
   defp elixirc_paths(:test), do: ["lib", "test/support"]

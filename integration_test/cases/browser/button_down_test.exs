@@ -1,6 +1,6 @@
-defmodule Wallaby.Integration.Browser.ButtonDownTest do
-  use Wallaby.Integration.SessionCase, async: true
-  import Wallaby.Browser
+defmodule Wallabidi.Integration.Browser.ButtonDownTest do
+  use Wallabidi.Integration.SessionCase, async: true
+  import Wallabidi.Browser
 
   setup %{session: session} do
     {:ok, page: visit(session, "mouse_down_and_up.html")}

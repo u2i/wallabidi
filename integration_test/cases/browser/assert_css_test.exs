@@ -1,5 +1,5 @@
-defmodule Wallaby.Integration.Browser.AssertCssTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.Browser.AssertCssTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
   test "has_css/2 returns true if the css is on the page", %{session: session} do
     page =

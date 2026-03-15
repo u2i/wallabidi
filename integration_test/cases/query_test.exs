@@ -1,5 +1,5 @@
-defmodule Wallaby.Integration.QueryTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.QueryTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
   test "the driver can execute queries", %{session: session} do
     elements =
@@ -39,7 +39,7 @@ defmodule Wallaby.Integration.QueryTest do
 
   describe "filtering queries by selected status" do
     test "raises QueryError if too many elements are specified", %{session: session} do
-      assert_raise Wallaby.QueryError, fn ->
+      assert_raise Wallabidi.QueryError, fn ->
         session
         |> Browser.visit("/forms.html")
         |> Browser.find(Query.css(".select-options", count: 3, selected: false))
@@ -79,7 +79,7 @@ defmodule Wallaby.Integration.QueryTest do
 
   describe "filtering queries by visibility" do
     test "finds elements that are invisible", %{session: session} do
-      assert_raise Wallaby.QueryError, fn ->
+      assert_raise Wallabidi.QueryError, fn ->
         session
         |> Browser.visit("/page_1.html")
         |> Browser.find(Query.css(".invisible-elements", count: 3))
@@ -105,7 +105,7 @@ defmodule Wallaby.Integration.QueryTest do
   end
 
   test "queries can check the number of elements", %{session: session} do
-    assert_raise Wallaby.QueryError, fn ->
+    assert_raise Wallabidi.QueryError, fn ->
       session
       |> Browser.visit("/page_1.html")
       |> Browser.find(Query.css(".user"))
@@ -129,7 +129,7 @@ defmodule Wallaby.Integration.QueryTest do
   end
 
   test "queries can not select an element off the start of the list", %{session: session} do
-    assert_raise Wallaby.QueryError, fn ->
+    assert_raise Wallabidi.QueryError, fn ->
       session
       |> Browser.visit("/page_1.html")
       |> Browser.find(Query.css(".user", count: 5, at: -1))
@@ -137,15 +137,17 @@ defmodule Wallaby.Integration.QueryTest do
   end
 
   test "queries can not select an element off the end of the list", %{session: session} do
-    assert_raise Wallaby.QueryError, ~r/and return element at index 5, but only 5 visible/, fn ->
-      session
-      |> Browser.visit("/page_1.html")
-      |> Browser.find(Query.css(".user", at: 5))
-    end
+    assert_raise Wallabidi.QueryError,
+                 ~r/and return element at index 5, but only 5 visible/,
+                 fn ->
+                   session
+                   |> Browser.visit("/page_1.html")
+                   |> Browser.find(Query.css(".user", at: 5))
+                 end
   end
 
   test "queries can specify element text", %{session: session} do
-    assert_raise Wallaby.QueryError, fn ->
+    assert_raise Wallabidi.QueryError, fn ->
       session
       |> Browser.visit("/page_1.html")
       |> Browser.find(Query.css(".user", text: "Some fake text"))
@@ -160,7 +162,7 @@ defmodule Wallaby.Integration.QueryTest do
   end
 
   test "trying to set a text when visible is false throws an error", %{session: session} do
-    assert_raise Wallaby.QueryError, fn ->
+    assert_raise Wallabidi.QueryError, fn ->
       session
       |> Browser.find(Query.css(".some-css", text: "test", visible: false))
     end

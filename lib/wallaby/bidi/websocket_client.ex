@@ -1,4 +1,4 @@
-defmodule Wallaby.BiDi.WebSocketClient do
+defmodule Wallabidi.BiDi.WebSocketClient do
   @moduledoc false
   # GenServer managing a single WebSocket connection per session using Mint.WebSocket.
 

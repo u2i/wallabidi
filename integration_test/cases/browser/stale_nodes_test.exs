@@ -1,7 +1,7 @@
-defmodule Wallaby.Integration.Browser.StaleElementsTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.Browser.StaleElementsTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
-  alias Wallaby.StaleReferenceError
+  alias Wallabidi.StaleReferenceError
 
   describe "when a DOM element becomes stale" do
     test "the query is retried", %{session: session} do

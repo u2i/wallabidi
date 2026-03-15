@@ -1,5 +1,5 @@
-defmodule Wallaby.Integration.Browser.TapTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.Browser.TapTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
   setup %{session: session} do
     page = visit(session, "touch.html")

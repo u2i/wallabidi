@@ -1,4 +1,4 @@
-defmodule Wallaby.Session do
+defmodule Wallabidi.Session do
   @moduledoc """
   Struct containing details about the webdriver session.
   """

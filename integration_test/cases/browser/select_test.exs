@@ -1,7 +1,7 @@
-defmodule Wallaby.Integration.Browser.SelectTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.Browser.SelectTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
-  import Wallaby.Query, only: [option: 1, select: 1]
+  import Wallabidi.Query, only: [option: 1, select: 1]
 
   setup %{session: session} do
     page =

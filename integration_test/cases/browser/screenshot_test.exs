@@ -1,10 +1,10 @@
-defmodule Wallaby.Integration.Browser.ScreenshotTest do
-  use Wallaby.Integration.SessionCase, async: false
+defmodule Wallabidi.Integration.Browser.ScreenshotTest do
+  use Wallabidi.Integration.SessionCase, async: false
 
   import ExUnit.CaptureIO
-  import Wallaby.SettingsTestHelpers
+  import Wallabidi.SettingsTestHelpers
 
-  alias Wallaby.TestSupport.TestWorkspace
+  alias Wallabidi.TestSupport.TestWorkspace
 
   setup %{session: session} do
     page =
@@ -17,8 +17,8 @@ defmodule Wallaby.Integration.Browser.ScreenshotTest do
   @default_screenshots_path Path.join([File.cwd!(), "screenshots"])
 
   test "taking screenshots with default settings", %{page: page} do
-    ensure_setting_is_reset(:wallaby, :screenshot_dir)
-    Application.delete_env(:wallaby, :screenshot_dir)
+    ensure_setting_is_reset(:wallabidi, :screenshot_dir)
+    Application.delete_env(:wallabidi, :screenshot_dir)
 
     on_exit(fn -> File.rm_rf!(@default_screenshots_path) end)
 
@@ -50,8 +50,8 @@ defmodule Wallaby.Integration.Browser.ScreenshotTest do
   test "users can specify the screenshot directory with a relative path", %{page: page} do
     screenshots_path = TestWorkspace.generate_temporary_path(".tmp-shots-%{random_string}")
 
-    ensure_setting_is_reset(:wallaby, :screenshot_dir)
-    Application.put_env(:wallaby, :screenshot_dir, screenshots_path)
+    ensure_setting_is_reset(:wallabidi, :screenshot_dir)
+    Application.put_env(:wallabidi, :screenshot_dir, screenshots_path)
 
     screenshots =
       page
@@ -73,8 +73,8 @@ defmodule Wallaby.Integration.Browser.ScreenshotTest do
     screenshots_path =
       TestWorkspace.generate_temporary_path("~/.test-wallaby-screenshots-%{random_string}")
 
-    ensure_setting_is_reset(:wallaby, :screenshot_dir)
-    Application.put_env(:wallaby, :screenshot_dir, screenshots_path)
+    ensure_setting_is_reset(:wallabidi, :screenshot_dir)
+    Application.put_env(:wallabidi, :screenshot_dir, screenshots_path)
 
     screenshots =
       page
@@ -93,8 +93,8 @@ defmodule Wallaby.Integration.Browser.ScreenshotTest do
   test "users can specify the screenshot directory with an absolute path", %{page: page} do
     screenshots_path = TestWorkspace.generate_temporary_path()
 
-    ensure_setting_is_reset(:wallaby, :screenshot_dir)
-    Application.put_env(:wallaby, :screenshot_dir, screenshots_path)
+    ensure_setting_is_reset(:wallabidi, :screenshot_dir)
+    Application.put_env(:wallabidi, :screenshot_dir, screenshots_path)
 
     screenshots =
       page
@@ -113,8 +113,8 @@ defmodule Wallaby.Integration.Browser.ScreenshotTest do
   test "users can specify the screenshot name", %{page: page} do
     screenshots_path = TestWorkspace.generate_temporary_path()
 
-    ensure_setting_is_reset(:wallaby, :screenshot_dir)
-    Application.put_env(:wallaby, :screenshot_dir, screenshots_path)
+    ensure_setting_is_reset(:wallabidi, :screenshot_dir)
+    Application.put_env(:wallabidi, :screenshot_dir, screenshots_path)
 
     [path] =
       page
@@ -130,8 +130,8 @@ defmodule Wallaby.Integration.Browser.ScreenshotTest do
     test "does not log by default", %{page: page} do
       screenshots_path = TestWorkspace.generate_temporary_path()
 
-      ensure_setting_is_reset(:wallaby, :screenshot_dir)
-      Application.put_env(:wallaby, :screenshot_dir, screenshots_path)
+      ensure_setting_is_reset(:wallabidi, :screenshot_dir)
+      Application.put_env(:wallabidi, :screenshot_dir, screenshots_path)
 
       output = capture_io(fn -> take_screenshot(page) end)
 
@@ -139,8 +139,8 @@ defmodule Wallaby.Integration.Browser.ScreenshotTest do
     end
 
     test "logs work with the default screenshot dir", %{page: page} do
-      ensure_setting_is_reset(:wallaby, :screenshot_dir)
-      Application.delete_env(:wallaby, :screenshot_dir)
+      ensure_setting_is_reset(:wallabidi, :screenshot_dir)
+      Application.delete_env(:wallabidi, :screenshot_dir)
 
       output = capture_io(fn -> take_screenshot(page, log: true) end)
 
@@ -157,8 +157,8 @@ defmodule Wallaby.Integration.Browser.ScreenshotTest do
     test "logs file url when the sets the screenshot_dir to a relative path", %{page: page} do
       screenshots_path = TestWorkspace.generate_temporary_path(".tmp-shots-%{random_string}")
 
-      ensure_setting_is_reset(:wallaby, :screenshot_dir)
-      Application.put_env(:wallaby, :screenshot_dir, screenshots_path)
+      ensure_setting_is_reset(:wallabidi, :screenshot_dir)
+      Application.put_env(:wallabidi, :screenshot_dir, screenshots_path)
 
       output = capture_io(fn -> take_screenshot(page, log: true) end)
 
@@ -175,8 +175,8 @@ defmodule Wallaby.Integration.Browser.ScreenshotTest do
     test "logs file url when the sets the screenshot_dir to an absolute path", %{page: page} do
       screenshots_path = TestWorkspace.generate_temporary_path()
 
-      ensure_setting_is_reset(:wallaby, :screenshot_dir)
-      Application.put_env(:wallaby, :screenshot_dir, screenshots_path)
+      ensure_setting_is_reset(:wallabidi, :screenshot_dir)
+      Application.put_env(:wallabidi, :screenshot_dir, screenshots_path)
 
       output = capture_io(fn -> take_screenshot(page, log: true) end)
 
@@ -194,8 +194,8 @@ defmodule Wallaby.Integration.Browser.ScreenshotTest do
       screenshots_path =
         TestWorkspace.generate_temporary_path("~/.test wallaby screenshots-%{random_string}")
 
-      ensure_setting_is_reset(:wallaby, :screenshot_dir)
-      Application.put_env(:wallaby, :screenshot_dir, screenshots_path)
+      ensure_setting_is_reset(:wallabidi, :screenshot_dir)
+      Application.put_env(:wallabidi, :screenshot_dir, screenshots_path)
 
       output = capture_io(fn -> take_screenshot(page, log: true) end)
 
@@ -211,8 +211,8 @@ defmodule Wallaby.Integration.Browser.ScreenshotTest do
   end
 
   test "filters out illegal characters in screenshot name", %{page: page} do
-    ensure_setting_is_reset(:wallaby, :screenshot_dir)
-    Application.put_env(:wallaby, :screenshot_dir, "shots")
+    ensure_setting_is_reset(:wallabidi, :screenshot_dir)
+    Application.put_env(:wallabidi, :screenshot_dir, "shots")
 
     [screenshot_path] =
       page

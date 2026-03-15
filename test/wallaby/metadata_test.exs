@@ -1,2 +1,2 @@
-defmodule Wallaby.MetadataTest do
+defmodule Wallabidi.MetadataTest do
 end

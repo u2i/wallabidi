@@ -1,5 +1,5 @@
-defmodule Wallaby.Integration.Browser.WindowPositionTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.Browser.WindowPositionTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
   # window.moveTo and window.screenX/Y don't work in headless Chrome,
   # so this test is only meaningful in non-headless mode.

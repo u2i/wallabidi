@@ -1,5 +1,5 @@
-defmodule Wallaby.Integration.Browser.TitleTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.Browser.TitleTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
   test "finding the title", %{session: session} do
     text =

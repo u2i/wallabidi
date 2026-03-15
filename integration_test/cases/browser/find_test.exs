@@ -1,7 +1,7 @@
-defmodule Wallaby.Integration.Browser.FindTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.Browser.FindTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
-  import Wallaby.Query, only: [css: 1]
+  import Wallabidi.Query, only: [css: 1]
 
   setup %{session: session} do
     page =
@@ -41,25 +41,25 @@ defmodule Wallaby.Integration.Browser.FindTest do
     end
 
     test "throws a not found error if the element could not be found", %{page: page} do
-      assert_raise Wallaby.QueryError, ~r/Expected to find/, fn ->
+      assert_raise Wallabidi.QueryError, ~r/Expected to find/, fn ->
         find(page, Query.css("#not-there"))
       end
     end
 
     test "throws a not found error if the xpath could not be found", %{page: page} do
-      assert_raise Wallaby.QueryError, ~r/Expected (.*) xpath '\/\/test-element'/, fn ->
+      assert_raise Wallabidi.QueryError, ~r/Expected (.*) xpath '\/\/test-element'/, fn ->
         find(page, Query.xpath("//test-element"))
       end
     end
 
     test "ambiguous queries raise an exception", %{page: page} do
-      assert_raise Wallaby.QueryError, ~r/Expected (.*) 1(.*) but 5/, fn ->
+      assert_raise Wallabidi.QueryError, ~r/Expected (.*) 1(.*) but 5/, fn ->
         find(page, Query.css(".user"))
       end
     end
 
     test "throws errors if element should not be visible", %{page: page} do
-      assert_raise Wallaby.QueryError, ~r/invisible/, fn ->
+      assert_raise Wallabidi.QueryError, ~r/invisible/, fn ->
         find(page, Query.css("#visible", visible: false))
       end
     end
@@ -68,7 +68,7 @@ defmodule Wallaby.Integration.Browser.FindTest do
       session
       |> visit("page_1.html")
 
-      assert_raise Wallaby.QueryError, fn ->
+      assert_raise Wallabidi.QueryError, fn ->
         find(session, css("#invisible"))
       end
 
@@ -136,7 +136,7 @@ defmodule Wallaby.Integration.Browser.FindTest do
     session
     |> visit("page_1.html")
 
-    assert_raise Wallaby.QueryError, fn ->
+    assert_raise Wallabidi.QueryError, fn ->
       find(session, css(".not-there"))
     end
 

@@ -1,5 +1,5 @@
-defmodule Wallaby.Integration.InspectTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.InspectTest do
+  use Wallabidi.Integration.SessionCase, async: true
   import ExUnit.CaptureIO
 
   describe "inspect/2" do
@@ -48,7 +48,7 @@ defmodule Wallaby.Integration.InspectTest do
             |> visit("/index.html")
             |> find(Query.css("body"))
 
-          Wallaby.end_session(session)
+          Wallabidi.end_session(session)
 
           element
           |> IO.inspect()

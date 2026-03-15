@@ -1,16 +1,16 @@
-defmodule Wallaby.Integration.Chrome.StartingSessionsTest do
+defmodule Wallabidi.Integration.Chrome.StartingSessionsTest do
   use ExUnit.Case, async: false
 
   import ExUnit.CaptureIO
 
-  import Wallaby.SettingsTestHelpers
-  import Wallaby.TestSupport.ApplicationControl
-  import Wallaby.TestSupport.TestScriptUtils
-  import Wallaby.TestSupport.TestWorkspace
+  import Wallabidi.SettingsTestHelpers
+  import Wallabidi.TestSupport.ApplicationControl
+  import Wallabidi.TestSupport.TestScriptUtils
+  import Wallabidi.TestSupport.TestWorkspace
 
-  alias Wallaby.Chrome
-  alias Wallaby.TestSupport.Chrome.ChromeTestScript
-  alias Wallaby.TestSupport.TestWorkspace
+  alias Wallabidi.Chrome
+  alias Wallabidi.TestSupport.Chrome.ChromeTestScript
+  alias Wallabidi.TestSupport.TestWorkspace
 
   @moduletag :capture_log
 
@@ -28,12 +28,12 @@ defmodule Wallaby.Integration.Chrome.StartingSessionsTest do
       |> ChromeTestScript.build_chromedriver_wrapper_script()
       |> write_test_script!(workspace_path)
 
-    ensure_setting_is_reset(:wallaby, :chromedriver)
-    Application.put_env(:wallaby, :chromedriver, path: test_script_path)
+    ensure_setting_is_reset(:wallabidi, :chromedriver)
+    Application.put_env(:wallabidi, :chromedriver, path: test_script_path)
 
-    assert :ok = Application.start(:wallaby)
+    assert :ok = Application.start(:wallabidi)
 
-    assert {:ok, _session} = Wallaby.start_session()
+    assert {:ok, _session} = Wallabidi.start_session()
   end
 
   test "starting a session boots chromedriver with the default options", %{
@@ -46,12 +46,12 @@ defmodule Wallaby.Integration.Chrome.StartingSessionsTest do
       |> ChromeTestScript.build_chromedriver_wrapper_script()
       |> write_test_script!(workspace_path)
 
-    ensure_setting_is_reset(:wallaby, :chromedriver)
-    Application.put_env(:wallaby, :chromedriver, path: test_script_path)
+    ensure_setting_is_reset(:wallabidi, :chromedriver)
+    Application.put_env(:wallabidi, :chromedriver, path: test_script_path)
 
-    assert :ok = Application.start(:wallaby)
+    assert :ok = Application.start(:wallabidi)
 
-    assert {:ok, _session} = Wallaby.start_session()
+    assert {:ok, _session} = Wallabidi.start_session()
 
     assert [invocation] = ChromeTestScript.get_invocations(test_script_path) |> Enum.take(-1)
 
@@ -71,12 +71,12 @@ defmodule Wallaby.Integration.Chrome.StartingSessionsTest do
       TestWorkspace.mkdir!()
       |> write_chrome_wrapper_script!(startup_delay: :timer.seconds(1))
 
-    ensure_setting_is_reset(:wallaby, :chromedriver)
-    Application.put_env(:wallaby, :chromedriver, path: test_script_path)
+    ensure_setting_is_reset(:wallabidi, :chromedriver)
+    Application.put_env(:wallabidi, :chromedriver, path: test_script_path)
 
-    assert :ok = Application.start(:wallaby)
+    assert :ok = Application.start(:wallabidi)
 
-    assert {:ok, _session} = Wallaby.start_session()
+    assert {:ok, _session} = Wallabidi.start_session()
   end
 
   test "raises a RuntimeError if chromedriver isn't ready before the startup timeout" do
@@ -84,13 +84,13 @@ defmodule Wallaby.Integration.Chrome.StartingSessionsTest do
       TestWorkspace.mkdir!()
       |> write_chrome_wrapper_script!(startup_delay: :timer.seconds(12))
 
-    ensure_setting_is_reset(:wallaby, :chromedriver)
-    Application.put_env(:wallaby, :chromedriver, path: test_script_path)
+    ensure_setting_is_reset(:wallabidi, :chromedriver)
+    Application.put_env(:wallabidi, :chromedriver, path: test_script_path)
 
-    assert :ok = Application.start(:wallaby)
+    assert :ok = Application.start(:wallabidi)
 
     assert_raise RuntimeError, ~r/timeout waiting for chromedriver to be ready/i, fn ->
-      Wallaby.start_session(readiness_timeout: 500)
+      Wallabidi.start_session(readiness_timeout: 500)
     end
   end
 
@@ -101,10 +101,10 @@ defmodule Wallaby.Integration.Chrome.StartingSessionsTest do
       ChromeTestScript.build_chromedriver_version_mock_script(version: "2.29")
       |> write_test_script!(workspace_path)
 
-    ensure_setting_is_reset(:wallaby, :chromedriver)
-    Application.put_env(:wallaby, :chromedriver, path: test_script_path)
+    ensure_setting_is_reset(:wallabidi, :chromedriver)
+    Application.put_env(:wallabidi, :chromedriver, path: test_script_path)
 
-    assert {:error, _} = Application.start(:wallaby)
+    assert {:error, _} = Application.start(:wallabidi)
   end
 
   test "application starts when chromedriver version >= 2.30", %{workspace_path: workspace_path} do
@@ -116,13 +116,13 @@ defmodule Wallaby.Integration.Chrome.StartingSessionsTest do
       ChromeTestScript.build_chrome_version_mock_script(version: "2.30")
       |> write_test_script!(workspace_path)
 
-    ensure_setting_is_reset(:wallaby, :chromedriver)
-    Application.put_env(:wallaby, :chromedriver, path: chromedriver_test_script_path)
-    Application.put_env(:wallaby, :chromedriver, binary: chrome_test_script_path)
+    ensure_setting_is_reset(:wallabidi, :chromedriver)
+    Application.put_env(:wallabidi, :chromedriver, path: chromedriver_test_script_path)
+    Application.put_env(:wallabidi, :chromedriver, binary: chrome_test_script_path)
 
     log =
       capture_io(:stderr, fn ->
-        assert :ok == Application.start(:wallaby)
+        assert :ok == Application.start(:wallabidi)
       end)
 
     assert log =~ "don't match"
@@ -139,13 +139,13 @@ defmodule Wallaby.Integration.Chrome.StartingSessionsTest do
       ChromeTestScript.build_chrome_version_mock_script(version: "101.0.3945.36")
       |> write_test_script!(workspace_path)
 
-    ensure_setting_is_reset(:wallaby, :chromedriver)
-    Application.put_env(:wallaby, :chromedriver, path: chromedriver_test_script_path)
-    Application.put_env(:wallaby, :chromedriver, binary: chrome_test_script_path)
+    ensure_setting_is_reset(:wallabidi, :chromedriver)
+    Application.put_env(:wallabidi, :chromedriver, path: chromedriver_test_script_path)
+    Application.put_env(:wallabidi, :chromedriver, binary: chrome_test_script_path)
 
     log =
       capture_io(:stderr, fn ->
-        assert :ok == Application.start(:wallaby)
+        assert :ok == Application.start(:wallabidi)
       end)
 
     assert log =~ "don't match"
@@ -157,22 +157,22 @@ defmodule Wallaby.Integration.Chrome.StartingSessionsTest do
       |> TestWorkspace.mkdir!()
       |> write_chrome_wrapper_script!()
 
-    ensure_setting_is_reset(:wallaby, :chromedriver)
-    Application.put_env(:wallaby, :chromedriver, path: test_script_path)
+    ensure_setting_is_reset(:wallabidi, :chromedriver)
+    Application.put_env(:wallabidi, :chromedriver, path: test_script_path)
 
-    assert :ok = Application.start(:wallaby)
+    assert :ok = Application.start(:wallabidi)
 
-    assert {:ok, _session} = Wallaby.start_session()
+    assert {:ok, _session} = Wallabidi.start_session()
 
     assert test_script_path |> ChromeTestScript.get_invocations() |> Enum.any?()
   end
 
   test "fails to start when chromedriver path is configured incorrectly" do
-    ensure_setting_is_reset(:wallaby, :chromedriver)
+    ensure_setting_is_reset(:wallabidi, :chromedriver)
 
-    Application.put_env(:wallaby, :chromedriver, path: "this-really-should-not-exist")
+    Application.put_env(:wallabidi, :chromedriver, path: "this-really-should-not-exist")
 
-    assert {:error, _} = Application.start(:wallaby)
+    assert {:error, _} = Application.start(:wallabidi)
   end
 
   defp write_chrome_wrapper_script!(base_dir, opts \\ []) do

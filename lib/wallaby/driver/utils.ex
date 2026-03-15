@@ -1,4 +1,4 @@
-defmodule Wallaby.Driver.Utils do
+defmodule Wallabidi.Driver.Utils do
   @moduledoc false
 
   @type port_number :: 0..65_535

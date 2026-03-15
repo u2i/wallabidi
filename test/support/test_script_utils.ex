@@ -1,4 +1,4 @@
-defmodule Wallaby.TestSupport.TestScriptUtils do
+defmodule Wallabidi.TestSupport.TestScriptUtils do
   @moduledoc """
   Helper functions for working with webdriver test scripts
   """

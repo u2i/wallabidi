@@ -1,11 +1,11 @@
-defmodule Wallaby.BrowserTest do
+defmodule Wallabidi.BrowserTest do
   use ExUnit.Case
 
-  import Wallaby.SettingsTestHelpers
+  import Wallabidi.SettingsTestHelpers
 
-  alias Wallaby.Browser
-  alias Wallaby.NoBaseUrlError
-  alias Wallaby.Session
+  alias Wallabidi.Browser
+  alias Wallabidi.NoBaseUrlError
+  alias Wallabidi.Session
 
   defmodule TestDriver do
     use Agent
@@ -41,13 +41,13 @@ defmodule Wallaby.BrowserTest do
 
   describe "visit/2" do
     setup do
-      ensure_setting_is_reset(:wallaby, :base_url)
+      ensure_setting_is_reset(:wallabidi, :base_url)
       start_supervised!(TestDriver)
       :ok
     end
 
     test "relative path without leading slash, base url with trailing slash" do
-      Application.put_env(:wallaby, :base_url, "http://example.com/")
+      Application.put_env(:wallabidi, :base_url, "http://example.com/")
 
       session = session_for_driver(TestDriver)
       Browser.visit(session, "form.html")
@@ -56,7 +56,7 @@ defmodule Wallaby.BrowserTest do
     end
 
     test "relative path with leading slash, base url no trailing slash" do
-      Application.put_env(:wallaby, :base_url, "http://example.com")
+      Application.put_env(:wallabidi, :base_url, "http://example.com")
 
       session = session_for_driver(TestDriver)
       Browser.visit(session, "/form.html")
@@ -65,7 +65,7 @@ defmodule Wallaby.BrowserTest do
     end
 
     test "relative path without leading slash, base url no trailing slash" do
-      Application.put_env(:wallaby, :base_url, "http://example.com")
+      Application.put_env(:wallabidi, :base_url, "http://example.com")
 
       session = session_for_driver(TestDriver)
       Browser.visit(session, "form.html")
@@ -74,7 +74,7 @@ defmodule Wallaby.BrowserTest do
     end
 
     test "relative path with leading slash, base url trailing slash" do
-      Application.put_env(:wallaby, :base_url, "http://example.com/")
+      Application.put_env(:wallabidi, :base_url, "http://example.com/")
 
       session = session_for_driver(TestDriver)
       Browser.visit(session, "/form.html")
@@ -83,7 +83,7 @@ defmodule Wallaby.BrowserTest do
     end
 
     test "relative path with leading slash, base url ending in /api" do
-      Application.put_env(:wallaby, :base_url, "https://example.com:9090/api/")
+      Application.put_env(:wallabidi, :base_url, "https://example.com:9090/api/")
 
       session = session_for_driver(TestDriver)
       Browser.visit(session, "/form.html?something=2")
@@ -92,7 +92,7 @@ defmodule Wallaby.BrowserTest do
     end
 
     test "relative url when the base_url isn't configured" do
-      Application.delete_env(:wallaby, :base_url)
+      Application.delete_env(:wallabidi, :base_url)
 
       assert_raise NoBaseUrlError, fn ->
         session = session_for_driver(TestDriver)
@@ -101,7 +101,7 @@ defmodule Wallaby.BrowserTest do
     end
 
     test "absolute url when the base_url isn't configured" do
-      Application.delete_env(:wallaby, :base_url)
+      Application.delete_env(:wallabidi, :base_url)
       uri = "https://example.com:9090/api/form.html"
 
       session = session_for_driver(TestDriver)
@@ -111,7 +111,7 @@ defmodule Wallaby.BrowserTest do
     end
 
     test "absolute url when the base_url is configured" do
-      Application.put_env(:wallaby, :base_url, "http://example.org:5555/test")
+      Application.put_env(:wallabidi, :base_url, "http://example.org:5555/test")
       uri = "https://example.com:9090/api/form.html"
 
       session = session_for_driver(TestDriver)

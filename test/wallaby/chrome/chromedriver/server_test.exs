@@ -1,13 +1,13 @@
-defmodule Wallaby.Chrome.Chromedriver.ServerTest do
+defmodule Wallabidi.Chrome.Chromedriver.ServerTest do
   use ExUnit.Case, async: true
 
-  alias Wallaby.TestSupport.Chrome.ChromeTestScript
-  alias Wallaby.TestSupport.TestScriptUtils
-  alias Wallaby.TestSupport.TestWorkspace
-  alias Wallaby.TestSupport.Utils
+  alias Wallabidi.TestSupport.Chrome.ChromeTestScript
+  alias Wallabidi.TestSupport.TestScriptUtils
+  alias Wallabidi.TestSupport.TestWorkspace
+  alias Wallabidi.TestSupport.Utils
 
-  alias Wallaby.Chrome
-  alias Wallaby.Chrome.Chromedriver.Server
+  alias Wallabidi.Chrome
+  alias Wallabidi.Chrome.Chromedriver.Server
 
   @moduletag :capture_log
 
@@ -154,7 +154,7 @@ defmodule Wallaby.Chrome.Chromedriver.ServerTest do
   end
 
   defp assert_webdriver_api_ready(base_url) when is_binary(base_url) do
-    assert :ok = Wallaby.Chrome.Chromedriver.ReadinessChecker.wait_until_ready(base_url)
+    assert :ok = Wallabidi.Chrome.Chromedriver.ReadinessChecker.wait_until_ready(base_url)
   end
 
   defp refute_webdriver_api_ready(base_url) when is_binary(base_url) do

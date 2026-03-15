@@ -1,7 +1,7 @@
-defmodule Wallaby.Integration.Browser.CurrentPathTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.Browser.CurrentPathTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
-  alias Wallaby.Integration.Pages.{IndexPage, Page1}
+  alias Wallabidi.Integration.Pages.{IndexPage, Page1}
 
   test "gets the current_url of the session", %{session: session} do
     url =

@@ -1,17 +1,17 @@
-defmodule Wallaby.Feature do
+defmodule Wallabidi.Feature do
   @moduledoc """
   Helpers for writing features.
 
   You can `use` or `import` this module.
 
-  ## use Wallaby.Feature
+  ## use Wallabidi.Feature
 
-  Calling this module with `use` will automatically call `use Wallaby.DSL`.
+  Calling this module with `use` will automatically call `use Wallabidi.DSL`.
 
   When called with `use` and you are using Ecto, please configure your `otp_app`.
 
   ```
-  config :wallaby, otp_app: :your_app
+  config :wallabidi, otp_app: :your_app
   ```
   """
 
@@ -19,8 +19,8 @@ defmodule Wallaby.Feature do
     quote do
       ExUnit.Case.register_attribute(__MODULE__, :sessions)
 
-      use Wallaby.DSL
-      import Wallaby.Feature
+      use Wallabidi.DSL
+      import Wallabidi.Feature
 
       setup context do
         if context[:test_type] == :feature do
@@ -48,13 +48,13 @@ defmodule Wallaby.Feature do
   @doc """
   Defines a feature with a message.
 
-  Adding `import Wallaby.Feature` to your test module will import the `Wallaby.Feature.feature/3` macro. This is a drop in replacement for the `ExUnit.Case.test/3` macro that you normally use.
+  Adding `import Wallabidi.Feature` to your test module will import the `Wallabidi.Feature.feature/3` macro. This is a drop in replacement for the `ExUnit.Case.test/3` macro that you normally use.
 
-  Adding `use Wallaby.Feature` to your test module will act the same as `import Wallaby.Feature`, as well as configure your Ecto repos properly and pass a `Wallaby.Session` into the test context.
+  Adding `use Wallabidi.Feature` to your test module will act the same as `import Wallabidi.Feature`, as well as configure your Ecto repos properly and pass a `Wallabidi.Session` into the test context.
 
   ## Sessions
 
-  When called with `use`, the `Wallaby.Feature.feature/3` macro will automatically start a single session using the currently configured capabilities and is passed to the feature via the `:session` key in the context.
+  When called with `use`, the `Wallabidi.Feature.feature/3` macro will automatically start a single session using the currently configured capabilities and is passed to the feature via the `:session` key in the context.
 
   ```
   feature "test with a single session", %{session: session} do
@@ -71,7 +71,7 @@ defmodule Wallaby.Feature do
   end
   ```
 
-  If you need to change the headless mode, binary path, or capabilities sent to the session for a specific feature, you can assign `@sessions` to a list of keyword lists of the options to be passed to `Wallaby.start_session/1`. This will start the number of sessions equal to the size of the list.
+  If you need to change the headless mode, binary path, or capabilities sent to the session for a specific feature, you can assign `@sessions` to a list of keyword lists of the options to be passed to `Wallabidi.start_session/1`. This will start the number of sessions equal to the size of the list.
 
   ```
   @sessions [
@@ -82,7 +82,7 @@ defmodule Wallaby.Feature do
   end
   ```
 
-  If you don't wish to `use Wallaby.Feature` in your test module, you can add the following code to configure Ecto and create a session.
+  If you don't wish to `use Wallabidi.Feature` in your test module, you can add the following code to configure Ecto and create a session.
 
   ```
   setup tags do
@@ -93,7 +93,7 @@ defmodule Wallaby.Feature do
     end
 
     metadata = Phoenix.Ecto.SQL.Sandbox.metadata_for(YourApp.Repo, self())
-    {:ok, session} = Wallaby.start_session(metadata: metadata)
+    {:ok, session} = Wallabidi.start_session(metadata: metadata)
 
     {:ok, session: session}
   end
@@ -112,7 +112,7 @@ defmodule Wallaby.Feature do
           :ok
         rescue
           e ->
-            if Wallaby.screenshot_on_failure?() do
+            if Wallabidi.screenshot_on_failure?() do
               unquote(__MODULE__).Utils.take_screenshots_for_sessions(self(), unquote(message))
             end
 
@@ -160,7 +160,7 @@ defmodule Wallaby.Feature do
       {:ok, session} =
         start_session_opts
         |> Keyword.merge(more_opts)
-        |> Wallaby.start_session()
+        |> Wallabidi.start_session()
 
       session
     end
@@ -173,7 +173,7 @@ defmodule Wallaby.Feature do
         |> metadata_for_ecto_repos()
       end
 
-      defp otp_app(), do: Application.get_env(:wallaby, :otp_app)
+      defp otp_app(), do: Application.get_env(:wallabidi, :otp_app)
 
       defp ecto_repos(nil), do: []
       defp ecto_repos(otp_app), do: Application.get_env(otp_app, :ecto_repos, [])
@@ -202,14 +202,14 @@ defmodule Wallaby.Feature do
       test_name = String.replace(test_name, " ", "_")
 
       screenshot_paths =
-        Wallaby.SessionStore.list_sessions_for(owner_pid: pid)
+        Wallabidi.SessionStore.list_sessions_for(owner_pid: pid)
         |> Enum.with_index(1)
         |> Enum.flat_map(fn {s, i} ->
           filename = time <> "_" <> test_name <> "(#{i})"
 
-          Wallaby.Browser.take_screenshot(s, name: filename).screenshots
+          Wallabidi.Browser.take_screenshot(s, name: filename).screenshots
         end)
-        |> Enum.map_join("\n- ", &Wallaby.Browser.build_file_url/1)
+        |> Enum.map_join("\n- ", &Wallabidi.Browser.build_file_url/1)
 
       IO.write("\n- #{screenshot_paths}")
     end

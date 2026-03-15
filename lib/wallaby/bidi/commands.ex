@@ -1,4 +1,4 @@
-defmodule Wallaby.BiDi.Commands do
+defmodule Wallabidi.BiDi.Commands do
   @moduledoc false
   # Pure functions building BiDi command payloads (method + params maps).
 
@@ -394,7 +394,7 @@ defmodule Wallaby.BiDi.Commands do
     ]
   end
 
-  # Key code mappings matching Wallaby.Helpers.KeyCodes
+  # Key code mappings matching Wallabidi.Helpers.KeyCodes
   defp key_code(:null), do: "\uE000"
   defp key_code(:cancel), do: "\uE001"
   defp key_code(:help), do: "\uE002"

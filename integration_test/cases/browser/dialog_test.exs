@@ -1,5 +1,5 @@
-defmodule Wallaby.Integration.Browser.DialogTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.Browser.DialogTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
   setup %{session: session} do
     page = visit(session, "dialogs.html")
@@ -91,7 +91,7 @@ defmodule Wallaby.Integration.Browser.DialogTest do
   describe "accept_prompt/3" do
     test "accept window.prompt with value and get message", %{page: page} do
       message =
-        accept_prompt(page, [with: "Wallaby"], fn p ->
+        accept_prompt(page, [with: "Wallabidi"], fn p ->
           click(p, Query.link("Prompt"))
         end)
 
@@ -101,7 +101,7 @@ defmodule Wallaby.Integration.Browser.DialogTest do
         |> Element.text()
 
       assert message == "What's your name?"
-      assert result == "Prompt returned Wallaby"
+      assert result == "Prompt returned Wallabidi"
     end
   end
 

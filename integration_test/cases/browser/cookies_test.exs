@@ -1,7 +1,7 @@
-defmodule Wallaby.Integration.Browser.CookiesTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.Browser.CookiesTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
-  alias Wallaby.CookieError
+  alias Wallabidi.CookieError
 
   describe "cookies/1" do
     test "returns all of the cookies in the browser", %{session: session} do

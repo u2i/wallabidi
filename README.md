@@ -1,40 +1,40 @@
-# ![Wallaby](https://i.imgur.com/eQ1tlI3.png)
+# ![Wallabidi](https://i.imgur.com/eQ1tlI3.png)
 
-[![Actions Status](https://github.com/elixir-wallaby/wallaby/workflows/CI/badge.svg)](https://github.com/elixir-wallaby/wallaby/actions)
-[![Module Version](https://img.shields.io/hexpm/v/wallaby.svg)](https://hex.pm/packages/wallaby)
-[![Hex Docs](https://img.shields.io/badge/hex-docs-lightgreen.svg)](https://hexdocs.pm/wallaby/)
-[![License](https://img.shields.io/hexpm/l/wallaby.svg)](https://github.com/elixir-wallaby/wallaby/blob/master/LICENSE)
+[![Actions Status](https://github.com/elixir-wallabidi/wallabidi/workflows/CI/badge.svg)](https://github.com/elixir-wallabidi/wallabidi/actions)
+[![Module Version](https://img.shields.io/hexpm/v/wallabidi.svg)](https://hex.pm/packages/wallabidi)
+[![Hex Docs](https://img.shields.io/badge/hex-docs-lightgreen.svg)](https://hexdocs.pm/wallabidi/)
+[![License](https://img.shields.io/hexpm/l/wallabidi.svg)](https://github.com/elixir-wallabidi/wallabidi/blob/master/LICENSE)
 
-Wallaby helps you test your web applications by simulating realistic user interactions.
+Wallabidi helps you test your web applications by simulating realistic user interactions.
 By default it runs each test case concurrently and manages browsers for you.
 Here's an example test for a simple Todo application:
 
 ```elixir
 defmodule MyApp.Features.TodoTest do
   use ExUnit.Case, async: true
-  use Wallaby.Feature
+  use Wallabidi.Feature
 
-  import Wallaby.Query, only: [css: 2, text_field: 1, button: 1]
+  import Wallabidi.Query, only: [css: 2, text_field: 1, button: 1]
 
   feature "users can create todos", %{session: session} do
     session
     |> visit("/todos")
-    |> fill_in(text_field("New Todo"), with: "Write my first Wallaby test")
+    |> fill_in(text_field("New Todo"), with: "Write my first Wallabidi test")
     |> click(button("Save"))
     |> assert_has(css(".alert", text: "You created a todo"))
-    |> assert_has(css(".todo-list > .todo", text: "Write my first Wallaby test"))
+    |> assert_has(css(".todo-list > .todo", text: "Write my first Wallabidi test"))
   end
 end
 ```
 
-Because Wallaby manages multiple browsers for you, its possible to test several users interacting with a page simultaneously.
+Because Wallabidi manages multiple browsers for you, its possible to test several users interacting with a page simultaneously.
 
 ```elixir
 defmodule MyApp.Features.MultipleUsersTest do
   use ExUnit.Case, async: true
-  use Wallaby.Feature
+  use Wallabidi.Feature
 
-  import Wallaby.Query, only: [text_field: 1, button: 1, css: 2]
+  import Wallabidi.Query, only: [text_field: 1, button: 1, css: 2]
 
   @page message_path(Endpoint, :index)
   @message_field text_field("Share Message")
@@ -63,40 +63,40 @@ defmodule MyApp.Features.MultipleUsersTest do
 end
 ```
 
-Read on to see what else Wallaby can do or check out the [Official Documentation](https://hexdocs.pm/wallaby).
+Read on to see what else Wallabidi can do or check out the [Official Documentation](https://hexdocs.pm/wallabidi).
 
 ## Setup
 
 ### Requirements
 
-Wallaby requires Elixir 1.12+ and OTP 22+.
+Wallabidi requires Elixir 1.12+ and OTP 22+.
 
-Wallaby also requires `bash` to be installed. Generally `bash` is widely available, but it does not come pre-installed on Alpine Linux.
+Wallabidi also requires `bash` to be installed. Generally `bash` is widely available, but it does not come pre-installed on Alpine Linux.
 
 ### Installation
 
-Add Wallaby to your list of dependencies in `mix.exs`:
+Add Wallabidi to your list of dependencies in `mix.exs`:
 
 ```elixir
 def deps do
   [
-    {:wallaby, "~> 0.30", runtime: false, only: :test}
+    {:wallabidi, "~> 0.30", runtime: false, only: :test}
   ]
 end
 ```
 
 You'll need to install [ChromeDriver](https://chromedriver.chromium.org/downloads) and [Google Chrome](https://www.google.com/chrome/).
 
-Ensure that Wallaby is started in your `test_helper.exs`:
+Ensure that Wallabidi is started in your `test_helper.exs`:
 
 ```elixir
-{:ok, _} = Application.ensure_all_started(:wallaby)
+{:ok, _} = Application.ensure_all_started(:wallabidi)
 ```
 
-When calling `use Wallaby.Feature` and using Ecto, please configure your `otp_app`.
+When calling `use Wallabidi.Feature` and using Ecto, please configure your `otp_app`.
 
 ```elixir
-config :wallaby, otp_app: :your_app
+config :wallabidi, otp_app: :your_app
 ```
 
 ### Remote ChromeDriver (Docker)
@@ -105,13 +105,13 @@ To connect to a ChromeDriver running in a separate container:
 
 ```elixir
 # config/test.exs
-config :wallaby,
+config :wallabidi,
   chromedriver: [
     remote_url: "http://chrome:4444/"
   ]
 ```
 
-When `remote_url` is set, Wallaby will not start a local ChromeDriver process and will instead connect to the remote instance.
+When `remote_url` is set, Wallabidi will not start a local ChromeDriver process and will instead connect to the remote instance.
 
 ### Phoenix
 
@@ -124,13 +124,13 @@ config :your_app, YourAppWeb.Endpoint,
   server: true
 ```
 
-In your `test_helper.exs` you can provide some configuration to Wallaby.
-At a minimum, you need to specify a `:base_url`, so Wallaby knows how to resolve relative paths.
+In your `test_helper.exs` you can provide some configuration to Wallabidi.
+At a minimum, you need to specify a `:base_url`, so Wallabidi knows how to resolve relative paths.
 
 ```elixir
 # test/test_helper.exs
 
-Application.put_env(:wallaby, :base_url, YourAppWeb.Endpoint.url)
+Application.put_env(:wallabidi, :base_url, YourAppWeb.Endpoint.url)
 ```
 
 #### Ecto
@@ -167,7 +167,7 @@ config :your_app, :sandbox, Ecto.Adapters.SQL.Sandbox
 
 #### LiveView
 
-In order to test Phoenix LiveView with Wallaby you'll need to add the sandbox hook to your LiveViews:
+In order to test Phoenix LiveView with Wallabidi you'll need to add the sandbox hook to your LiveViews:
 
 ```elixir
 defmodule MyApp.Hooks.AllowEctoSandbox do
@@ -200,12 +200,12 @@ end
 
 ### Writing tests
 
-It's easiest to add Wallaby to your test suite by using the `Wallaby.Feature` module.
+It's easiest to add Wallabidi to your test suite by using the `Wallabidi.Feature` module.
 
 ```elixir
 defmodule YourApp.UserListTest do
   use ExUnit.Case, async: true
-  use Wallaby.Feature
+  use Wallabidi.Feature
 
   feature "users have names", %{session: session} do
     session
@@ -219,11 +219,11 @@ end
 
 ## API
 
-The full documentation for the DSL is in the [official documentation](https://hexdocs.pm/wallaby).
+The full documentation for the DSL is in the [official documentation](https://hexdocs.pm/wallabidi).
 
 ### Queries and Actions
 
-Wallaby's API is broken into 2 concepts: Queries and Actions.
+Wallabidi's API is broken into 2 concepts: Queries and Actions.
 
 Queries allow us to declaratively describe the elements that we would like to interact with and Actions allow us to use those queries to interact with the DOM.
 
@@ -234,7 +234,7 @@ session
 |> assert_has(css(".user-name", count: 1, text: "Ada"))
 ```
 
-There are several queries for common html elements defined in the [Query module](https://hexdocs.pm/wallaby/Wallaby.Query.html#content).
+There are several queries for common html elements defined in the [Query module](https://hexdocs.pm/wallabidi/Wallabidi.Query.html#content).
 All actions accept a query.
 Actions will block until the query is either satisfied or the action times out.
 
@@ -317,7 +317,7 @@ end)
 ### Window Size
 
 ```elixir
-Wallaby.start_session(window_size: [width: 1280, height: 720])
+Wallabidi.start_session(window_size: [width: 1280, height: 720])
 
 resize_window(session, 100, 100)
 window_size(session)
@@ -332,20 +332,20 @@ take_screenshot(session)
 Configure the screenshot directory:
 
 ```elixir
-config :wallaby, screenshot_dir: "/file/path"
+config :wallabidi, screenshot_dir: "/file/path"
 ```
 
 Automatically take screenshots on failure:
 
 ```elixir
-config :wallaby, screenshot_on_failure: true
+config :wallabidi, screenshot_on_failure: true
 ```
 
 ## JavaScript
 
 ### Asynchronous code
 
-Wallaby helps solve timing issues by blocking.
+Wallabidi helps solve timing issues by blocking.
 Instead of manually setting timeouts, use `assert_has` and `settle` to wait for the DOM to be ready:
 
 ```elixir
@@ -369,12 +369,12 @@ end
 
 ### JavaScript logging and errors
 
-Wallaby captures both JavaScript logs and errors.
+Wallabidi captures both JavaScript logs and errors.
 Any uncaught exceptions in JavaScript will be re-thrown in Elixir.
-This can be disabled by specifying `js_errors: false` in your Wallaby config.
+This can be disabled by specifying `js_errors: false` in your Wallabidi config.
 
 JavaScript logs are written to :stdio by default.
-This can be changed to any IO device by setting the `:js_logger` option in your Wallaby config.
+This can be changed to any IO device by setting the `:js_logger` option in your Wallabidi config.
 Logging can be disabled by setting `:js_logger` to `nil`.
 
 ## Configuration
@@ -382,7 +382,7 @@ Logging can be disabled by setting `:js_logger` to `nil`.
 ### ChromeDriver options
 
 ```elixir
-config :wallaby,
+config :wallabidi,
   chromedriver: [
     headless: false,                          # run with visible browser
     path: "path/to/chromedriver",             # custom chromedriver path
@@ -398,7 +398,7 @@ config :wallaby,
 
 ## Contributing
 
-Wallaby is a community project. Pull Requests (PRs) and reporting issues are greatly welcome.
+Wallabidi is a community project. Pull Requests (PRs) and reporting issues are greatly welcome.
 
 ### Development Dependencies
 

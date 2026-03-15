@@ -1,13 +1,13 @@
-defmodule Wallaby.Integration.CapabilitiesTest do
+defmodule Wallabidi.Integration.CapabilitiesTest do
   use ExUnit.Case, async: false
-  use Wallaby.DSL
+  use Wallabidi.DSL
 
-  import Wallaby.SettingsTestHelpers
+  import Wallabidi.SettingsTestHelpers
 
-  alias Wallaby.Integration.SessionCase
+  alias Wallabidi.Integration.SessionCase
 
   setup do
-    ensure_setting_is_reset(:wallaby, :chromedriver)
+    ensure_setting_is_reset(:wallabidi, :chromedriver)
   end
 
   describe "capabilities" do
@@ -18,11 +18,11 @@ defmodule Wallaby.Integration.CapabilitiesTest do
       |> visit("page_1.html")
       |> assert_has(Query.text("Page 1"))
 
-      assert :ok = Wallaby.end_session(session)
+      assert :ok = Wallabidi.end_session(session)
     end
 
     test "reads headless config from application config" do
-      Application.put_env(:wallaby, :chromedriver, headless: true)
+      Application.put_env(:wallabidi, :chromedriver, headless: true)
 
       {:ok, session} = SessionCase.start_test_session()
 
@@ -30,11 +30,11 @@ defmodule Wallaby.Integration.CapabilitiesTest do
       |> visit("page_1.html")
       |> assert_has(Query.text("Page 1"))
 
-      assert :ok = Wallaby.end_session(session)
+      assert :ok = Wallabidi.end_session(session)
     end
 
     test "reads capabilities from opts" do
-      capabilities = Wallaby.Chrome.default_capabilities()
+      capabilities = Wallabidi.Chrome.default_capabilities()
 
       {:ok, session} = SessionCase.start_test_session(capabilities: capabilities)
 
@@ -42,7 +42,7 @@ defmodule Wallaby.Integration.CapabilitiesTest do
       |> visit("page_1.html")
       |> assert_has(Query.text("Page 1"))
 
-      assert :ok = Wallaby.end_session(session)
+      assert :ok = Wallabidi.end_session(session)
     end
 
     test "adds the beam metadata when it is present" do
@@ -53,7 +53,7 @@ defmodule Wallaby.Integration.CapabilitiesTest do
       |> visit("page_1.html")
       |> assert_has(Query.text("Page 1"))
 
-      assert :ok = Wallaby.end_session(session)
+      assert :ok = Wallabidi.end_session(session)
     end
   end
 end

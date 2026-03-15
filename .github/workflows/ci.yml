@@ -14,7 +14,7 @@ jobs:
       fail-fast: false
 
     env:
-      WALLABY_DRIVER: chrome
+      WALLABIDI_DRIVER: chrome
       ELIXIR_VERSION: ${{ matrix.elixir-otp.elixir }}
       OTP_VERSION: ${{ matrix.elixir-otp.otp }}
 

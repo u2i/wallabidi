@@ -1,5 +1,5 @@
-defmodule Wallaby.Integration.Pages.Page1 do
-  use Wallaby.DSL
+defmodule Wallabidi.Integration.Pages.Page1 do
+  use Wallabidi.DSL
 
   def visit(session) do
     session

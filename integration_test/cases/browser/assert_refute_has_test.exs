@@ -1,7 +1,7 @@
-defmodule Wallaby.Integration.Browser.AssertRefuteHasTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.Browser.AssertRefuteHasTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
-  alias Wallaby.ExpectationNotMetError
+  alias Wallabidi.ExpectationNotMetError
 
   @found_query Query.css(".user", count: :any)
   @not_found_query Query.css(".something-else")
@@ -15,7 +15,7 @@ defmodule Wallaby.Integration.Browser.AssertRefuteHasTest do
         |> visit("nesting.html")
         |> assert_has(@found_query)
 
-      assert %Wallaby.Session{} = return
+      assert %Wallabidi.Session{} = return
     end
 
     test "raises if the query is not found", %{session: session} do
@@ -51,7 +51,7 @@ defmodule Wallaby.Integration.Browser.AssertRefuteHasTest do
         |> visit("nesting.html")
         |> assert_has(@at_query)
 
-      assert %Wallaby.Session{} = return
+      assert %Wallabidi.Session{} = return
     end
   end
 
@@ -62,7 +62,7 @@ defmodule Wallaby.Integration.Browser.AssertRefuteHasTest do
         |> visit("nesting.html")
         |> refute_has(@not_found_query)
 
-      assert %Wallaby.Session{} = return
+      assert %Wallabidi.Session{} = return
     end
 
     test "raises if the query is found on the page", %{session: session} do

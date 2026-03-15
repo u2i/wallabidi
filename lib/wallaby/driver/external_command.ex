@@ -1,4 +1,4 @@
-defmodule Wallaby.Driver.ExternalCommand do
+defmodule Wallabidi.Driver.ExternalCommand do
   @moduledoc false
 
   @type t :: %__MODULE__{

@@ -1,6 +1,6 @@
-defmodule Wallaby.Integration.Browser.ImportFeatureTest do
-  use Wallaby.Integration.SessionCase, async: true
-  import Wallaby.Feature
+defmodule Wallabidi.Integration.Browser.ImportFeatureTest do
+  use Wallabidi.Integration.SessionCase, async: true
+  import Wallabidi.Feature
 
   feature "works", %{session: session} do
     session

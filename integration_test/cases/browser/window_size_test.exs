@@ -1,5 +1,5 @@
-defmodule Wallaby.Integration.Browser.WindowSizeTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.Browser.WindowSizeTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
   test "getting the window size", %{session: session} do
     window_size =

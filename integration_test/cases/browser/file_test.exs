@@ -1,7 +1,7 @@
-defmodule Wallaby.Integration.Browser.FileTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.Browser.FileTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
-  import Wallaby.Query, only: [css: 1, file_field: 1]
+  import Wallabidi.Query, only: [css: 1, file_field: 1]
 
   setup %{session: session} do
     page =
@@ -17,7 +17,7 @@ defmodule Wallaby.Integration.Browser.FileTest do
       |> attach_file(file_field("file_input"), path: "integration_test/support/fixtures/file.txt")
 
       find(page, css("#file_field"), fn element ->
-        assert Wallaby.Element.value(element) == "C:\\fakepath\\file.txt"
+        assert Wallabidi.Element.value(element) == "C:\\fakepath\\file.txt"
       end)
     end
 
@@ -26,7 +26,7 @@ defmodule Wallaby.Integration.Browser.FileTest do
       |> attach_file(file_field("file_field"), path: "integration_test/support/fixtures/file.txt")
 
       find(page, css("#file_field"), fn element ->
-        assert Wallaby.Element.value(element) == "C:\\fakepath\\file.txt"
+        assert Wallabidi.Element.value(element) == "C:\\fakepath\\file.txt"
       end)
     end
 
@@ -35,7 +35,7 @@ defmodule Wallaby.Integration.Browser.FileTest do
       |> attach_file(file_field("File"), path: "integration_test/support/fixtures/file.txt")
 
       find(page, css("#file_field"), fn element ->
-        assert Wallaby.Element.value(element) == "C:\\fakepath\\file.txt"
+        assert Wallabidi.Element.value(element) == "C:\\fakepath\\file.txt"
       end)
     end
   end
@@ -45,12 +45,12 @@ defmodule Wallaby.Integration.Browser.FileTest do
     |> attach_file(file_field("File"), path: "integration_test/support/fixtures/fool.txt")
 
     find(page, css("#file_field"), fn element ->
-      assert Wallaby.Element.value(element) == ""
+      assert Wallabidi.Element.value(element) == ""
     end)
   end
 
   test "checks for labels without for attributes", %{page: page} do
-    assert_raise Wallaby.QueryError, ~r/label has no 'for'/, fn ->
+    assert_raise Wallabidi.QueryError, ~r/label has no 'for'/, fn ->
       attach_file(page, file_field("File field with bad label"),
         path: "integration_test/support/fixtures/file.txt"
       )

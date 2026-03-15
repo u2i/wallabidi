@@ -1,9 +1,9 @@
-defmodule Wallaby.Chrome.Chromedriver.Server do
+defmodule Wallabidi.Chrome.Chromedriver.Server do
   @moduledoc false
   use GenServer
 
-  alias Wallaby.Chrome.Chromedriver.ReadinessChecker
-  alias Wallaby.Driver.Utils
+  alias Wallabidi.Chrome.Chromedriver.ReadinessChecker
+  alias Wallabidi.Driver.Utils
 
   defmodule State do
     @moduledoc false
@@ -185,7 +185,7 @@ defmodule Wallaby.Chrome.Chromedriver.Server do
 
   @spec wrapper_script :: String.t()
   defp wrapper_script do
-    Path.absname("priv/run_command.sh", Application.app_dir(:wallaby))
+    Path.absname("priv/run_command.sh", Application.app_dir(:wallabidi))
   end
 
   defp args(chromedriver, port),

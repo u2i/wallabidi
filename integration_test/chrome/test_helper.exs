@@ -8,5 +8,5 @@ Code.require_file("../support/pages/page_1.ex", __DIR__)
 Code.require_file("../support/session_case.ex", __DIR__)
 Code.require_file("../support/helpers.ex", __DIR__)
 
-{:ok, server} = Wallaby.Integration.TestServer.start()
-Application.put_env(:wallaby, :base_url, server.base_url)
+{:ok, server} = Wallabidi.Integration.TestServer.start()
+Application.put_env(:wallabidi, :base_url, server.base_url)

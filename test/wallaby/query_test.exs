@@ -1,8 +1,8 @@
-defmodule Wallaby.QueryTest do
+defmodule Wallabidi.QueryTest do
   use ExUnit.Case, async: true
-  doctest Wallaby.Query
+  doctest Wallabidi.Query
 
-  alias Wallaby.Query
+  alias Wallabidi.Query
 
   describe "default count" do
     test "the count defaults to 1 if no count is specified" do

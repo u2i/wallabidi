@@ -1,5 +1,5 @@
-defmodule Wallaby.Integration.Browser.ClickTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.Browser.ClickTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
   setup %{session: session} do
     page = visit(session, "forms.html")
@@ -55,13 +55,13 @@ defmodule Wallaby.Integration.Browser.ClickTest do
         page
         |> find(Query.css(".bad-form"))
 
-      assert_raise Wallaby.QueryError, fn ->
+      assert_raise Wallabidi.QueryError, fn ->
         click(bad_form, Query.radio_button("Radio with bad label"))
       end
     end
 
     test "throw an error if the query matches multiple labels", %{page: page} do
-      assert_raise Wallaby.QueryError, ~r/Expected (.*) 1/, fn ->
+      assert_raise Wallabidi.QueryError, ~r/Expected (.*) 1/, fn ->
         click(page, Query.radio_button("Duplicate Radiobutton"))
       end
     end
@@ -91,7 +91,7 @@ defmodule Wallaby.Integration.Browser.ClickTest do
     end
 
     test "throw an error if a label exists but does not have a for attribute", %{page: page} do
-      assert_raise Wallaby.QueryError, fn ->
+      assert_raise Wallabidi.QueryError, fn ->
         click(page, Query.checkbox("Checkbox with bad label"))
       end
     end

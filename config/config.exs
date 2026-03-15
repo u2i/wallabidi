@@ -1,6 +1,6 @@
 import Config
 
-config :wallaby,
+config :wallabidi,
   max_wait_time: 5000,
   pool_size: 3,
   js_logger: :stdio,

@@ -1,5 +1,5 @@
-defmodule Wallaby.Integration.Browser.ExecuteScriptTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.Browser.ExecuteScriptTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
   @script """
     var element = document.createElement("div")

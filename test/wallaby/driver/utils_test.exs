@@ -1,7 +1,7 @@
-defmodule Wallaby.Driver.UtilsTest do
+defmodule Wallabidi.Driver.UtilsTest do
   use ExUnit.Case, async: true
 
-  alias Wallaby.Driver.Utils
+  alias Wallabidi.Driver.Utils
 
   describe "find_available_port/0" do
     test "returns an unused port" do

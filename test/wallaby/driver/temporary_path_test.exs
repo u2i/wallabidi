@@ -1,7 +1,7 @@
-defmodule Wallaby.Driver.TemporaryPathTest do
+defmodule Wallabidi.Driver.TemporaryPathTest do
   use ExUnit.Case, async: true
 
-  alias Wallaby.Driver.TemporaryPath
+  alias Wallabidi.Driver.TemporaryPath
 
   describe "generate/1" do
     test "generates a temporary path in System.tmp_dir! by default" do

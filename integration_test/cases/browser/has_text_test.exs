@@ -1,5 +1,5 @@
-defmodule Wallaby.Integration.Browser.HasTextTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.Browser.HasTextTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
   setup %{session: session} do
     page = visit(session, "page_1.html")

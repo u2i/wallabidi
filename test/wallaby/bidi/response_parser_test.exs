@@ -1,7 +1,7 @@
-defmodule Wallaby.BiDi.ResponseParserTest do
+defmodule Wallabidi.BiDi.ResponseParserTest do
   use ExUnit.Case, async: true
 
-  alias Wallaby.BiDi.ResponseParser
+  alias Wallabidi.BiDi.ResponseParser
 
   describe "extract_value/1" do
     test "extracts string" do
@@ -133,9 +133,9 @@ defmodule Wallaby.BiDi.ResponseParserTest do
 
   describe "cast_elements/2" do
     test "creates Element structs from node tuples" do
-      parent = %Wallaby.Session{
+      parent = %Wallabidi.Session{
         session_url: "http://localhost:9515/session/123",
-        driver: Wallaby.Chrome
+        driver: Wallabidi.Chrome
       }
 
       nodes = [
@@ -149,7 +149,7 @@ defmodule Wallaby.BiDi.ResponseParserTest do
       [el1, el2] = elements
       assert el1.bidi_shared_id == "shared-1"
       assert el1.id == "42"
-      assert el1.driver == Wallaby.Chrome
+      assert el1.driver == Wallabidi.Chrome
       assert el2.bidi_shared_id == "shared-2"
     end
   end

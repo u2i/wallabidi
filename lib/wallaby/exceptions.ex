@@ -1,4 +1,4 @@
-defmodule Wallaby.QueryError do
+defmodule Wallabidi.QueryError do
   defexception [:message]
 
   def exception(error) do
@@ -6,15 +6,15 @@ defmodule Wallaby.QueryError do
   end
 end
 
-defmodule Wallaby.ExpectationNotMetError do
+defmodule Wallabidi.ExpectationNotMetError do
   defexception [:message]
 end
 
-defmodule Wallaby.BadMetadataError do
+defmodule Wallabidi.BadMetadataError do
   defexception [:message]
 end
 
-defmodule Wallaby.NoBaseUrlError do
+defmodule Wallabidi.NoBaseUrlError do
   defexception [:message]
 
   def exception(relative_path) do
@@ -22,18 +22,18 @@ defmodule Wallaby.NoBaseUrlError do
     You called visit with #{relative_path}, but did not set a base_url.
     Set this in config/test.exs or in test/test_helper.exs:
 
-      Application.put_env(:wallaby, :base_url, "http://localhost:4001")
+      Application.put_env(:wallabidi, :base_url, "http://localhost:4001")
 
     If using Phoenix, you can use the url from your endpoint:
 
-      Application.put_env(:wallaby, :base_url, YourApplication.Endpoint.url)
+      Application.put_env(:wallabidi, :base_url, YourApplication.Endpoint.url)
     """
 
     %__MODULE__{message: msg}
   end
 end
 
-defmodule Wallaby.JSError do
+defmodule Wallabidi.JSError do
   defexception [:message]
 
   def exception(js_error) do
@@ -47,7 +47,7 @@ defmodule Wallaby.JSError do
   end
 end
 
-defmodule Wallaby.StaleReferenceError do
+defmodule Wallabidi.StaleReferenceError do
   defexception [:message]
 
   def exception(_) do
@@ -63,7 +63,7 @@ defmodule Wallaby.StaleReferenceError do
   end
 end
 
-defmodule Wallaby.CookieError do
+defmodule Wallabidi.CookieError do
   defexception [:message]
 
   def exception(_) do
@@ -79,7 +79,7 @@ defmodule Wallaby.CookieError do
   end
 end
 
-defmodule Wallaby.DependencyError do
+defmodule Wallabidi.DependencyError do
   defexception [:message]
 
   @type t :: %__MODULE__{

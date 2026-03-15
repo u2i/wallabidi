@@ -1,8 +1,8 @@
-defmodule Wallaby.Integration.Browser.SessionIsolationTest do
+defmodule Wallabidi.Integration.Browser.SessionIsolationTest do
   use ExUnit.Case, async: true
-  use Wallaby.DSL
+  use Wallabidi.DSL
 
-  import Wallaby.Integration.SessionCase, only: [start_test_session: 0]
+  import Wallabidi.Integration.SessionCase, only: [start_test_session: 0]
 
   @moduletag :isolation
 
@@ -20,8 +20,8 @@ defmodule Wallaby.Integration.Browser.SessionIsolationTest do
 
     assert_has(session_b, Query.css("#index"))
 
-    Wallaby.end_session(session_a)
-    Wallaby.end_session(session_b)
+    Wallabidi.end_session(session_a)
+    Wallabidi.end_session(session_b)
   end
 
   test "concurrent sessions have independent cookies" do
@@ -43,8 +43,8 @@ defmodule Wallaby.Integration.Browser.SessionIsolationTest do
     cookies_a = Browser.cookies(session_a)
     assert Enum.any?(cookies_a, &(&1["name"] == "test_cookie"))
 
-    Wallaby.end_session(session_a)
-    Wallaby.end_session(session_b)
+    Wallabidi.end_session(session_a)
+    Wallabidi.end_session(session_b)
   end
 
   test "ending one session does not affect another" do
@@ -55,13 +55,13 @@ defmodule Wallaby.Integration.Browser.SessionIsolationTest do
     session_b |> visit("page_1.html")
 
     # End session A
-    Wallaby.end_session(session_a)
+    Wallabidi.end_session(session_a)
 
     # Session B still works
     assert_has(session_b, Query.text("Page 1"))
     title = Browser.page_title(session_b)
     assert is_binary(title)
 
-    Wallaby.end_session(session_b)
+    Wallabidi.end_session(session_b)
   end
 end

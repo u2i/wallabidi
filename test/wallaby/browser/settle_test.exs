@@ -1,8 +1,8 @@
-defmodule Wallaby.Browser.SettleTest do
+defmodule Wallabidi.Browser.SettleTest do
   use ExUnit.Case, async: true
 
-  alias Wallaby.Browser
-  alias Wallaby.Session
+  alias Wallabidi.Browser
+  alias Wallabidi.Session
 
   describe "settle/2 with non-BiDi session" do
     test "returns session immediately (no-op)" do

@@ -1,4 +1,4 @@
-defmodule Wallaby.TestSupport.TestWorkspace do
+defmodule Wallabidi.TestSupport.TestWorkspace do
   @moduledoc """
   Test helpers that create temporary directory that exists
   for the lifetime of the test.
@@ -44,7 +44,7 @@ defmodule Wallaby.TestSupport.TestWorkspace do
   defp default_tmp_path do
     Path.join([
       System.tmp_dir!(),
-      Application.get_env(:wallaby, :tmp_dir_prefix, ""),
+      Application.get_env(:wallabidi, :tmp_dir_prefix, ""),
       "test-workspace-%{random_string}"
     ])
   end

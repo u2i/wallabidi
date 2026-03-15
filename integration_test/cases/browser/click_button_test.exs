@@ -1,8 +1,8 @@
-defmodule Wallaby.Integration.Browser.Actions.ClickButtonTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.Browser.Actions.ClickButtonTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
-  alias Wallaby.Integration.Pages.IndexPage
-  import Wallaby.Query, only: [button: 1, button: 2, css: 1]
+  alias Wallabidi.Integration.Pages.IndexPage
+  import Wallabidi.Query, only: [button: 1, button: 2, css: 1]
 
   setup %{session: session} do
     page =
@@ -259,19 +259,19 @@ defmodule Wallaby.Integration.Browser.Actions.ClickButtonTest do
   end
 
   test "throws an error if the button does not include a valid type attribute", %{page: page} do
-    assert_raise Wallaby.QueryError, ~r/button has an invalid 'type'/, fn ->
+    assert_raise Wallabidi.QueryError, ~r/button has an invalid 'type'/, fn ->
       click(page, button("button with bad type", []))
     end
   end
 
   test "throws an error if clicking on an input with no type", %{page: page} do
-    assert_raise Wallaby.QueryError, ~r/Expected (.*) 1/, fn ->
+    assert_raise Wallabidi.QueryError, ~r/Expected (.*) 1/, fn ->
       click(page, button("input-no-type", []))
     end
   end
 
   test "throws an error if the button cannot be found on the page", %{page: page} do
-    assert_raise Wallaby.QueryError, ~r/Expected (.*) 1/, fn ->
+    assert_raise Wallabidi.QueryError, ~r/Expected (.*) 1/, fn ->
       click(page, button("unfound button", []))
     end
   end
@@ -281,7 +281,7 @@ defmodule Wallaby.Integration.Browser.Actions.ClickButtonTest do
   end
 
   test "with duplicate buttons", %{page: page} do
-    assert_raise Wallaby.QueryError, ~r/Expected (.*) 1/, fn ->
+    assert_raise Wallabidi.QueryError, ~r/Expected (.*) 1/, fn ->
       page
       |> find(css(".duplicate-buttons"))
       |> click(button("Duplicate Button"))

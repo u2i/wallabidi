@@ -1,15 +1,15 @@
-defmodule Wallaby.DSL do
+defmodule Wallabidi.DSL do
   @moduledoc """
-  Sets up the Wallaby DSL in a module.
+  Sets up the Wallabidi DSL in a module.
 
-  All functions in `Wallaby.Browser` are now accessible without a module name
-  and `Wallaby.Browser`, `Wallaby.Element` and `Wallaby.Query` are all aliased.
+  All functions in `Wallabidi.Browser` are now accessible without a module name
+  and `Wallabidi.Browser`, `Wallabidi.Element` and `Wallabidi.Query` are all aliased.
 
   ## Example
 
   ```elixir
   defmodule MyPage do
-    use Wallaby.DSL
+    use Wallabidi.DSL
 
     @name_field Query.text_field("Name")
     @email_field Query.text_field("email")
@@ -28,13 +28,13 @@ defmodule Wallaby.DSL do
 
   defmacro __using__([]) do
     quote do
-      alias Wallaby.Browser
-      alias Wallaby.Element
-      alias Wallaby.Query
+      alias Wallabidi.Browser
+      alias Wallabidi.Element
+      alias Wallabidi.Query
 
       # Kernel.tap/2 was introduced in 1.12 and conflicts with Browser.tap/2
       import Kernel, except: [tap: 2]
-      import Wallaby.Browser
+      import Wallabidi.Browser
     end
   end
 end

@@ -1,11 +1,11 @@
-defmodule Wallaby.Integration.Helpers do
+defmodule Wallabidi.Integration.Helpers do
   @moduledoc false
 
-  def displayed_in_viewport?(session, %Wallaby.Query{} = query),
-    do: displayed_in_viewport?(session, Wallaby.Browser.find(session, query))
+  def displayed_in_viewport?(session, %Wallabidi.Query{} = query),
+    do: displayed_in_viewport?(session, Wallabidi.Browser.find(session, query))
 
   # source: https://github.com/webdriverio/webdriverio/blob/9b83046725ea9ba68f7d2e5a4207b50a798f944f/packages/webdriverio/src/scripts/isDisplayedInViewport.js
-  def displayed_in_viewport?(session, %Wallaby.Element{} = element) do
+  def displayed_in_viewport?(session, %Wallabidi.Element{} = element) do
     {:ok, result} =
       element.driver.execute_script(
         session,

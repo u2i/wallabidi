@@ -1,5 +1,5 @@
-defmodule Wallaby.Integration.Browser.TextTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.Browser.TextTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
   test "can get text of an element", %{session: session} do
     text =

@@ -1,4 +1,4 @@
-defmodule Wallaby.Integration.TestServer do
+defmodule Wallabidi.Integration.TestServer do
   @moduledoc false
 
   @config [

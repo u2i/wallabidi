@@ -1,4 +1,4 @@
-defmodule Wallaby.TestSupport.ApplicationControl do
+defmodule Wallabidi.TestSupport.ApplicationControl do
   @moduledoc """
   Test helpers for starting/stopping wallaby during test setup
   """
@@ -10,7 +10,7 @@ defmodule Wallaby.TestSupport.ApplicationControl do
   Stops the wallaby application
   """
   def stop_wallaby(_) do
-    Application.stop(:wallaby)
+    Application.stop(:wallabidi)
   end
 
   @doc """
@@ -23,9 +23,9 @@ defmodule Wallaby.TestSupport.ApplicationControl do
     on_exit(fn ->
       # Stops wallaby if it's been started so it can be
       # restarted successfully
-      Application.stop(:wallaby)
+      Application.stop(:wallabidi)
 
-      case Application.start(:wallaby) do
+      case Application.start(:wallabidi) do
         :ok ->
           :ok
 

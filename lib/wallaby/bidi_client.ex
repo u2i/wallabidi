@@ -1,10 +1,10 @@
-defmodule Wallaby.BiDiClient do
+defmodule Wallabidi.BiDiClient do
   @moduledoc false
   # Pure BiDi protocol client — no WebdriverClient fallbacks.
   # All operations go through WebSocket using the BiDi protocol.
 
-  alias Wallaby.{Element, Session}
-  alias Wallaby.BiDi.{Commands, ResponseParser, WebSocketClient}
+  alias Wallabidi.{Element, Session}
+  alias Wallabidi.BiDi.{Commands, ResponseParser, WebSocketClient}
 
   @type parent :: Element.t() | Session.t()
 
@@ -16,8 +16,8 @@ defmodule Wallaby.BiDiClient do
   defp browsing_context(%Session{browsing_context: ctx} = session) do
     # Frame-focused context overrides window-focused context which overrides session default
     Process.get(
-      {:wallaby_frame_context, session.id},
-      Process.get({:wallaby_focused_context, session.id}, ctx)
+      {:wallabidi_frame_context, session.id},
+      Process.get({:wallabidi_focused_context, session.id}, ctx)
     )
   end
 
@@ -531,7 +531,7 @@ defmodule Wallaby.BiDiClient do
     # For now, use script.evaluate with a backendNodeId lookup.
     # BiDi doesn't directly support backendNodeId in element references,
     # so we'll use the sharedId if we stored it, otherwise fall back.
-    case Process.get({:wallaby_element_shared_id, id}) do
+    case Process.get({:wallabidi_element_shared_id, id}) do
       nil ->
         # No mapping found — pass as a plain object (might not resolve)
         %{type: "object", value: %{}}
@@ -633,7 +633,7 @@ defmodule Wallaby.BiDiClient do
   def window_handle(session) do
     sess = session(session)
     # Return the currently-focused context if set, otherwise the session's default
-    focused = Process.get({:wallaby_focused_context, sess.id})
+    focused = Process.get({:wallabidi_focused_context, sess.id})
     {:ok, focused || sess.browsing_context}
   end
 
@@ -643,7 +643,7 @@ defmodule Wallaby.BiDiClient do
 
     case send_bidi(session, method, params) do
       {:ok, _} ->
-        Process.put({:wallaby_focused_context, sess.id}, window_handle_id)
+        Process.put({:wallabidi_focused_context, sess.id}, window_handle_id)
         {:ok, nil}
 
       {:error, :no_such_frame} ->
@@ -653,7 +653,7 @@ defmodule Wallaby.BiDiClient do
 
         case send_bidi(session, method, params) do
           {:ok, _} ->
-            Process.put({:wallaby_focused_context, sess.id}, window_handle_id)
+            Process.put({:wallabidi_focused_context, sess.id}, window_handle_id)
             {:ok, nil}
 
           error ->
@@ -675,7 +675,7 @@ defmodule Wallaby.BiDiClient do
         # Clear the focused context since the window was closed.
         # Reset to the session's default context so subsequent commands
         # target a still-valid context.
-        Process.delete({:wallaby_focused_context, sess.id})
+        Process.delete({:wallabidi_focused_context, sess.id})
 
         # Give chromedriver a moment to reconcile its context list
         Process.sleep(50)
@@ -760,7 +760,7 @@ defmodule Wallaby.BiDiClient do
 
   def focus_frame(session, nil) do
     # Switch back to top-level context
-    Process.delete({:wallaby_frame_context, session(session).id})
+    Process.delete({:wallabidi_frame_context, session(session).id})
     {:ok, nil}
   end
 
@@ -796,14 +796,14 @@ defmodule Wallaby.BiDiClient do
     # Find the child context from the context tree that matches this frame's URL
     case find_frame_context_by_url(session, context, frame_url) do
       {:ok, frame_context} ->
-        Process.put({:wallaby_frame_context, sess.id}, frame_context)
+        Process.put({:wallabidi_frame_context, sess.id}, frame_context)
         {:ok, nil}
 
       _ ->
         # Fallback: use order-based matching
         case find_frame_context(session, shared_id) do
           {:ok, frame_context} ->
-            Process.put({:wallaby_frame_context, sess.id}, frame_context)
+            Process.put({:wallabidi_frame_context, sess.id}, frame_context)
             {:ok, nil}
 
           _ ->
@@ -818,7 +818,7 @@ defmodule Wallaby.BiDiClient do
     case get_child_contexts(session) do
       {:ok, contexts} when length(contexts) > frame_index ->
         frame_context = Enum.at(contexts, frame_index)
-        Process.put({:wallaby_frame_context, sess.id}, frame_context)
+        Process.put({:wallabidi_frame_context, sess.id}, frame_context)
         {:ok, nil}
 
       _ ->
@@ -840,9 +840,9 @@ defmodule Wallaby.BiDiClient do
         parent = find_parent_context(result, current)
 
         if parent do
-          Process.put({:wallaby_frame_context, sess.id}, parent)
+          Process.put({:wallabidi_frame_context, sess.id}, parent)
         else
-          Process.delete({:wallaby_frame_context, sess.id})
+          Process.delete({:wallabidi_frame_context, sess.id})
         end
 
         {:ok, nil}

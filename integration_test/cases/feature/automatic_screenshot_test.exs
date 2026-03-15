@@ -1,4 +1,4 @@
-defmodule Wallaby.Integration.Feature.AutomaticScreenshotTest do
+defmodule Wallabidi.Integration.Feature.AutomaticScreenshotTest do
   use ExUnit.Case
 
   alias ExUnit.CaptureIO
@@ -7,18 +7,22 @@ defmodule Wallaby.Integration.Feature.AutomaticScreenshotTest do
     test "feature takes a screenshot on failure for each open wallaby session" do
       defmodule ImportFeature.FailureWithMultipleSessionsTest do
         use ExUnit.Case
-        import Wallaby.Feature
+        import Wallabidi.Feature
 
         setup do
-          Wallaby.SettingsTestHelpers.ensure_setting_is_reset(:wallaby, :screenshot_on_failure)
-          Application.put_env(:wallaby, :screenshot_on_failure, true)
+          Wallabidi.SettingsTestHelpers.ensure_setting_is_reset(
+            :wallabidi,
+            :screenshot_on_failure
+          )
+
+          Application.put_env(:wallabidi, :screenshot_on_failure, true)
 
           :ok
         end
 
         feature "fails" do
-          {:ok, _} = Wallaby.start_session()
-          {:ok, _} = Wallaby.start_session()
+          {:ok, _} = Wallabidi.start_session()
+          {:ok, _} = Wallabidi.start_session()
 
           assert false
         end
@@ -40,12 +44,16 @@ defmodule Wallaby.Integration.Feature.AutomaticScreenshotTest do
     test "feature takes a screenshot on failure for each open wallaby session" do
       defmodule UseFeature.FailureWithMultipleSessionsTest do
         use ExUnit.Case
-        use Wallaby.Feature
+        use Wallabidi.Feature
 
         @sessions 2
         feature "fails", %{sessions: _sessions} do
-          Wallaby.SettingsTestHelpers.ensure_setting_is_reset(:wallaby, :screenshot_on_failure)
-          Application.put_env(:wallaby, :screenshot_on_failure, true)
+          Wallabidi.SettingsTestHelpers.ensure_setting_is_reset(
+            :wallabidi,
+            :screenshot_on_failure
+          )
+
+          Application.put_env(:wallabidi, :screenshot_on_failure, true)
 
           assert false
         end

@@ -1,6 +1,6 @@
-defmodule Wallaby.Integration.Browser.UseFeatureTest do
+defmodule Wallabidi.Integration.Browser.UseFeatureTest do
   use ExUnit.Case, async: true
-  use Wallaby.Feature
+  use Wallabidi.Feature
 
   @sessions 2
   feature "multi session", %{sessions: [session_1, session_2]} do
@@ -26,7 +26,7 @@ defmodule Wallaby.Integration.Browser.UseFeatureTest do
   end
 
   @expected_capabilities Map.put(
-                           Wallaby.Chrome.default_capabilities(),
+                           Wallabidi.Chrome.default_capabilities(),
                            :"wallaby:test",
                            "I'm a capability"
                          )

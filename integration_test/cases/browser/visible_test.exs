@@ -1,5 +1,5 @@
-defmodule Wallaby.Integration.Browser.VisibleTest do
-  use Wallaby.Integration.SessionCase, async: true
+defmodule Wallabidi.Integration.Browser.VisibleTest do
+  use Wallabidi.Integration.SessionCase, async: true
 
   describe "visible?/1" do
     setup :visit_page
