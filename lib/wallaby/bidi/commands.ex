@@ -411,5 +411,4 @@ defmodule Wallaby.BiDi.Commands do
   defp key_code(:decimal), do: "\uE028"
   defp key_code(:divide), do: "\uE029"
   defp key_code(:command), do: "\uE03D"
-  defp key_code(char) when is_binary(char), do: char
 end

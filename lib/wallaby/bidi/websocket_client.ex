@@ -14,7 +14,8 @@ defmodule Wallaby.BiDi.WebSocketClient do
     next_id: 1,
     pending: %{},
     subscribers: %{},
-    buffer: ""
+    buffer: "",
+    status: nil
   ]
 
   # Public API
@@ -42,12 +43,13 @@ defmodule Wallaby.BiDi.WebSocketClient do
   @impl true
   def init(ws_url) do
     uri = URI.parse(ws_url)
-    scheme = if uri.scheme in ["wss", "https"], do: :https, else: :http
-    port = uri.port || if(scheme == :https, do: 443, else: 80)
+    http_scheme = if uri.scheme in ["wss", "https"], do: :https, else: :http
+    ws_scheme = if uri.scheme in ["wss", "https"], do: :wss, else: :ws
+    port = uri.port || if(http_scheme == :https, do: 443, else: 80)
     path = (uri.path || "/") <> if(uri.query, do: "?#{uri.query}", else: "")
 
-    with {:ok, conn} <- Mint.HTTP.connect(scheme, uri.host, port),
-         {:ok, conn, ref} <- Mint.WebSocket.upgrade(scheme, conn, path, []) do
+    with {:ok, conn} <- Mint.HTTP.connect(http_scheme, uri.host, port),
+         {:ok, conn, ref} <- Mint.WebSocket.upgrade(ws_scheme, conn, path, []) do
       {:ok, %__MODULE__{conn: conn, ref: ref}}
     else
       {:error, reason} ->
@@ -127,17 +129,16 @@ defmodule Wallaby.BiDi.WebSocketClient do
     Enum.reduce(responses, state, &process_response/2)
   end
 
-  defp process_response({:status, ref, status}, %{ref: ref} = state) when status == 101 do
-    state
-  end
-
   defp process_response({:status, ref, status}, %{ref: ref} = state) do
-    Logger.error("BiDi WebSocket upgrade failed with status #{status}")
-    state
+    if status != 101 do
+      Logger.error("BiDi WebSocket upgrade failed with status #{status}")
+    end
+
+    %{state | status: status}
   end
 
   defp process_response({:headers, ref, headers}, %{ref: ref} = state) do
-    case Mint.WebSocket.new(state.conn, ref, status(state), headers) do
+    case Mint.WebSocket.new(state.conn, ref, state.status, headers) do
       {:ok, conn, websocket} ->
         %{state | conn: conn, websocket: websocket}
 
@@ -231,6 +232,4 @@ defmodule Wallaby.BiDi.WebSocketClient do
     end
   end
 
-  # We need to track the status for the handshake
-  defp status(_state), do: 101
 end
