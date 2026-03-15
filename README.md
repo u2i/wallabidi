@@ -89,7 +89,7 @@ If no local ChromeDriver is installed, Wallabidi will automatically start a Dock
 $ mix test  # Just works. Docker container starts and stops automatically.
 ```
 
-The container (`erseco/alpine-chromedriver`) is lightweight (~750MB), multi-arch (ARM64 + AMD64), and is cleaned up when your test suite finishes. URLs are automatically rewritten so Chrome in the container can reach your local test server.
+The container (`erseco/alpine-chromedriver`) is multi-arch (ARM64 + AMD64) and is cleaned up when your test suite finishes. The image is ~750MB (Chromium is large — but this is half the size of the Selenium Grid image). URLs are automatically rewritten so Chrome in the container can reach your local test server.
 
 This is the recommended mode for teams — no local dependencies to install beyond Docker.
 
