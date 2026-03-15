@@ -49,6 +49,20 @@ defmodule Wallaby.Chrome do
       binary: "path/to/chrome"
     ]
   ```
+
+  ### Remote ChromeDriver
+
+  To connect to a ChromeDriver running in a separate container (e.g. Docker):
+
+  ```elixir
+  config :wallaby,
+    chromedriver: [
+      remote_url: "http://chrome:4444/"
+    ]
+  ```
+
+  When `remote_url` is set, Wallaby will not start a local ChromeDriver process
+  and will instead connect to the remote instance.
   """
   use Supervisor
 
@@ -81,12 +95,17 @@ defmodule Wallaby.Chrome do
 
   @doc false
   def init(_) do
-    children = [
-      {PartitionSupervisor,
-       child_spec: Wallaby.Chrome.Chromedriver,
-       name: Wallaby.Chromedrivers,
-       partitions: min(System.schedulers_online(), 10)}
-    ]
+    children =
+      if remote_url() do
+        []
+      else
+        [
+          {PartitionSupervisor,
+           child_spec: Wallaby.Chrome.Chromedriver,
+           name: Wallaby.Chromedrivers,
+           partitions: min(System.schedulers_online(), 10)}
+        ]
+      end
 
     Supervisor.init(children, strategy: :one_for_one)
   end
@@ -94,18 +113,23 @@ defmodule Wallaby.Chrome do
   @doc false
   @spec validate() :: :ok | {:error, DependencyError.t()}
   def validate do
-    with {:ok, chromedriver_version} <- get_chromedriver_version(),
-         {:ok, chrome_version} <- get_chrome_version(),
-         :ok <- minimum_version_check(chromedriver_version) do
-      version_compare(chrome_version, chromedriver_version)
+    if remote_url() do
+      :ok
+    else
+      with {:ok, chromedriver_version} <- get_chromedriver_version(),
+           {:ok, chrome_version} <- get_chrome_version(),
+           :ok <- minimum_version_check(chromedriver_version) do
+        version_compare(chrome_version, chromedriver_version)
+      end
     end
   end
 
   @doc false
   def start_session(opts \\ []) do
-    opts |> Keyword.get(:readiness_timeout, @default_readiness_timeout) |> wait_until_ready!()
+    timeout = Keyword.get(opts, :readiness_timeout, @default_readiness_timeout)
+    base_url = chromedriver_base_url()
 
-    base_url = Chromedriver.base_url()
+    wait_for_chromedriver!(base_url, timeout)
 
     capabilities =
       opts
@@ -125,12 +149,51 @@ defmodule Wallaby.Chrome do
         capabilities: capabilities
       }
 
-      session = connect_bidi!(session, response)
+      session = connect_bidi!(session, response, base_url)
 
       if window_size = Keyword.get(opts, :window_size),
         do: {:ok, _} = set_window_size(session, window_size[:width], window_size[:height])
 
       {:ok, session}
+    end
+  end
+
+  defp remote_url do
+    Application.get_env(:wallaby, :chromedriver, []) |> Keyword.get(:remote_url)
+  end
+
+  defp chromedriver_base_url do
+    remote_url() || Chromedriver.base_url()
+  end
+
+  # When connecting to a remote chromedriver, the webSocketUrl it returns
+  # uses localhost (from its perspective). Rewrite the host to match the
+  # remote_url so we connect to the right machine.
+  defp rewrite_ws_host(ws_url, base_url) do
+    if remote_url() do
+      ws_uri = URI.parse(ws_url)
+      base_uri = URI.parse(base_url)
+
+      URI.to_string(%{ws_uri | host: base_uri.host})
+    else
+      ws_url
+    end
+  end
+
+  defp wait_for_chromedriver!(base_url, timeout) do
+    if remote_url() do
+      # Poll the remote /status endpoint with a timeout
+      task =
+        Task.async(fn ->
+          Wallaby.Chrome.Chromedriver.ReadinessChecker.wait_until_ready(base_url)
+        end)
+
+      case Task.yield(task, timeout) || Task.shutdown(task) do
+        {:ok, :ok} -> :ok
+        _ -> raise "timeout waiting for remote chromedriver at #{base_url}"
+      end
+    else
+      wait_until_ready!(timeout)
     end
   end
 
@@ -147,11 +210,13 @@ defmodule Wallaby.Chrome do
     end
   end
 
-  defp connect_bidi!(session, response) do
+  defp connect_bidi!(session, response, base_url) do
     ws_url =
       get_in(response, ["value", "capabilities", "webSocketUrl"]) ||
         get_in(response, ["capabilities", "webSocketUrl"]) ||
         raise "chromedriver did not return a webSocketUrl — upgrade chromedriver"
+
+    ws_url = rewrite_ws_host(ws_url, base_url)
 
     {:ok, bidi_pid} = WebSocketClient.start_link(ws_url)
 
