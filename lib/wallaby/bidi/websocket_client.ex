@@ -137,8 +137,8 @@ defmodule Wallaby.BiDi.WebSocketClient do
     %{state | status: status}
   end
 
-  defp process_response({:headers, ref, headers}, %{ref: ref} = state) do
-    case Mint.WebSocket.new(state.conn, ref, state.status, headers) do
+  defp process_response({:headers, ref, headers}, %{ref: ref, status: 101} = state) do
+    case Mint.WebSocket.new(state.conn, ref, 101, headers) do
       {:ok, conn, websocket} ->
         %{state | conn: conn, websocket: websocket}
 
@@ -146,6 +146,10 @@ defmodule Wallaby.BiDi.WebSocketClient do
         Logger.error("BiDi WebSocket handshake failed: #{inspect(reason)}")
         %{state | conn: conn}
     end
+  end
+
+  defp process_response({:headers, _ref, _headers}, state) do
+    state
   end
 
   defp process_response({:data, ref, data}, %{ref: ref} = state) do
