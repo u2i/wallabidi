@@ -108,7 +108,7 @@ defmodule Wallaby.Chrome do
 
   @default_readiness_timeout 10_000
 
-  alias Wallaby.Chrome.Chromedriver
+  alias Wallaby.Chrome.{BrowserServer, Chromedriver}
   alias Wallaby.{BiDiClient, WebdriverClient}
   alias Wallaby.{DependencyError, Metadata}
   alias Wallaby.BiDi.{ResponseParser, WebSocketClient}
@@ -144,11 +144,7 @@ defmodule Wallaby.Chrome do
   @doc false
   def init(_) do
     children = [
-      Wallaby.Driver.LogStore,
-      {PartitionSupervisor,
-       child_spec: Wallaby.Chrome.Chromedriver,
-       name: Wallaby.Chromedrivers,
-       partitions: min(System.schedulers_online(), 10)}
+      Wallaby.Driver.LogStore
     ]
 
     Supervisor.init(children, strategy: :one_for_one)
@@ -157,10 +153,9 @@ defmodule Wallaby.Chrome do
   @doc false
   @spec validate() :: :ok | {:error, DependencyError.t()}
   def validate do
-    with {:ok, chromedriver_version} <- get_chromedriver_version(),
-         {:ok, chrome_version} <- get_chrome_version(),
-         :ok <- minimum_version_check(chromedriver_version) do
-      version_compare(chrome_version, chromedriver_version)
+    case find_chrome_executable() do
+      {:ok, _} -> :ok
+      {:error, _} = error -> error
     end
   end
 
@@ -274,49 +269,6 @@ defmodule Wallaby.Chrome do
     end
   end
 
-  defp version_compare(chrome_version, chromedriver_version) do
-    case chrome_version == chromedriver_version do
-      true ->
-        :ok
-
-      _ ->
-        exception =
-          DependencyError.exception("""
-          Looks like you're trying to run Wallaby with a mismatched version of Chrome: #{Enum.join(chrome_version, ".")} and chromedriver: #{Enum.join(chromedriver_version, ".")}.
-          Chrome and chromedriver must match to a major, minor, and build version.
-          """)
-
-        IO.warn(exception.message)
-
-        :ok
-    end
-  end
-
-  defp minimum_version_check([major_version, _minor_version, _build_version])
-       when major_version > 2 do
-    :ok
-  end
-
-  defp minimum_version_check([major_version, minor_version, _build_version])
-       when major_version == 2 and minor_version >= 30 do
-    :ok
-  end
-
-  defp minimum_version_check([major_version, minor_version])
-       when major_version == 2 and minor_version >= 30 do
-    :ok
-  end
-
-  defp minimum_version_check(_version) do
-    exception =
-      DependencyError.exception("""
-      Looks like you're trying to run an older version of chromedriver. Wallaby needs at least
-      chromedriver 2.30 to run correctly.
-      """)
-
-    {:error, exception}
-  end
-
   defp parse_version(body) do
     result =
       case Regex.run(~r/.*?(\d+\.\d+(\.\d+)?)/, body) do
@@ -333,17 +285,104 @@ defmodule Wallaby.Chrome do
   @doc false
   @spec start_session([start_session_opts]) :: Wallaby.Driver.on_start_session() | no_return
   def start_session(opts \\ []) do
+    if Keyword.has_key?(opts, :create_session_fn) do
+      start_session_legacy(opts)
+    else
+      start_session_bidi(opts)
+    end
+  end
+
+  # Direct Chrome launch + BiDi WebSocket — no chromedriver needed
+  defp start_session_bidi(opts) do
+    timeout = Keyword.get(opts, :readiness_timeout, @default_readiness_timeout)
+    chrome_args = build_chrome_args(opts)
+
+    {:ok, chrome_binary} = find_chrome_executable()
+
+    {:ok, browser} = BrowserServer.start_link(chrome_binary, chrome_args: chrome_args)
+
+    case BrowserServer.wait_until_ready(browser, timeout) do
+      :ok -> :ok
+      {:error, :timeout} -> raise "timeout waiting for Chrome to be ready"
+    end
+
+    ws_url = BrowserServer.get_ws_url(browser)
+
+    with {:ok, bidi_pid} <- WebSocketClient.start_link(ws_url),
+         {:ok, result} <-
+           WebSocketClient.send_command(bidi_pid, "browsingContext.getTree", %{}),
+         {:ok, context_id} <- ResponseParser.extract_context(result) do
+      session_id = "bidi-#{:erlang.unique_integer([:positive])}"
+
+      session = %Wallaby.Session{
+        session_url: "bidi://#{session_id}",
+        url: "bidi://#{session_id}",
+        id: session_id,
+        driver: __MODULE__,
+        server: browser,
+        capabilities: %{},
+        bidi_pid: bidi_pid,
+        browsing_context: context_id
+      }
+
+      if window_size = Keyword.get(opts, :window_size),
+        do: {:ok, _} = set_window_size(session, window_size[:width], window_size[:height])
+
+      {:ok, session}
+    else
+      error ->
+        BrowserServer.stop(browser)
+        {:error, {:bidi_setup_failed, error}}
+    end
+  end
+
+  defp build_chrome_args(opts) do
+    config = Application.get_env(:wallaby, :chromedriver, [])
+    headless? = Keyword.get(opts, :headless, Keyword.get(config, :headless, true))
+
+    base_args = [
+      "--no-sandbox",
+      "--disable-gpu",
+      "--fullscreen",
+      "window-size=1280,800",
+      "--user-agent=Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36"
+    ]
+
+    args =
+      if headless? do
+        ["--headless" | base_args]
+      else
+        base_args
+      end
+
+    # Append beam metadata to user-agent if present
+    args =
+      if opts[:metadata] do
+        Enum.map(args, fn
+          "--user-agent=" <> ua ->
+            "--user-agent=#{Metadata.append(ua, opts[:metadata])}"
+
+          arg ->
+            arg
+        end)
+      else
+        args
+      end
+
+    args
+  end
+
+  # Legacy chromedriver-based session (for backward compat with create_session_fn)
+  defp start_session_legacy(opts) do
     opts |> Keyword.get(:readiness_timeout, @default_readiness_timeout) |> wait_until_ready!()
 
     base_url = Chromedriver.base_url()
-    user_create_session_fn = Keyword.get(opts, :create_session_fn)
+    create_session_fn = Keyword.get(opts, :create_session_fn, &WebdriverClient.create_session/2)
 
     capabilities =
       opts
       |> Keyword.get_lazy(:capabilities, fn -> capabilities_from_config(opts) end)
       |> put_beam_metadata(opts)
-
-    create_session_fn = user_create_session_fn || (&WebdriverClient.create_session/2)
 
     with {:ok, response} <- create_session_fn.(base_url, capabilities) do
       id = response["sessionId"]
@@ -357,34 +396,10 @@ defmodule Wallaby.Chrome do
         capabilities: capabilities
       }
 
-      session = maybe_start_bidi(session, response)
-
       if window_size = Keyword.get(opts, :window_size),
         do: {:ok, _} = set_window_size(session, window_size[:width], window_size[:height])
 
       {:ok, session}
-    end
-  end
-
-  defp maybe_start_bidi(session, response) do
-    ws_url =
-      get_in(response, ["value", "capabilities", "webSocketUrl"]) ||
-        get_in(response, ["capabilities", "webSocketUrl"])
-
-    if ws_url do
-      connect_bidi(session, ws_url)
-    else
-      session
-    end
-  end
-
-  defp connect_bidi(session, ws_url) do
-    with {:ok, bidi_pid} <- WebSocketClient.start_link(ws_url),
-         {:ok, result} <- WebSocketClient.send_command(bidi_pid, "browsingContext.getTree", %{}),
-         {:ok, context_id} <- ResponseParser.extract_context(result) do
-      %{session | bidi_pid: bidi_pid, browsing_context: context_id}
-    else
-      _ -> session
     end
   end
 
@@ -406,9 +421,18 @@ defmodule Wallaby.Chrome do
 
   @doc false
   def end_session(%Wallaby.Session{} = session, opts \\ []) do
-    if session.bidi_pid, do: WebSocketClient.close(session.bidi_pid)
-    end_session_fn = Keyword.get(opts, :end_session_fn, &WebdriverClient.delete_session/1)
-    end_session_fn.(session)
+    if session.bidi_pid do
+      WebSocketClient.close(session.bidi_pid)
+
+      # Stop the browser process if it's a BrowserServer (not Chromedriver)
+      if is_pid(session.server), do: GenServer.stop(session.server, :normal, 5_000)
+    end
+
+    unless bidi_session?(session) do
+      end_session_fn = Keyword.get(opts, :end_session_fn, &WebdriverClient.delete_session/1)
+      end_session_fn.(session)
+    end
+
     :ok
   end
 

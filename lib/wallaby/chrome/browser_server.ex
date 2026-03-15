@@ -37,6 +37,12 @@ defmodule Wallaby.Chrome.BrowserServer do
     GenServer.call(server, :get_ws_url)
   end
 
+  def stop(server) do
+    GenServer.stop(server, :normal, 5_000)
+  catch
+    :exit, _ -> :ok
+  end
+
   # GenServer callbacks
 
   @impl true
