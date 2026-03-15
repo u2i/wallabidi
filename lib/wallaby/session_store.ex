@@ -82,7 +82,10 @@ defmodule Wallaby.SessionStore do
         {{{:"$1", :_, :_}, :"$4"}, [{:==, :"$1", ref}], [:"$4"]}
       ])
 
-    Wallaby.Chrome.end_session(session)
+    # Spawn cleanup to avoid blocking the GenServer —
+    # end_session uses mint_request which does `receive` and would
+    # intercept GenServer messages if run inline.
+    Task.start(fn -> Wallaby.Chrome.end_session(session) end)
 
     :ets.delete(state.ets_table, {ref, session.id, pid})
 
@@ -91,8 +94,15 @@ defmodule Wallaby.SessionStore do
     {:noreply, state}
   end
 
+  def handle_info(_msg, state) do
+    # Ignore stray TCP/Mint messages that may arrive after session cleanup
+    {:noreply, state}
+  end
+
   defp cleanup_session({_, session}) do
-    Wallaby.Chrome.end_session(session)
+    # Run in a Task so mint_request's `receive` doesn't interfere
+    task = Task.async(fn -> Wallaby.Chrome.end_session(session) end)
+    Task.yield(task, 5_000) || Task.shutdown(task)
   rescue
     _ -> :ok
   end
