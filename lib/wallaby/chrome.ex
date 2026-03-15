@@ -336,13 +336,14 @@ defmodule Wallaby.Chrome do
     opts |> Keyword.get(:readiness_timeout, @default_readiness_timeout) |> wait_until_ready!()
 
     base_url = Chromedriver.base_url()
-    create_session_fn = Keyword.get(opts, :create_session_fn, &WebdriverClient.create_session/2)
+    user_create_session_fn = Keyword.get(opts, :create_session_fn)
 
     capabilities =
       opts
       |> Keyword.get_lazy(:capabilities, fn -> capabilities_from_config(opts) end)
       |> put_beam_metadata(opts)
-      |> put_bidi_capabilities()
+
+    create_session_fn = user_create_session_fn || &WebdriverClient.create_session/2
 
     with {:ok, response} <- create_session_fn.(base_url, capabilities) do
       id = response["sessionId"]
@@ -363,14 +364,6 @@ defmodule Wallaby.Chrome do
 
       {:ok, session}
     end
-  end
-
-  defp put_bidi_capabilities(capabilities) do
-    capabilities
-    |> Map.put(:webSocketUrl, true)
-    |> update_in([:chromeOptions, :args], fn args ->
-      args ++ ["--remote-debugging-pipe"] |> Enum.uniq()
-    end)
   end
 
   defp maybe_start_bidi(session, response) do
@@ -433,7 +426,7 @@ defmodule Wallaby.Chrome do
   def blank_page?(session) do
     case current_url(session) do
       {:ok, url} ->
-        url == "data:,"
+        url in ["data:,", "about:blank"]
 
       _ ->
         false
