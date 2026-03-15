@@ -138,7 +138,7 @@ defmodule Wallabidi.Browser do
   It is possible that this function never halts. Whenever we experience a stale
   reference error we retry the query without checking to see if we've run over
   our time. In practice we should eventually be able to query the DOM in a stable
-  state. However, if this error does continue to occur it will cause wallaby to
+  state. However, if this error does continue to occur it will cause wallabidi to
   loop forever (or until the test is killed by exunit).
   """
   @type sync_result :: {:ok, any()} | {:error, any()}

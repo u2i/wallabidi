@@ -21,7 +21,7 @@ defmodule Wallabidi.Mixfile do
 
       # Custom testing
       aliases: ["test.all": ["test", "test.chrome"], "test.chrome": &test_chrome/1],
-      test_paths: test_paths(System.get_env("WALLABY_DRIVER")),
+      test_paths: test_paths(System.get_env("WALLABIDI_DRIVER")),
       dialyzer: dialyzer()
     ]
   end
@@ -93,12 +93,12 @@ defmodule Wallabidi.Mixfile do
   defp test_chrome(args) do
     args = if IO.ANSI.enabled?(), do: ["--color" | args], else: ["--no-color" | args]
 
-    IO.puts("==> Running tests for WALLABY_DRIVER=chrome mix test")
+    IO.puts("==> Running tests for WALLABIDI_DRIVER=chrome mix test")
 
     {_, res} =
       System.cmd("mix", ["test" | args],
         into: IO.binstream(:stdio, :line),
-        env: [{"WALLABY_DRIVER", "chrome"}]
+        env: [{"WALLABIDI_DRIVER", "chrome"}]
       )
 
     if res > 0 do

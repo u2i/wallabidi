@@ -27,12 +27,12 @@ defmodule Wallabidi.Integration.Browser.UseFeatureTest do
 
   @expected_capabilities Map.put(
                            Wallabidi.Chrome.default_capabilities(),
-                           :"wallaby:test",
+                           :"wallabidi:test",
                            "I'm a capability"
                          )
   @sessions [[capabilities: @expected_capabilities]]
   feature "reads capabilities from session attribute", %{session: %{capabilities: capabilities}} do
-    assert capabilities[:"wallaby:test"] == @expected_capabilities[:"wallaby:test"]
+    assert capabilities[:"wallabidi:test"] == @expected_capabilities[:"wallabidi:test"]
   end
 
   test "does not set up a session for non-feature tests", context do

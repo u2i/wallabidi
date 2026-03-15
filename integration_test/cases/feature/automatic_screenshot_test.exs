@@ -4,7 +4,7 @@ defmodule Wallabidi.Integration.Feature.AutomaticScreenshotTest do
   alias ExUnit.CaptureIO
 
   describe "import Feature" do
-    test "feature takes a screenshot on failure for each open wallaby session" do
+    test "feature takes a screenshot on failure for each open wallabidi session" do
       defmodule ImportFeature.FailureWithMultipleSessionsTest do
         use ExUnit.Case
         import Wallabidi.Feature
@@ -41,7 +41,7 @@ defmodule Wallabidi.Integration.Feature.AutomaticScreenshotTest do
   end
 
   describe "use Feature" do
-    test "feature takes a screenshot on failure for each open wallaby session" do
+    test "feature takes a screenshot on failure for each open wallabidi session" do
       defmodule UseFeature.FailureWithMultipleSessionsTest do
         use ExUnit.Case
         use Wallabidi.Feature

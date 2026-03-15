@@ -541,7 +541,7 @@ defmodule Wallabidi.Chrome do
       end
 
     chrome_path =
-      :wallaby
+      :wallabidi
       |> Application.get_env(:chromedriver, [])
       |> Keyword.get(:binary, [])
 
@@ -562,7 +562,7 @@ defmodule Wallabidi.Chrome do
   @doc false
   def find_chromedriver_executable do
     chromedriver_path =
-      :wallaby
+      :wallabidi
       |> Application.get_env(:chromedriver, [])
       |> Keyword.get(:path, "chromedriver")
 
@@ -649,7 +649,7 @@ defmodule Wallabidi.Chrome do
   end
 
   defp capabilities_from_config(opts) do
-    :wallaby
+    :wallabidi
     |> Application.get_env(:chromedriver, [])
     |> Keyword.get_lazy(:capabilities, &default_capabilities/0)
     |> put_headless_config(opts)

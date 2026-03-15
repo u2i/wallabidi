@@ -71,7 +71,7 @@ defmodule Wallabidi.Integration.Browser.ScreenshotTest do
     page: page
   } do
     screenshots_path =
-      TestWorkspace.generate_temporary_path("~/.test-wallaby-screenshots-%{random_string}")
+      TestWorkspace.generate_temporary_path("~/.test-wallabidi-screenshots-%{random_string}")
 
     ensure_setting_is_reset(:wallabidi, :screenshot_dir)
     Application.put_env(:wallabidi, :screenshot_dir, screenshots_path)
@@ -192,7 +192,7 @@ defmodule Wallabidi.Integration.Browser.ScreenshotTest do
 
     test "logs file url when the sets the screenshot_dir to a path in home dir", %{page: page} do
       screenshots_path =
-        TestWorkspace.generate_temporary_path("~/.test wallaby screenshots-%{random_string}")
+        TestWorkspace.generate_temporary_path("~/.test wallabidi screenshots-%{random_string}")
 
       ensure_setting_is_reset(:wallabidi, :screenshot_dir)
       Application.put_env(:wallabidi, :screenshot_dir, screenshots_path)

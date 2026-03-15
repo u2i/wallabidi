@@ -9,7 +9,7 @@ defmodule Wallabidi.Driver.TemporaryPathTest do
     end
 
     test "generates a temporary path in the given base dir" do
-      base_dir = "/srv/wallaby"
+      base_dir = "/srv/wallabidi"
 
       assert TemporaryPath.generate(base_dir) =~ ~r(^#{base_dir})
     end

@@ -1,6 +1,6 @@
 defmodule Wallabidi.TestSupport.Chrome.ChromeTestScript do
   @moduledoc """
-  Generates scripts that allow testing wallaby's interaction with the
+  Generates scripts that allow testing wallabidi's interaction with the
   chromedriver executable
   """
 

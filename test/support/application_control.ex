@@ -1,27 +1,27 @@
 defmodule Wallabidi.TestSupport.ApplicationControl do
   @moduledoc """
-  Test helpers for starting/stopping wallaby during test setup
+  Test helpers for starting/stopping wallabidi during test setup
   """
 
   import ExUnit.Assertions, only: [flunk: 1]
   import ExUnit.Callbacks, only: [on_exit: 1]
 
   @doc """
-  Stops the wallaby application
+  Stops the wallabidi application
   """
-  def stop_wallaby(_) do
+  def stop_wallabidi(_) do
     Application.stop(:wallabidi)
   end
 
   @doc """
-  Restarts wallaby after the current test process exits.
+  Restarts wallabidi after the current test process exits.
 
-  This ensures wallaby is restarted in a fresh state after
-  a test that modifies wallaby's startup config.
+  This ensures wallabidi is restarted in a fresh state after
+  a test that modifies wallabidi's startup config.
   """
-  def restart_wallaby_on_exit!(_) do
+  def restart_wallabidi_on_exit!(_) do
     on_exit(fn ->
-      # Stops wallaby if it's been started so it can be
+      # Stops wallabidi if it's been started so it can be
       # restarted successfully
       Application.stop(:wallabidi)
 
@@ -30,7 +30,7 @@ defmodule Wallabidi.TestSupport.ApplicationControl do
           :ok
 
         result ->
-          flunk("failed to restart wallaby: #{inspect(result)}")
+          flunk("failed to restart wallabidi: #{inspect(result)}")
       end
     end)
   end

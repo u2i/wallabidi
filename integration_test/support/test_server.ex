@@ -6,7 +6,7 @@ defmodule Wallabidi.Integration.TestServer do
     bind_address: {0, 0, 0, 0},
     server_root: String.to_charlist(Path.absname("./", __DIR__)),
     document_root: String.to_charlist(Path.absname("./pages", __DIR__)),
-    server_name: ~c"wallaby_test",
+    server_name: ~c"wallabidi_test",
     directory_index: [~c"index.html"]
   ]
 

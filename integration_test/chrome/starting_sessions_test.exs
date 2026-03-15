@@ -18,7 +18,7 @@ defmodule Wallabidi.Integration.Chrome.StartingSessionsTest do
     @moduletag :skip
   end
 
-  setup [:restart_wallaby_on_exit!, :stop_wallaby]
+  setup [:restart_wallabidi_on_exit!, :stop_wallabidi]
 
   setup do
     [workspace_path: mkdir!()]
@@ -157,7 +157,7 @@ defmodule Wallabidi.Integration.Chrome.StartingSessionsTest do
 
   test "works with a path in the home directory" do
     test_script_path =
-      "~/.wallaby-tmp-%{random_string}"
+      "~/.wallabidi-tmp-%{random_string}"
       |> TestWorkspace.mkdir!()
       |> write_chrome_wrapper_script!()
 
