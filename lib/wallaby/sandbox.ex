@@ -25,10 +25,10 @@ if Code.ensure_loaded?(Phoenix.Ecto.SQL.Sandbox) do
           → HTTP request (allowed by this plug)
             → LiveView mount (allowed by Wallabidi.LiveSandbox)
               → Task / assign_async (allowed via $callers)
-              → Cachex 4+ workers (allowed via $callers)
+              → Cachex 4.1+ workers (allowed via $callers)
 
     Processes spawned via `Task` or libraries that set `$callers`
-    (including Cachex 4+) automatically inherit sandbox access.
+    (including Cachex 4.1+) automatically inherit sandbox access.
 
     ## Custom sandbox (Mimic propagation)
 
