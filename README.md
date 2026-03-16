@@ -142,20 +142,63 @@ config :wallabidi,
 ```elixir
 # config/test.exs
 config :your_app, YourAppWeb.Endpoint, server: true
+config :wallabidi, otp_app: :your_app
+config :your_app, :sandbox, Ecto.Adapters.SQL.Sandbox
 
 # test/test_helper.exs
 Application.put_env(:wallabidi, :base_url, YourAppWeb.Endpoint.url)
 ```
 
-When using Ecto:
+### Ecto + LiveView sandbox
+
+Wallabidi provides `Wallabidi.Sandbox` (plug) and `Wallabidi.LiveSandbox` (on_mount hook) to propagate the test process's Ecto sandbox checkout to all browser-spawned processes.
+
+**1. Endpoint plug** (before other plugs):
 
 ```elixir
-config :wallabidi, otp_app: :your_app
+# lib/your_app_web/endpoint.ex
+if Application.compile_env(:your_app, :sandbox, false) do
+  plug Wallabidi.Sandbox
+end
+
+socket("/live", Phoenix.LiveView.Socket,
+  websocket: [connect_info: [:user_agent, session: @session_options]]
+)
 ```
 
-### LiveView
+**2. LiveView hook** — must come **before** auth hooks:
 
-Add the Ecto sandbox hook as described in the [Wallaby docs](https://hexdocs.pm/wallaby/readme.html#liveview) — the setup is identical, just replace `:wallaby` with `:wallabidi`.
+```elixir
+# lib/your_app_web.ex
+def live_view do
+  quote do
+    use Phoenix.LiveView
+    on_mount Wallabidi.LiveSandbox  # first — grants DB access
+    on_mount MyAppWeb.Auth          # then auth can query
+  end
+end
+```
+
+`Wallabidi.LiveSandbox` is safe to register unconditionally — it's a no-op in production.
+
+**Custom sandbox** (e.g. to propagate Mimic stubs):
+
+```elixir
+# config/test.exs
+config :your_app, :sandbox, MyApp.Sandbox
+
+# lib/my_app/sandbox.ex
+defmodule MyApp.Sandbox do
+  def allow(repo, owner_pid, child_pid) do
+    Ecto.Adapters.SQL.Sandbox.allow(repo, owner_pid, child_pid)
+    try do
+      Mimic.allow(MyMock, owner_pid, child_pid)
+    catch
+      :error, _ -> :ok  # skip if owner is in global mode
+    end
+  end
+end
+```
 
 ## Usage
 
