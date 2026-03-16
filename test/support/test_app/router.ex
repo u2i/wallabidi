@@ -11,7 +11,8 @@ defmodule Wallabidi.TestApp.Router do
   scope "/" do
     pipe_through(:browser)
 
-    live_session :default, on_mount: [Wallabidi.LiveSandbox] do
+    live_session :default,
+      on_mount: [Wallabidi.EctoSandbox, Wallabidi.MimicSandbox, Wallabidi.MoxSandbox] do
       live("/users", Wallabidi.TestApp.UsersLive)
       live("/dashboard", Wallabidi.TestApp.DashboardLive)
       live("/cached", Wallabidi.TestApp.CachedLive)

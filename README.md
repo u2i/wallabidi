@@ -151,15 +151,16 @@ Application.put_env(:wallabidi, :base_url, YourAppWeb.Endpoint.url)
 
 ### Ecto + LiveView sandbox
 
-Use the standard `Phoenix.Ecto.SQL.Sandbox` plug for HTTP requests, and `Wallabidi.LiveSandbox` for LiveView WebSocket connections.
+Wallabidi provides sandbox modules that propagate test isolation to browser processes. Each works as both a Plug (for HTTP) and a LiveView on_mount hook (for WebSocket). Use the ones you need:
 
-**1. Endpoint plug** (before other plugs):
+**1. Endpoint** (before other plugs):
 
 ```elixir
 # lib/your_app_web/endpoint.ex
 if Application.compile_env(:your_app, :sandbox, false) do
-  plug Phoenix.Ecto.SQL.Sandbox
-  plug Wallabidi.MockSandbox
+  plug Phoenix.Ecto.SQL.Sandbox          # Ecto → HTTP
+  plug Wallabidi.MimicSandbox            # Mimic stubs → HTTP (if using Mimic)
+  plug Wallabidi.MoxSandbox              # Mox stubs → HTTP (if using Mox)
 end
 
 socket("/live", Phoenix.LiveView.Socket,
@@ -167,32 +168,31 @@ socket("/live", Phoenix.LiveView.Socket,
 )
 ```
 
-**2. LiveView hook** — must come **before** auth hooks:
+**2. LiveView hooks** — before auth hooks:
 
 ```elixir
 # lib/your_app_web.ex
 def live_view do
   quote do
     use Phoenix.LiveView
-    on_mount Wallabidi.LiveSandbox  # first — grants DB access
-    on_mount MyAppWeb.Auth          # then auth can query
+    on_mount Wallabidi.EctoSandbox       # Ecto → WebSocket
+    on_mount Wallabidi.MimicSandbox      # Mimic stubs → WebSocket
+    on_mount Wallabidi.MoxSandbox        # Mox stubs → WebSocket
+    on_mount MyAppWeb.Auth               # auth hooks after
   end
 end
 ```
 
-`Wallabidi.LiveSandbox` is safe to register unconditionally — it's a no-op in production.
+All sandbox modules are no-ops in production (no metadata in user-agent).
 
-**Mock propagation** is automatic. LiveSandbox detects and propagates:
+**Mimic** stubs are auto-discovered — all `Mimic.copy`'d modules are propagated automatically.
 
-- **Mimic** — all `Mimic.copy`'d modules are auto-discovered and allowed
-- **Mox** — list your mocks in config:
+**Mox** mocks are listed in config:
 
 ```elixir
 # config/test.exs
 config :wallabidi, mox_mocks: [MyApp.MockWeather, MyApp.MockMailer]
 ```
-
-No custom sandbox module needed. Stubs set with `set_mimic_private` or `set_mox_private` propagate to both the static render (HTTP) and connected mount (WebSocket) automatically.
 
 ## Usage
 
