@@ -12,13 +12,11 @@ if Code.ensure_loaded?(Phoenix.LiveView) do
 
     ## Usage
 
-    In your LiveView macro:
-
         def live_view do
           quote do
             use Phoenix.LiveView
-            on_mount Wallabidi.LiveSandbox
-            # auth hooks go after
+            on_mount Wallabidi.LiveSandbox  # first
+            on_mount MyAppWeb.Auth          # then auth
           end
         end
 
@@ -49,28 +47,9 @@ if Code.ensure_loaded?(Phoenix.LiveView) do
 
     defp decode_and_allow(user_agent) do
       case Phoenix.Ecto.SQL.Sandbox.decode_metadata(user_agent) do
-        nil ->
-          :ok
-
-        metadata ->
-          allow_sandbox(metadata)
-          # Store metadata so downstream code (e.g. Cachex wrappers)
-          # can re-allow spawned workers
-          Process.put(:wallabidi_sandbox_metadata, metadata)
+        nil -> :ok
+        metadata -> Phoenix.Ecto.SQL.Sandbox.allow(metadata, Wallabidi.Sandbox.sandbox_module())
       end
-    end
-
-    defp allow_sandbox(metadata) do
-      otp_app = Application.get_env(:wallabidi, :otp_app)
-
-      sandbox =
-        if otp_app do
-          Application.get_env(otp_app, :sandbox, Ecto.Adapters.SQL.Sandbox)
-        else
-          Ecto.Adapters.SQL.Sandbox
-        end
-
-      Phoenix.Ecto.SQL.Sandbox.allow(metadata, sandbox)
     end
   end
 end

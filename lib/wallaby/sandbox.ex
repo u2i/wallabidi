@@ -3,67 +3,36 @@ if Code.ensure_loaded?(Phoenix.Ecto.SQL.Sandbox) do
     @moduledoc """
     Plug that propagates test sandbox access to HTTP request processes.
 
-    Drop-in replacement for `Phoenix.Ecto.SQL.Sandbox` — add to your
-    endpoint before other plugs:
+    Add to your endpoint before other plugs:
 
         # lib/my_app_web/endpoint.ex
         if Application.compile_env(:my_app, :sandbox, false) do
           plug Wallabidi.Sandbox
         end
 
+    ## Configuration
+
+        # config/test.exs
+        config :wallabidi, otp_app: :your_app
+        config :your_app, :sandbox, Ecto.Adapters.SQL.Sandbox
+
     ## How sandbox propagation works
 
     Browser tests need every process that touches the database to share
-    the same sandbox checkout. The chain looks like:
+    the test process's sandbox checkout:
 
         test process (owns checkout)
           → HTTP request (allowed by this plug)
             → LiveView mount (allowed by Wallabidi.LiveSandbox)
-              → Task (allowed via $callers)
-              → spawn_link worker (NOT allowed — no $callers)
+              → Task / assign_async (allowed via $callers)
+              → Cachex 4+ workers (allowed via $callers)
 
-    Processes spawned via `Task` automatically inherit sandbox access
-    through the `$callers` process dictionary. But `spawn_link` doesn't
-    set `$callers`, so libraries like Cachex that use `spawn_link`
-    internally will fail with sandbox errors.
-
-    ## Handling spawn_link workers (Cachex, etc.)
-
-    For libraries that spawn workers via `spawn_link`, use shared
-    sandbox mode in your custom sandbox module:
-
-        defmodule MyApp.Sandbox do
-          def allow(repo, owner_pid, child_pid) do
-            # Shared mode lets ANY process on this node access the checkout.
-            # Safe for browser tests because each test has its own transaction.
-            Ecto.Adapters.SQL.Sandbox.allow(repo, owner_pid, child_pid)
-          end
-        end
-
-    If you need Cachex specifically, the simplest approach is to configure
-    Ecto sandbox in shared mode for the repos Cachex accesses:
-
-        # test/test_helper.exs
-        Ecto.Adapters.SQL.Sandbox.mode(MyApp.Repo, :auto)
-
-    Or wrap Cachex calls to ensure sandbox access:
-
-        # lib/my_app/cache.ex
-        defmodule MyApp.Cache do
-          def fetch(cache, key, fallback) do
-            if sandbox_metadata = Process.get(:wallabidi_sandbox_metadata) do
-              Cachex.fetch(cache, key, fn key ->
-                # Re-allow this spawned worker process
-                Phoenix.Ecto.SQL.Sandbox.allow(sandbox_metadata, sandbox_module())
-                fallback.(key)
-              end)
-            else
-              Cachex.fetch(cache, key, fallback)
-            end
-          end
-        end
+    Processes spawned via `Task` or libraries that set `$callers`
+    (including Cachex 4+) automatically inherit sandbox access.
 
     ## Custom sandbox (Mimic propagation)
+
+        config :your_app, :sandbox, MyApp.Sandbox
 
         defmodule MyApp.Sandbox do
           def allow(repo, owner_pid, child_pid) do
@@ -94,10 +63,7 @@ if Code.ensure_loaded?(Phoenix.Ecto.SQL.Sandbox) do
           conn
 
         metadata ->
-          allow_sandbox(metadata)
-          # Store metadata in process dictionary so downstream code
-          # (e.g. Cachex wrappers) can re-allow spawned workers
-          Process.put(:wallabidi_sandbox_metadata, metadata)
+          Phoenix.Ecto.SQL.Sandbox.allow(metadata, sandbox_module())
           conn
       end
     end
@@ -111,10 +77,6 @@ if Code.ensure_loaded?(Phoenix.Ecto.SQL.Sandbox) do
       else
         Ecto.Adapters.SQL.Sandbox
       end
-    end
-
-    defp allow_sandbox(metadata) do
-      Phoenix.Ecto.SQL.Sandbox.allow(metadata, sandbox_module())
     end
   end
 end
