@@ -89,19 +89,17 @@ if Code.ensure_loaded?(Phoenix.LiveView) do
     defp allow_mocks(%{owner: owner}) do
       child = self()
       allow_mimic(owner, child)
+      allow_mox(owner, child)
     end
 
     defp allow_mocks(_), do: :ok
 
-    # credo:disable-for-next-line Credo.Check.Warning.UnsafeExec
+    # Mimic: auto-discover all Mimic.copy'd modules and allow them
     defp allow_mimic(owner, child) do
       mimic = Module.concat([Mimic])
 
       if Code.ensure_loaded?(mimic) do
-        for mod <- mimic_modules() do
-          # Dynamic call — Mimic is an optional dep
-          mimic.allow(mod, owner, child)
-        end
+        for mod <- mimic_modules(), do: mimic.allow(mod, owner, child)
       end
     catch
       _, _ -> :ok
@@ -112,6 +110,21 @@ if Code.ensure_loaded?(Phoenix.LiveView) do
       :sys.get_state(server).modules_opts |> Map.keys()
     catch
       _, _ -> []
+    end
+
+    # Mox: allow all configured mock modules
+    defp allow_mox(owner, child) do
+      mox = Module.concat([Mox])
+
+      if Code.ensure_loaded?(mox) do
+        for mod <- mox_modules(), do: mox.allow(mod, owner, child)
+      end
+    catch
+      _, _ -> :ok
+    end
+
+    defp mox_modules do
+      Application.get_env(:wallabidi, :mox_mocks, [])
     end
   end
 end

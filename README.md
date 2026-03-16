@@ -181,24 +181,19 @@ end
 
 `Wallabidi.LiveSandbox` is safe to register unconditionally — it's a no-op in production.
 
-**Custom sandbox** (e.g. to propagate Mimic stubs):
+**Mock propagation** is automatic. LiveSandbox detects and propagates:
+
+- **Mimic** — all `Mimic.copy`'d modules are auto-discovered and allowed
+- **Mox** — list your mocks in config:
 
 ```elixir
 # config/test.exs
-config :your_app, :sandbox, MyApp.Sandbox
-
-# lib/my_app/sandbox.ex
-defmodule MyApp.Sandbox do
-  def allow(repo, owner_pid, child_pid) do
-    Ecto.Adapters.SQL.Sandbox.allow(repo, owner_pid, child_pid)
-    try do
-      Mimic.allow(MyMock, owner_pid, child_pid)
-    catch
-      :error, _ -> :ok  # skip if owner is in global mode
-    end
-  end
-end
+config :wallabidi, mox_mocks: [MyApp.MockWeather, MyApp.MockMailer]
 ```
+
+No custom sandbox module needed. Stubs set with `set_mimic_private` or `set_mox_private` propagate to LiveView processes automatically.
+
+Note: Mox/Mimic stubs propagate on the **connected mount** (WebSocket), not the static render (HTTP). If your LiveView calls a mock in `mount`, guard it with `if connected?(socket)` or use `start_async`.
 
 ## Usage
 

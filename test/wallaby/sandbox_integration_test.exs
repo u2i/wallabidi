@@ -13,6 +13,7 @@ defmodule Wallabidi.SandboxIntegrationTest do
   use ExUnit.Case, async: true
   use Wallabidi.DSL
   use Mimic
+  import Mox, only: [set_mox_private: 1]
 
   alias Wallabidi.TestApp.{Repo, User}
 
@@ -71,6 +72,18 @@ defmodule Wallabidi.SandboxIntegrationTest do
       session
       |> visit("/greeting")
       |> assert_has(Query.text("Hello from test"))
+    end
+  end
+
+  describe "Mox stub propagation" do
+    setup :set_mox_private
+
+    test "Mox stub visible to LiveView process", %{session: session} do
+      Mox.stub(Wallabidi.TestApp.MockWeather, :get_temperature, fn -> "72°F" end)
+
+      session
+      |> visit("/weather")
+      |> assert_has(Query.text("72°F"))
     end
   end
 

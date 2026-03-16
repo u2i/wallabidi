@@ -22,4 +22,9 @@ Ecto.Adapters.SQL.Sandbox.mode(Wallabidi.TestApp.Repo, :manual)
 # Setup Mimic
 Mimic.copy(Wallabidi.TestApp.ExternalService)
 
+# Setup Mox
+Mox.defmock(Wallabidi.TestApp.MockWeather, for: Wallabidi.TestApp.WeatherBehaviour)
+Application.put_env(:wallabidi, :weather_module, Wallabidi.TestApp.MockWeather)
+Application.put_env(:wallabidi, :mox_mocks, [Wallabidi.TestApp.MockWeather])
+
 ExUnit.start()

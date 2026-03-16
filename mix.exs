@@ -61,7 +61,8 @@ defmodule Wallabidi.Mixfile do
       {:cachex, "~> 4.1", only: :test},
       {:ecto_sqlite3, "~> 0.22", only: :test},
       {:bandit, "~> 1.0", only: :test},
-      {:mimic, "~> 1.7", only: :test}
+      {:mimic, "~> 1.7", only: :test},
+      {:mox, "~> 1.2", only: :test}
     ]
   end
 
