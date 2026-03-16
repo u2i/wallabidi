@@ -54,7 +54,10 @@ defmodule Wallabidi.Mixfile do
       {:bypass, "~> 1.0.0", only: :test},
       {:ex_doc, "~> 0.28", only: :dev},
       {:ecto_sql, ">= 3.0.0", optional: true},
-      {:phoenix_ecto, ">= 3.0.0", optional: true}
+      {:phoenix_ecto, ">= 3.0.0", optional: true},
+      {:phoenix, "~> 1.7", only: :test},
+      {:phoenix_live_view, "~> 1.0", only: :test},
+      {:cachex, "~> 4.1", only: :test}
     ]
   end
 
