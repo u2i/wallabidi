@@ -1,37 +1,14 @@
 defmodule Wallabidi.SandboxTest do
   use ExUnit.Case, async: true
 
-  describe "Wallabidi.Sandbox" do
-    test "module is defined (Phoenix.Ecto.SQL.Sandbox available)" do
-      assert Code.ensure_loaded?(Wallabidi.Sandbox)
+  describe "Wallabidi.LiveSandbox" do
+    test "module is defined (Phoenix.LiveView available)" do
+      assert Code.ensure_loaded?(Wallabidi.LiveSandbox)
     end
 
-    test "implements Plug behaviour" do
-      assert function_exported?(Wallabidi.Sandbox, :init, 1)
-      assert function_exported?(Wallabidi.Sandbox, :call, 2)
-    end
-
-    test "init returns opts unchanged" do
-      assert Wallabidi.Sandbox.init([]) == []
-      assert Wallabidi.Sandbox.init(foo: :bar) == [foo: :bar]
-    end
-
-    test "call passes through conn when no sandbox metadata in user-agent" do
-      conn =
-        Plug.Test.conn(:get, "/")
-        |> Plug.Conn.put_req_header("user-agent", "Mozilla/5.0")
-
-      result = Wallabidi.Sandbox.call(conn, [])
-      assert result == conn
-    end
-
-    test "sandbox_module returns default when no otp_app configured" do
-      original = Application.get_env(:wallabidi, :otp_app)
-      Application.delete_env(:wallabidi, :otp_app)
-
-      assert Wallabidi.Sandbox.sandbox_module() == Ecto.Adapters.SQL.Sandbox
-
-      if original, do: Application.put_env(:wallabidi, :otp_app, original)
+    test "exports on_mount/4" do
+      funs = Wallabidi.LiveSandbox.__info__(:functions)
+      assert {:on_mount, 4} in funs
     end
   end
 end

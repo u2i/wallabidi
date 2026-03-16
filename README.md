@@ -151,14 +151,14 @@ Application.put_env(:wallabidi, :base_url, YourAppWeb.Endpoint.url)
 
 ### Ecto + LiveView sandbox
 
-Wallabidi provides `Wallabidi.Sandbox` (plug) and `Wallabidi.LiveSandbox` (on_mount hook) to propagate the test process's Ecto sandbox checkout to all browser-spawned processes.
+Use the standard `Phoenix.Ecto.SQL.Sandbox` plug for HTTP requests, and `Wallabidi.LiveSandbox` for LiveView WebSocket connections.
 
 **1. Endpoint plug** (before other plugs):
 
 ```elixir
 # lib/your_app_web/endpoint.ex
 if Application.compile_env(:your_app, :sandbox, false) do
-  plug Wallabidi.Sandbox
+  plug Phoenix.Ecto.SQL.Sandbox, sandbox: MyApp.Sandbox
 end
 
 socket("/live", Phoenix.LiveView.Socket,
