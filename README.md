@@ -158,7 +158,8 @@ Use the standard `Phoenix.Ecto.SQL.Sandbox` plug for HTTP requests, and `Wallabi
 ```elixir
 # lib/your_app_web/endpoint.ex
 if Application.compile_env(:your_app, :sandbox, false) do
-  plug Phoenix.Ecto.SQL.Sandbox, sandbox: MyApp.Sandbox
+  plug Phoenix.Ecto.SQL.Sandbox
+  plug Wallabidi.MockSandbox
 end
 
 socket("/live", Phoenix.LiveView.Socket,
@@ -191,9 +192,7 @@ end
 config :wallabidi, mox_mocks: [MyApp.MockWeather, MyApp.MockMailer]
 ```
 
-No custom sandbox module needed. Stubs set with `set_mimic_private` or `set_mox_private` propagate to LiveView processes automatically.
-
-Note: Mox/Mimic stubs propagate on the **connected mount** (WebSocket), not the static render (HTTP). If your LiveView calls a mock in `mount`, guard it with `if connected?(socket)` or use `start_async`.
+No custom sandbox module needed. Stubs set with `set_mimic_private` or `set_mox_private` propagate to both the static render (HTTP) and connected mount (WebSocket) automatically.
 
 ## Usage
 
