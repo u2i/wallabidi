@@ -53,11 +53,14 @@ defmodule Wallabidi.Mixfile do
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:bypass, "~> 1.0.0", only: :test},
       {:ex_doc, "~> 0.28", only: :dev},
-      {:ecto_sql, ">= 3.0.0", optional: true},
-      {:phoenix_ecto, ">= 3.0.0", optional: true},
+      {:ecto_sql, "~> 3.12", optional: true},
+      {:phoenix_ecto, "~> 4.6", optional: true},
       {:phoenix, "~> 1.7", only: :test},
       {:phoenix_live_view, "~> 1.0", only: :test},
-      {:cachex, "~> 4.1", only: :test}
+      {:cachex, "~> 4.1", only: :test},
+      {:ecto_sqlite3, "~> 0.22", only: :test},
+      {:bandit, "~> 1.0", only: :test},
+      {:mimic, "~> 1.7", only: :test}
     ]
   end
 
