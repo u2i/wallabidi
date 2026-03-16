@@ -49,8 +49,14 @@ if Code.ensure_loaded?(Phoenix.LiveView) do
 
     defp decode_and_allow(user_agent) do
       case Phoenix.Ecto.SQL.Sandbox.decode_metadata(user_agent) do
-        nil -> :ok
-        metadata -> allow_sandbox(metadata)
+        nil ->
+          :ok
+
+        metadata ->
+          allow_sandbox(metadata)
+          # Store metadata so downstream code (e.g. Cachex wrappers)
+          # can re-allow spawned workers
+          Process.put(:wallabidi_sandbox_metadata, metadata)
       end
     end
 
