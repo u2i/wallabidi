@@ -24,6 +24,6 @@ config :wallabidi, Wallabidi.TestApp.Endpoint,
   live_view: [signing_salt: "test_salt"],
   check_origin: false
 
-config :wallabidi, :sandbox, Wallabidi.TestApp.Sandbox
+config :wallabidi, :sandbox, Ecto.Adapters.SQL.Sandbox
 
 config :wallabidi, ecto_repos: [Wallabidi.TestApp.Repo]

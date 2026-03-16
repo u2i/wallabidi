@@ -49,7 +49,6 @@ if Code.ensure_loaded?(Phoenix.LiveView) do
     """
 
     import Phoenix.LiveView
-    import Phoenix.Component
 
     def on_mount(:default, _params, _session, socket) do
       maybe_allow_sandbox(socket)
@@ -68,8 +67,12 @@ if Code.ensure_loaded?(Phoenix.LiveView) do
 
     defp decode_and_allow(user_agent) do
       case Phoenix.Ecto.SQL.Sandbox.decode_metadata(user_agent) do
-        nil -> :ok
-        metadata -> Phoenix.Ecto.SQL.Sandbox.allow(metadata, sandbox_module())
+        nil ->
+          :ok
+
+        metadata ->
+          Phoenix.Ecto.SQL.Sandbox.allow(metadata, sandbox_module())
+          allow_mocks(metadata)
       end
     end
 
@@ -81,6 +84,34 @@ if Code.ensure_loaded?(Phoenix.LiveView) do
       else
         Ecto.Adapters.SQL.Sandbox
       end
+    end
+
+    defp allow_mocks(%{owner: owner}) do
+      child = self()
+      allow_mimic(owner, child)
+    end
+
+    defp allow_mocks(_), do: :ok
+
+    # credo:disable-for-next-line Credo.Check.Warning.UnsafeExec
+    defp allow_mimic(owner, child) do
+      mimic = Module.concat([Mimic])
+
+      if Code.ensure_loaded?(mimic) do
+        for mod <- mimic_modules() do
+          # Dynamic call — Mimic is an optional dep
+          mimic.allow(mod, owner, child)
+        end
+      end
+    catch
+      _, _ -> :ok
+    end
+
+    defp mimic_modules do
+      server = Module.concat([Mimic, Server])
+      :sys.get_state(server).modules_opts |> Map.keys()
+    catch
+      _, _ -> []
     end
   end
 end
