@@ -5,6 +5,16 @@ defmodule Wallabidi.TestApp.Endpoint do
 
   socket("/live", Phoenix.LiveView.Socket, websocket: [connect_info: [:user_agent]])
 
+  plug(Plug.Static,
+    at: "/assets/phoenix",
+    from: {:phoenix, "priv/static"}
+  )
+
+  plug(Plug.Static,
+    at: "/assets/phoenix_live_view",
+    from: {:phoenix_live_view, "priv/static"}
+  )
+
   plug(Plug.Parsers,
     parsers: [:urlencoded, :multipart, :json],
     pass: ["*/*"],

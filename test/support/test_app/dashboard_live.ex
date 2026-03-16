@@ -4,7 +4,11 @@ defmodule Wallabidi.TestApp.DashboardLive do
   alias Wallabidi.TestApp.{Repo, User}
 
   def mount(_params, _session, socket) do
-    {:ok, socket |> assign(stats: nil) |> start_async(:load_stats, fn -> load_stats() end)}
+    if connected?(socket) do
+      {:ok, socket |> assign(stats: nil) |> start_async(:load_stats, fn -> load_stats() end)}
+    else
+      {:ok, assign(socket, stats: nil)}
+    end
   end
 
   defp load_stats do
@@ -16,8 +20,10 @@ defmodule Wallabidi.TestApp.DashboardLive do
     {:noreply, assign(socket, stats: stats)}
   end
 
-  def handle_async(:load_stats, {:exit, _reason}, socket) do
-    {:noreply, assign(socket, stats: "Error")}
+  def handle_async(:load_stats, {:exit, reason}, socket) do
+    require Logger
+    Logger.error("start_async failed: #{inspect(reason)}")
+    {:noreply, assign(socket, stats: "Error: #{inspect(reason)}")}
   end
 
   def render(assigns) do

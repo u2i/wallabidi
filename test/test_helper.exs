@@ -13,8 +13,8 @@ Ecto.Migrator.up(Wallabidi.TestApp.Repo, 1, Wallabidi.TestApp.Migration)
 # Start Cachex for cached tests
 {:ok, _} = Cachex.start_link(:test_app_cache)
 
-# Set base_url from the dynamically assigned port
-Application.put_env(:wallabidi, :base_url, Wallabidi.TestApp.Endpoint.url())
+# Set base_url
+Application.put_env(:wallabidi, :base_url, "http://localhost:4002")
 
 # Configure sandbox mode
 Ecto.Adapters.SQL.Sandbox.mode(Wallabidi.TestApp.Repo, :manual)

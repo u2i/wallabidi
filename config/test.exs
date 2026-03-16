@@ -18,11 +18,12 @@ config :wallabidi, Wallabidi.TestApp.Repo,
   pool_size: 10
 
 config :wallabidi, Wallabidi.TestApp.Endpoint,
-  http: [port: 0],
+  http: [ip: {0, 0, 0, 0}, port: 4002],
   server: true,
   secret_key_base: String.duplicate("a", 64),
-  live_view: [signing_salt: "test_salt"]
+  live_view: [signing_salt: "test_salt"],
+  check_origin: false
 
-config :wallabidi, :sandbox, Ecto.Adapters.SQL.Sandbox
+config :wallabidi, :sandbox, Wallabidi.TestApp.Sandbox
 
 config :wallabidi, ecto_repos: [Wallabidi.TestApp.Repo]

@@ -7,10 +7,13 @@ defmodule Wallabidi.TestApp.CachedLive do
     # Use Cachex.fetch which spawns a Courier worker via spawn_link.
     # With Cachex 4.1+, the worker has $callers set, so it can access
     # the Ecto sandbox.
-    {:ok, users} =
-      Cachex.fetch(:test_app_cache, "users", fn _key ->
-        {:commit, Repo.all(User)}
-      end)
+    users =
+      case Cachex.fetch(:test_app_cache, "users", fn _key ->
+             {:commit, Repo.all(User)}
+           end) do
+        {:ok, users} -> users
+        {:commit, users} -> users
+      end
 
     {:ok, assign(socket, users: users)}
   end

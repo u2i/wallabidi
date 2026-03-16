@@ -31,15 +31,18 @@ if Code.ensure_loaded?(Phoenix.LiveView) do
     import Phoenix.Component
 
     def on_mount(:default, _params, _session, socket) do
+      require Logger
+      Logger.debug("LiveSandbox.on_mount called, connected=#{connected?(socket)}")
       maybe_allow_sandbox(socket)
       {:cont, socket}
     end
 
     defp maybe_allow_sandbox(socket) do
       if connected?(socket) do
-        socket
-        |> get_connect_info(:user_agent)
-        |> decode_and_allow()
+        ua = get_connect_info(socket, :user_agent)
+        require Logger
+        Logger.debug("LiveSandbox: user_agent=#{inspect(ua && String.slice(ua, -60, 60))}")
+        decode_and_allow(ua)
       end
     end
 
