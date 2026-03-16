@@ -2,7 +2,8 @@ import Config
 
 config :wallabidi,
   tmp_dir_prefix: "wallabidi_test",
-  otp_app: :wallabidi
+  otp_app: :wallabidi,
+  sandbox: true
 
 if remote_url = System.get_env("WALLABIDI_CHROMEDRIVER_REMOTE_URL") do
   config :wallabidi,

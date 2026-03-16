@@ -1,35 +1,34 @@
-ecto_available? =
-  Code.ensure_loaded?(Phoenix.Ecto.SQL.Sandbox) and Code.ensure_loaded?(Phoenix.LiveView)
-
-if ecto_available? do
+if Code.ensure_loaded?(Phoenix.Ecto.SQL.Sandbox) and Code.ensure_loaded?(Phoenix.LiveView) do
   defmodule Wallabidi.EctoSandbox do
     @moduledoc """
-    LiveView on_mount that propagates Ecto sandbox access to WebSocket processes.
+    Plug + LiveView on_mount that propagates Ecto sandbox access.
 
-    The `Phoenix.Ecto.SQL.Sandbox` plug handles HTTP requests, but
-    LiveView upgrades to a WebSocket — a new process that needs its
-    own sandbox access. This hook handles that.
+    Register conditionally so it's never loaded in production:
 
-    ## Setup
+        # lib/your_app_web/endpoint.ex
+        if Application.compile_env(:your_app, :sandbox) do
+          plug Phoenix.Ecto.SQL.Sandbox
+        end
 
         # lib/your_app_web.ex
         def live_view do
           quote do
             use Phoenix.LiveView
-            on_mount Wallabidi.EctoSandbox
+            if Application.compile_env(:your_app, :sandbox) do
+              on_mount Wallabidi.EctoSandbox
+            end
           end
         end
-
-    No-op in production (when no sandbox metadata in user-agent).
-
-    ## Configuration
-
-        # config/test.exs
-        config :wallabidi, otp_app: :your_app
-        config :your_app, :sandbox, Ecto.Adapters.SQL.Sandbox
     """
 
+    @behaviour Plug
     import Phoenix.LiveView
+
+    @impl Plug
+    def init(opts), do: opts
+
+    @impl Plug
+    def call(conn, _opts), do: conn
 
     def on_mount(:default, _params, _session, socket) do
       if connected?(socket), do: maybe_allow(socket)

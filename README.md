@@ -151,48 +151,48 @@ Application.put_env(:wallabidi, :base_url, YourAppWeb.Endpoint.url)
 
 ### Ecto + LiveView sandbox
 
-Wallabidi provides sandbox modules that propagate test isolation to browser processes. Each works as both a Plug (for HTTP) and a LiveView on_mount hook (for WebSocket). Use the ones you need:
+Wallabidi provides sandbox modules that propagate test isolation to browser processes. Each works as both a Plug (HTTP) and a LiveView on_mount (WebSocket). Use the ones you need:
 
-**1. Endpoint** (before other plugs):
+```elixir
+# config/test.exs
+config :your_app, :sandbox, true
+config :wallabidi, mox_mocks: [MyApp.MockWeather]  # if using Mox
+```
 
 ```elixir
 # lib/your_app_web/endpoint.ex
-if Application.compile_env(:your_app, :sandbox, false) do
-  plug Phoenix.Ecto.SQL.Sandbox          # Ecto → HTTP
-  plug Wallabidi.MimicSandbox            # Mimic stubs → HTTP (if using Mimic)
-  plug Wallabidi.MoxSandbox              # Mox stubs → HTTP (if using Mox)
+if Application.compile_env(:your_app, :sandbox) do
+  plug Phoenix.Ecto.SQL.Sandbox
+  plug Wallabidi.MimicSandbox            # if using Mimic
+  plug Wallabidi.MoxSandbox              # if using Mox
 end
 
-socket("/live", Phoenix.LiveView.Socket,
+socket "/live", Phoenix.LiveView.Socket,
   websocket: [connect_info: [:user_agent, session: @session_options]]
-)
 ```
-
-**2. LiveView hooks** — before auth hooks:
 
 ```elixir
 # lib/your_app_web.ex
 def live_view do
   quote do
     use Phoenix.LiveView
-    on_mount Wallabidi.EctoSandbox       # Ecto → WebSocket
-    on_mount Wallabidi.MimicSandbox      # Mimic stubs → WebSocket
-    on_mount Wallabidi.MoxSandbox        # Mox stubs → WebSocket
+
+    if Application.compile_env(:your_app, :sandbox) do
+      on_mount Wallabidi.EctoSandbox
+      on_mount Wallabidi.MimicSandbox    # if using Mimic
+      on_mount Wallabidi.MoxSandbox      # if using Mox
+    end
+
     on_mount MyAppWeb.Auth               # auth hooks after
   end
 end
 ```
 
-All sandbox modules are no-ops in production (no metadata in user-agent).
+The `compile_env` guard ensures none of this code exists in production builds.
 
-**Mimic** stubs are auto-discovered — all `Mimic.copy`'d modules are propagated automatically.
+**Mimic** stubs are auto-discovered — all `Mimic.copy`'d modules propagate automatically.
 
-**Mox** mocks are listed in config:
-
-```elixir
-# config/test.exs
-config :wallabidi, mox_mocks: [MyApp.MockWeather, MyApp.MockMailer]
-```
+**Mox** mocks are listed in config.
 
 ## Usage
 

@@ -1,40 +1,30 @@
-mox_available? =
-  Code.ensure_loaded?(Phoenix.Ecto.SQL.Sandbox) and Code.ensure_loaded?(Phoenix.LiveView)
-
-if mox_available? do
+if Code.ensure_loaded?(Phoenix.Ecto.SQL.Sandbox) and Code.ensure_loaded?(Phoenix.LiveView) do
   defmodule Wallabidi.MoxSandbox do
     @moduledoc """
-    Plug + LiveView on_mount that propagates Mox stubs to browser processes.
+    Plug + LiveView on_mount that propagates Mox stubs.
 
-    Allows all mock modules listed in `config :wallabidi, :mox_mocks`
-    when a request or LiveView mount carries sandbox metadata.
-
-    ## Setup
+    Reads mock list from `config :wallabidi, :mox_mocks`. Register conditionally:
 
         # config/test.exs
         config :wallabidi, mox_mocks: [MyApp.MockWeather, MyApp.MockMailer]
 
         # lib/your_app_web/endpoint.ex
-        if Application.compile_env(:your_app, :sandbox, false) do
-          plug Phoenix.Ecto.SQL.Sandbox
+        if Application.compile_env(:your_app, :sandbox) do
           plug Wallabidi.MoxSandbox
         end
 
         # lib/your_app_web.ex
         def live_view do
           quote do
-            use Phoenix.LiveView
-            on_mount Wallabidi.MoxSandbox
+            if Application.compile_env(:your_app, :sandbox) do
+              on_mount Wallabidi.MoxSandbox
+            end
           end
         end
-
-    No-op in production or when Mox is not loaded.
     """
 
     @behaviour Plug
     import Phoenix.LiveView
-
-    # -- Plug callbacks --
 
     @impl Plug
     def init(opts), do: opts
@@ -49,8 +39,6 @@ if mox_available? do
       conn
     end
 
-    # -- LiveView on_mount --
-
     def on_mount(:default, _params, _session, socket) do
       if connected?(socket) do
         case decode_owner(socket) do
@@ -62,8 +50,6 @@ if mox_available? do
       {:cont, socket}
     end
 
-    # -- Private --
-
     defp decode_owner(%Plug.Conn{} = conn) do
       ua = conn |> Plug.Conn.get_req_header("user-agent") |> List.first("")
 
@@ -74,15 +60,11 @@ if mox_available? do
     end
 
     defp decode_owner(socket) do
-      case get_connect_info(socket, :user_agent) do
-        nil ->
-          :skip
-
-        ua ->
-          case Phoenix.Ecto.SQL.Sandbox.decode_metadata(ua) do
-            %{owner: owner} -> {:ok, owner}
-            _ -> :skip
-          end
+      with ua when is_binary(ua) <- get_connect_info(socket, :user_agent),
+           %{owner: owner} <- Phoenix.Ecto.SQL.Sandbox.decode_metadata(ua) do
+        {:ok, owner}
+      else
+        _ -> :skip
       end
     end
 
