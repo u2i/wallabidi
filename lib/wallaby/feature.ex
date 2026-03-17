@@ -25,19 +25,27 @@ defmodule Wallabidi.Feature do
       setup context do
         if context[:test_type] == :feature do
           metadata = unquote(__MODULE__).Utils.maybe_checkout_repos(context[:async])
+          caches = unquote(__MODULE__).Utils.maybe_checkout_caches()
 
           start_session_opts = [metadata: metadata]
 
-          get_in(context, [:registered, :sessions])
-          |> unquote(__MODULE__).Utils.sessions_iterable()
-          |> Enum.map(fn
-            opts when is_list(opts) ->
-              unquote(__MODULE__).Utils.start_session(opts, start_session_opts)
+          result =
+            get_in(context, [:registered, :sessions])
+            |> unquote(__MODULE__).Utils.sessions_iterable()
+            |> Enum.map(fn
+              opts when is_list(opts) ->
+                unquote(__MODULE__).Utils.start_session(opts, start_session_opts)
 
-            i when is_number(i) ->
-              unquote(__MODULE__).Utils.start_session([], start_session_opts)
+              i when is_number(i) ->
+                unquote(__MODULE__).Utils.start_session([], start_session_opts)
+            end)
+            |> unquote(__MODULE__).Utils.build_setup_return()
+
+          on_exit(fn ->
+            unquote(__MODULE__).Utils.maybe_checkin_caches(caches)
           end)
-          |> unquote(__MODULE__).Utils.build_setup_return()
+
+          result
         else
           :ok
         end
@@ -194,6 +202,35 @@ defmodule Wallabidi.Feature do
     else
       def maybe_checkout_repos(_) do
         ""
+      end
+    end
+
+    def maybe_checkout_caches do
+      cachex_names = Application.get_env(:wallabidi, :cachex_names, [])
+
+      if cachex_names != [] and Process.whereis(Wallabidi.CachexSandbox) do
+        caches = Wallabidi.CachexSandbox.checkout()
+
+        # Set each cache name in the app config so the app reads the pooled instance
+        otp_app = Application.get_env(:wallabidi, :otp_app)
+
+        if otp_app do
+          for {name, instance} <- caches do
+            Application.put_env(otp_app, :"cachex_#{name}", instance)
+          end
+        end
+
+        caches
+      else
+        nil
+      end
+    end
+
+    def maybe_checkin_caches(nil), do: :ok
+
+    def maybe_checkin_caches(caches) do
+      if Process.whereis(Wallabidi.CachexSandbox) do
+        Wallabidi.CachexSandbox.checkin(caches)
       end
     end
 

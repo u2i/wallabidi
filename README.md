@@ -184,6 +184,26 @@ Both macros expand to nothing when `config :wallabidi, :sandbox` is falsy — ze
 
 **Mimic** stubs are auto-discovered from `Mimic.copy`'d modules. **Mox** mocks are read from config. **Cachex 4.1+** workers inherit sandbox access via `$callers` automatically.
 
+### Cachex test isolation
+
+Cachex instances are shared across tests by default, which causes stale data leaks. Wallabidi provides a pool that gives each test its own clean cache:
+
+```elixir
+# config/test.exs
+config :wallabidi, cachex_names: [:my_cache]
+
+# test/test_helper.exs
+Wallabidi.CachexSandbox.start([:my_cache])
+```
+
+With `use Wallabidi.Feature`, cache checkout/checkin is automatic. Your app reads the cache name from config:
+
+```elixir
+defmodule MyApp.Cache do
+  def name, do: Application.get_env(:my_app, :cachex_my_cache, :my_cache)
+end
+```
+
 ## Usage
 
 ```elixir
