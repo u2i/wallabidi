@@ -207,11 +207,11 @@ defmodule Wallabidi.Feature do
 
     def maybe_checkout_caches do
       cachex_names = Application.get_env(:wallabidi, :cachex_names, [])
+      mod = cachex_sandbox_mod()
 
-      if cachex_names != [] and Process.whereis(Wallabidi.CachexSandbox) do
-        caches = Wallabidi.CachexSandbox.checkout()
+      if (cachex_names != [] and mod) && Process.whereis(mod) do
+        caches = mod.checkout()
 
-        # Set each cache name in the app config so the app reads the pooled instance
         otp_app = Application.get_env(:wallabidi, :otp_app)
 
         if otp_app do
@@ -229,9 +229,13 @@ defmodule Wallabidi.Feature do
     def maybe_checkin_caches(nil), do: :ok
 
     def maybe_checkin_caches(caches) do
-      if Process.whereis(Wallabidi.CachexSandbox) do
-        Wallabidi.CachexSandbox.checkin(caches)
-      end
+      mod = cachex_sandbox_mod()
+      if mod && Process.whereis(mod), do: mod.checkin(caches)
+    end
+
+    defp cachex_sandbox_mod do
+      mod = Module.concat([CachexSandbox])
+      if Code.ensure_loaded?(mod), do: mod
     end
 
     def take_screenshots_for_sessions(pid, test_name) do
