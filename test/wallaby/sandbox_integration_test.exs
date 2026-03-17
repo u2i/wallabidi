@@ -13,6 +13,7 @@ defmodule Wallabidi.SandboxIntegrationTest do
   use ExUnit.Case, async: true
   use Wallabidi.DSL
   use Mimic
+  use Cachex.Sandbox.Case
   import Mox, only: [set_mox_private: 1]
 
   alias Wallabidi.TestApp.{Repo, User}
@@ -20,7 +21,7 @@ defmodule Wallabidi.SandboxIntegrationTest do
   @endpoint Wallabidi.TestApp.Endpoint
 
   setup do
-    # Checkout the sandbox for this test process
+    # Checkout the Ecto sandbox for this test process
     :ok = Ecto.Adapters.SQL.Sandbox.checkout(Repo)
 
     # Start a Wallabidi session with metadata that encodes our sandbox ownership
@@ -51,15 +52,25 @@ defmodule Wallabidi.SandboxIntegrationTest do
     end
   end
 
-  describe "4. Async with Cachex 4.1+" do
-    test "Cachex worker sees sandbox data", %{session: session} do
-      # Clear the cache to force a fresh fetch
-      Cachex.clear(:test_app_cache)
+  describe "4. Async with Cachex sandbox" do
+    test "Cachex worker sees sandbox data via isolated instance", %{session: session} do
+      # No need to manually clear — Cachex.Sandbox.Case gives us a clean instance
       Repo.insert!(%User{name: "Charlie"})
 
       session
       |> visit("/cached")
       |> assert_has(Query.text("Charlie"))
+    end
+
+    test "Cachex data doesn't leak between tests", %{session: session} do
+      # This test runs after the one above. If cache isolation works,
+      # "Charlie" from the previous test is NOT in our cache.
+      Repo.insert!(%User{name: "Diana"})
+
+      session
+      |> visit("/cached")
+      |> assert_has(Query.text("Diana"))
+      |> refute_has(Query.text("Charlie"))
     end
   end
 

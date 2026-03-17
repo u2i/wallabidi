@@ -103,6 +103,7 @@ if Code.ensure_loaded?(Plug) do
     defp allow_mocks(owner, child) do
       allow_mimic(owner, child)
       allow_mox(owner, child)
+      propagate_cachex_sandbox(owner)
     end
 
     defp allow_mimic(owner, child) do
@@ -136,6 +137,20 @@ if Code.ensure_loaded?(Plug) do
     catch
       _, _ -> :ok
     end
+
+    defp propagate_cachex_sandbox(owner) do
+      case :erlang.process_info(owner, :dictionary) do
+        {:dictionary, dict} ->
+          for {key, value} <- dict, match?({:cachex_sandbox, _}, key) do
+            Process.put(key, value)
+          end
+
+        _ ->
+          :ok
+      end
+    catch
+      _, _ -> :ok
+    end
   end
 end
 
@@ -157,6 +172,8 @@ if Code.ensure_loaded?(Phoenix.LiveView) and Code.ensure_loaded?(Phoenix.Ecto.SQ
         # Mocks
         allow_mimic(owner, self())
         allow_mox(owner, self())
+        # Cachex sandbox
+        propagate_cachex_sandbox(owner)
       end
     end
 
@@ -197,6 +214,20 @@ if Code.ensure_loaded?(Phoenix.LiveView) and Code.ensure_loaded?(Phoenix.Ecto.SQ
         for mod <- Application.get_env(:wallabidi, :mox_mocks, []) do
           mox.allow(mod, owner, child)
         end
+      end
+    catch
+      _, _ -> :ok
+    end
+
+    defp propagate_cachex_sandbox(owner) do
+      case :erlang.process_info(owner, :dictionary) do
+        {:dictionary, dict} ->
+          for {key, value} <- dict, match?({:cachex_sandbox, _}, key) do
+            Process.put(key, value)
+          end
+
+        _ ->
+          :ok
       end
     catch
       _, _ -> :ok

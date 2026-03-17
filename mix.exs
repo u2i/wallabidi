@@ -58,8 +58,7 @@ defmodule Wallabidi.Mixfile do
       {:phoenix, "~> 1.7", optional: true},
       {:phoenix_live_view, "~> 1.0", optional: true},
       # Test-only deps
-      {:cachex, "~> 4.1", only: :test},
-      {:cachex_sandbox, github: "u2i/cachex_sandbox", only: :test},
+      {:cachex, github: "pinetops/cachex", branch: "cachex-sandbox", only: :test},
       {:ecto_sqlite3, "~> 0.22", only: :test},
       {:bandit, "~> 1.0", only: :test},
       {:mimic, "~> 1.7", only: :test},

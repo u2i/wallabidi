@@ -206,21 +206,10 @@ defmodule Wallabidi.Feature do
     end
 
     def maybe_checkout_caches do
-      cachex_names = Application.get_env(:wallabidi, :cachex_names, [])
       mod = cachex_sandbox_mod()
 
-      if (cachex_names != [] and mod) && Process.whereis(mod) do
-        caches = mod.checkout()
-
-        otp_app = Application.get_env(:wallabidi, :otp_app)
-
-        if otp_app do
-          for {name, instance} <- caches do
-            Application.put_env(otp_app, :"cachex_#{name}", instance)
-          end
-        end
-
-        caches
+      if mod && Process.whereis(mod) do
+        mod.checkout()
       else
         nil
       end
@@ -234,7 +223,7 @@ defmodule Wallabidi.Feature do
     end
 
     defp cachex_sandbox_mod do
-      mod = Module.concat([CachexSandbox])
+      mod = Module.concat([Cachex, Sandbox])
       if Code.ensure_loaded?(mod), do: mod
     end
 
