@@ -1,5 +1,7 @@
 defmodule Wallabidi.TestApp.DashboardLive do
   use Phoenix.LiveView
+  import Wallabidi.Sandbox
+  wallabidi_on_mount()
 
   alias Wallabidi.TestApp.{Repo, User}
 

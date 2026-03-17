@@ -151,21 +151,18 @@ Application.put_env(:wallabidi, :base_url, YourAppWeb.Endpoint.url)
 
 ### Ecto + LiveView sandbox
 
-Wallabidi provides sandbox modules that propagate test isolation to browser processes. Each works as both a Plug (HTTP) and a LiveView on_mount (WebSocket). Use the ones you need:
+Wallabidi propagates Ecto sandbox, Mimic stubs, and Mox stubs to all browser processes. Two macros handle everything:
 
 ```elixir
 # config/test.exs
-config :your_app, :sandbox, true
+config :wallabidi, sandbox: true
 config :wallabidi, mox_mocks: [MyApp.MockWeather]  # if using Mox
 ```
 
 ```elixir
 # lib/your_app_web/endpoint.ex
-if Application.compile_env(:your_app, :sandbox) do
-  plug Phoenix.Ecto.SQL.Sandbox
-  plug Wallabidi.MimicSandbox            # if using Mimic
-  plug Wallabidi.MoxSandbox              # if using Mox
-end
+import Wallabidi.Sandbox
+wallabidi_plug()
 
 socket "/live", Phoenix.LiveView.Socket,
   websocket: [connect_info: [:user_agent, session: @session_options]]
@@ -176,23 +173,16 @@ socket "/live", Phoenix.LiveView.Socket,
 def live_view do
   quote do
     use Phoenix.LiveView
-
-    if Application.compile_env(:your_app, :sandbox) do
-      on_mount Wallabidi.EctoSandbox
-      on_mount Wallabidi.MimicSandbox    # if using Mimic
-      on_mount Wallabidi.MoxSandbox      # if using Mox
-    end
-
-    on_mount MyAppWeb.Auth               # auth hooks after
+    import Wallabidi.Sandbox
+    wallabidi_on_mount()
+    # auth hooks after
   end
 end
 ```
 
-The `compile_env` guard ensures none of this code exists in production builds.
+Both macros expand to nothing when `config :wallabidi, :sandbox` is falsy — zero production overhead.
 
-**Mimic** stubs are auto-discovered — all `Mimic.copy`'d modules propagate automatically.
-
-**Mox** mocks are listed in config.
+**Mimic** stubs are auto-discovered from `Mimic.copy`'d modules. **Mox** mocks are read from config. **Cachex 4.1+** workers inherit sandbox access via `$callers` automatically.
 
 ## Usage
 
