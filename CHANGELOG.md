@@ -1,5 +1,77 @@
 # Changelog
 
+## [0.31.0](https://github.com/u2i/wallabidi/compare/v0.30.12...v0.31.0) (2026-03-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* rename project to Wallabidi
+* remove Selenium driver and legacy HTTP protocol
+
+### Features
+
+* add BiDi-powered DX features ([2f7fa8e](https://github.com/u2i/wallabidi/commit/2f7fa8e46c5d1370e54778749d71041ed79cf746))
+* add WebDriver BiDi protocol support for Chrome driver ([124f438](https://github.com/u2i/wallabidi/commit/124f43883d9c18162a773746c895f7090e05e400))
+* auto-propagate Mimic stubs in LiveSandbox, fix optional deps ([bb96ea0](https://github.com/u2i/wallabidi/commit/bb96ea0e2a4d4519442a6f2b43a7d53cdc875ef5))
+* auto-start Chrome via Docker when chromedriver not found ([6069fc0](https://github.com/u2i/wallabidi/commit/6069fc02cae1189b2fdf8534395cb67ea4643de6))
+* automatic Cachex checkout in Feature setup ([a3df493](https://github.com/u2i/wallabidi/commit/a3df493c2fa0aa33f752881c3a832a986d4373a7))
+* Cachex.Sandbox integration — transparent cache isolation ([f3c1bd7](https://github.com/u2i/wallabidi/commit/f3c1bd7f606eebfbaebcee13a1035e425eea1218))
+* CachexSandbox pool for test isolation ([0f3e42b](https://github.com/u2i/wallabidi/commit/0f3e42b49f5f652571a8271aab5f57b8aae98acd))
+* Docker networking — Chrome in container reaches host test server ([494a422](https://github.com/u2i/wallabidi/commit/494a4229296353ec4c912ea5d1311862aa9b9e72))
+* launch Chrome directly — bypass chromedriver entirely ([2509bb1](https://github.com/u2i/wallabidi/commit/2509bb119fe9b43207ad2ce340d8045d3efecdc0))
+* make settle LiveView-aware ([6c8ee28](https://github.com/u2i/wallabidi/commit/6c8ee286f32ae2e260ebeb310905dee8a9264b9e))
+* MockSandbox plug — propagate Mimic/Mox on HTTP requests too ([de98064](https://github.com/u2i/wallabidi/commit/de98064274bc2cbeee4089f672ac9b2a5043fbdc))
+* Mox support — auto-propagate stubs to LiveView processes ([3c2c42b](https://github.com/u2i/wallabidi/commit/3c2c42be2389166974b87c64e192bb1e47baff6c))
+* pure BiDi — eliminate all WebdriverClient fallbacks ([b9aa730](https://github.com/u2i/wallabidi/commit/b9aa730679604533b95e22c7d82f243d6b6e636a))
+* remove Selenium driver and legacy HTTP protocol ([ab70de9](https://github.com/u2i/wallabidi/commit/ab70de9cb09e39198b14ee63c15f1cdecb445740))
+* rename project to Wallabidi ([d23fcc4](https://github.com/u2i/wallabidi/commit/d23fcc4f448f38a4cc3c744ce01949fd321698b0))
+* sandbox integration tests pass — all 5 scenarios working ([142c4b0](https://github.com/u2i/wallabidi/commit/142c4b0d741abf4abd80fa02b94de272ad01be43))
+* SandboxHelper for Cachex and spawn_link workers ([17495d4](https://github.com/u2i/wallabidi/commit/17495d435510e939f8c1370aa5bfc3295b0ca589))
+* support remote ChromeDriver (e.g. Docker container) ([4ad30b4](https://github.com/u2i/wallabidi/commit/4ad30b4474252b48ba8b518d574251139adb81dd))
+* use chromedriver with BiDi — inject webSocketUrl capability ([4d7d476](https://github.com/u2i/wallabidi/commit/4d7d47677500aabb3d3e7e048c54b39573f7c054))
+* Wallabidi.Sandbox plug and Wallabidi.LiveSandbox on_mount hook ([28878ad](https://github.com/u2i/wallabidi/commit/28878ade758c7bd8db32ae3aba644fceb0592125))
+
+
+### Bug Fixes
+
+* attribute property access, displayed visibility, dialog subscription, object keys ([e6d92a5](https://github.com/u2i/wallabidi/commit/e6d92a503d30eb997b01d4fc53b9c011b4784738))
+* attribute reads DOM property, defensive session cleanup ([866a365](https://github.com/u2i/wallabidi/commit/866a3655bd03950520d1e0bf7ebcf184be1951e8))
+* Cachex $callers fix is in 4.1+, not 4.0+ ([60c8dd9](https://github.com/u2i/wallabidi/commit/60c8dd99a4f784cadb24c6a0e6331c024677b194))
+* CI and test fixes for Selenium removal ([a6cf794](https://github.com/u2i/wallabidi/commit/a6cf794c07f0e8ee822404660df75924af104482))
+* click fallback for all non-stale errors ([d017c6e](https://github.com/u2i/wallabidi/commit/d017c6e9aad61a31bfd26580033107571f27897c))
+* defensive end_session — catch already-dead WebSocket ([20ac190](https://github.com/u2i/wallabidi/commit/20ac19029147e051c52b18666d44392196327c88))
+* dialyzer — pattern match status 101 before WebSocket.new ([c91df0f](https://github.com/u2i/wallabidi/commit/c91df0f0864658fa6457d268a3eebd00737d5b36))
+* don't call mint_request inside GenServer callbacks ([51526cc](https://github.com/u2i/wallabidi/commit/51526cc570dfdc935ee958e9bf019a71f3995c28))
+* frame switching, file inputs, capabilities tests, version messages ([c2cc876](https://github.com/u2i/wallabidi/commit/c2cc8769da8d8d36f4469f431e65d00fba8dd5aa))
+* handle missing goog:chromeOptions in capability manipulation ([a3e235f](https://github.com/u2i/wallabidi/commit/a3e235ff71a884b7c17f8daf7d0e48dedbf08096))
+* JS error/log tests — allow async BiDi events to arrive ([4791fe0](https://github.com/u2i/wallabidi/commit/4791fe0cc6e2cc5354505f53a31f3ead97dadc46))
+* last 2 test failures — skip invisible click, settle for log timing ([17163f9](https://github.com/u2i/wallabidi/commit/17163f9fa058a739a6336eebd7fa8f33ed7afc66))
+* last 3 integration test failures ([04f0672](https://github.com/u2i/wallabidi/commit/04f0672bac6ebae4db8cf2d23e8b1db916ed7c9e))
+* make BiDi opportunistic — don't modify capabilities ([45d42a6](https://github.com/u2i/wallabidi/commit/45d42a60df83f4884723e9c7ca2a5c70d39d9aba))
+* make wait_for_network_idle work with persistent connections ([27578a7](https://github.com/u2i/wallabidi/commit/27578a7aa3bf5127a700abb69e0e50d4bebbc203))
+* only hide absolutely/fixed positioned off-screen elements ([0eab11b](https://github.com/u2i/wallabidi/commit/0eab11b1297c380afaca7f19a217de0f69d8c9b3))
+* parse session ID from W3C response format ([0766a98](https://github.com/u2i/wallabidi/commit/0766a98faf4fed1382c39fd6c4ed22ce7f65d9a5))
+* queue WebSocket commands until handshake completes ([e454f2f](https://github.com/u2i/wallabidi/commit/e454f2fe8c9e491d99ba10164b226c5625071003))
+* remote chromedriver improvements ([ac8ee0a](https://github.com/u2i/wallabidi/commit/ac8ee0ab6e8f5998cc8fe2635e92e2a5acd8c7ed))
+* remove worktree from git, add .claude to gitignore ([0b7a3f5](https://github.com/u2i/wallabidi/commit/0b7a3f5c27e4e2d98b3c996cf8e01e3deec6dd8c))
+* replace all remaining wallaby references with wallabidi ([d503255](https://github.com/u2i/wallabidi/commit/d5032558d0c497ce8515204110d4b5bf5e030ff9))
+* resolve credo issues — reduce nesting, fix alias order ([a044fe9](https://github.com/u2i/wallabidi/commit/a044fe9e62ab385f57cfbd0e8dd67f3e762ce67a))
+* resolve dialyzer errors ([6e115b1](https://github.com/u2i/wallabidi/commit/6e115b18c92da0b9f852b1de3dbb429a6eab6dc2))
+* resolve remaining 23 integration test failures ([654f503](https://github.com/u2i/wallabidi/commit/654f5031c8b185a2d58744abf9d6864678f0611e))
+* restore chromedriver validation and filter mapper log noise ([bbf76e2](https://github.com/u2i/wallabidi/commit/bbf76e266565b599c434a4cb2bd3003d787d239b))
+* use atom key for goog:chromeOptions Access ([8119414](https://github.com/u2i/wallabidi/commit/811941463f6e0822046d09f7949cd55700e4d3bb))
+* use bare chromedriver image, skip tests when no local chromedriver ([8b16ba1](https://github.com/u2i/wallabidi/commit/8b16ba1189beb223cb53c19de44216de66582acd))
+* use compile_env guard — zero production overhead ([c881dac](https://github.com/u2i/wallabidi/commit/c881dac986769e87cf44e70dd9bed83e55bd013a))
+* use JS .click() instead of pointer actions for element clicks ([96eceed](https://github.com/u2i/wallabidi/commit/96eceedd55a5f8e8d245b6bab7fc5cbdd2bb747c))
+* use sharedReference format for BiDi script arguments ([2b7fbf4](https://github.com/u2i/wallabidi/commit/2b7fbf465550d48808198e4b4922aa7daab5e1bb))
+* use W3C capabilities format for session creation ([37970c0](https://github.com/u2i/wallabidi/commit/37970c02f07a303bea774f97233abef49c73a31d))
+* use W3C capability keys throughout ([c6c5fab](https://github.com/u2i/wallabidi/commit/c6c5fabaa6d37fa9329e4027b7fc6053cf438150))
+
+
+### Performance Improvements
+
+* single chromedriver process for all tests ([4359e45](https://github.com/u2i/wallabidi/commit/4359e452306ad121c52cb1b552d2aa73d0196670))
+
 ## [0.30.12](https://github.com/elixir-wallaby/wallaby/compare/v0.30.11...v0.30.12) (2026-01-09)
 
 
