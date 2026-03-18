@@ -2,7 +2,7 @@ defmodule Wallabidi.Mixfile do
   use Mix.Project
 
   @source_url "https://github.com/u2i/wallabidi"
-  @version "0.1.6"
+  @version "0.1.7"
   @maintainers ["Tom Clarke"]
 
   def project do
@@ -59,6 +59,7 @@ defmodule Wallabidi.Mixfile do
       {:phoenix_live_view, "~> 1.0", optional: true},
       # Test-only deps
       {:cachex, github: "pinetops/cachex", branch: "cachex-sandbox", only: :test},
+      {:fun_with_flags, github: "pinetops/fun_with_flags", branch: "fwf-sandbox", only: :test, runtime: false},
       {:ecto_sqlite3, "~> 0.22", only: :test},
       {:bandit, "~> 1.0", only: :test},
       {:mimic, "~> 1.7", only: :test},

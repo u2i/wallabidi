@@ -26,6 +26,7 @@ defmodule Wallabidi.Feature do
         if context[:test_type] == :feature do
           metadata = unquote(__MODULE__).Utils.maybe_checkout_repos(context[:async])
           caches = unquote(__MODULE__).Utils.maybe_checkout_caches()
+          flags = unquote(__MODULE__).Utils.maybe_checkout_flags()
 
           start_session_opts = [metadata: metadata]
 
@@ -42,6 +43,7 @@ defmodule Wallabidi.Feature do
             |> unquote(__MODULE__).Utils.build_setup_return()
 
           on_exit(fn ->
+            unquote(__MODULE__).Utils.maybe_checkin_flags(flags)
             unquote(__MODULE__).Utils.maybe_checkin_caches(caches)
           end)
 
@@ -224,6 +226,28 @@ defmodule Wallabidi.Feature do
 
     defp cachex_sandbox_mod do
       mod = Module.concat([Cachex, Sandbox])
+      if Code.ensure_loaded?(mod), do: mod
+    end
+
+    def maybe_checkout_flags do
+      mod = fwf_sandbox_mod()
+
+      if mod && Process.whereis(mod) do
+        mod.checkout()
+      else
+        nil
+      end
+    end
+
+    def maybe_checkin_flags(nil), do: :ok
+
+    def maybe_checkin_flags(flags) do
+      mod = fwf_sandbox_mod()
+      if mod && Process.whereis(mod), do: mod.checkin(flags)
+    end
+
+    defp fwf_sandbox_mod do
+      mod = Module.concat([FunWithFlags, Sandbox])
       if Code.ensure_loaded?(mod), do: mod
     end
 

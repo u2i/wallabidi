@@ -104,6 +104,7 @@ if Code.ensure_loaded?(Plug) do
       allow_mimic(owner, child)
       allow_mox(owner, child)
       propagate_cachex_sandbox(owner)
+      propagate_fwf_sandbox(owner)
     end
 
     defp allow_mimic(owner, child) do
@@ -151,6 +152,21 @@ if Code.ensure_loaded?(Plug) do
     catch
       _, _ -> :ok
     end
+
+    defp propagate_fwf_sandbox(owner) do
+      case :erlang.process_info(owner, :dictionary) do
+        {:dictionary, dict} ->
+          case List.keyfind(dict, :fwf_sandbox, 0) do
+            {:fwf_sandbox, table} -> Process.put(:fwf_sandbox, table)
+            _ -> :ok
+          end
+
+        _ ->
+          :ok
+      end
+    catch
+      _, _ -> :ok
+    end
   end
 end
 
@@ -174,6 +190,8 @@ if Code.ensure_loaded?(Phoenix.LiveView) and Code.ensure_loaded?(Phoenix.Ecto.SQ
         allow_mox(owner, self())
         # Cachex sandbox
         propagate_cachex_sandbox(owner)
+        # FunWithFlags sandbox
+        propagate_fwf_sandbox(owner)
       end
     end
 
@@ -224,6 +242,21 @@ if Code.ensure_loaded?(Phoenix.LiveView) and Code.ensure_loaded?(Phoenix.Ecto.SQ
         {:dictionary, dict} ->
           for {key, value} <- dict, match?({:cachex_sandbox, _}, key) do
             Process.put(key, value)
+          end
+
+        _ ->
+          :ok
+      end
+    catch
+      _, _ -> :ok
+    end
+
+    defp propagate_fwf_sandbox(owner) do
+      case :erlang.process_info(owner, :dictionary) do
+        {:dictionary, dict} ->
+          case List.keyfind(dict, :fwf_sandbox, 0) do
+            {:fwf_sandbox, table} -> Process.put(:fwf_sandbox, table)
+            _ -> :ok
           end
 
         _ ->

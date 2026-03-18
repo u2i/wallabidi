@@ -182,27 +182,41 @@ end
 
 Both macros expand to nothing when `config :wallabidi, :sandbox` is falsy — zero production overhead.
 
-**Mimic** stubs are auto-discovered from `Mimic.copy`'d modules. **Mox** mocks are read from config. **Cachex 4.1+** workers inherit sandbox access via `$callers` automatically.
+**Mimic** stubs are auto-discovered from `Mimic.copy`'d modules. **Mox** mocks are read from config.
 
 ### Cachex test isolation
 
-Cachex instances are shared across tests by default, which causes stale data leaks. Wallabidi provides a pool that gives each test its own clean cache:
+Cachex instances are shared across tests by default, which causes stale data leaks. The `pinetops/cachex` fork (branch `cachex-sandbox`) adds `Cachex.Sandbox` — a pool that gives each test its own clean cache:
 
 ```elixir
-# config/test.exs
-config :wallabidi, cachex_names: [:my_cache]
+# mix.exs
+{:cachex, github: "pinetops/cachex", branch: "cachex-sandbox", only: :test}
 
 # test/test_helper.exs
-Wallabidi.CachexSandbox.start([:my_cache])
+Cachex.Sandbox.start([:my_cache])
 ```
 
-With `use Wallabidi.Feature`, cache checkout/checkin is automatic. Your app reads the cache name from config:
+With `use Wallabidi.Feature`, cache checkout/checkin is automatic.
+
+### FunWithFlags test isolation
+
+Feature flags have the same shared-state problem. The `pinetops/fun_with_flags` fork (branch `fwf-sandbox`) adds `FunWithFlags.Sandbox` — each test gets an isolated ETS table that bypasses the real store/cache/persistence stack entirely:
 
 ```elixir
-defmodule MyApp.Cache do
-  def name, do: Application.get_env(:my_app, :cachex_my_cache, :my_cache)
-end
+# mix.exs
+{:fun_with_flags, github: "pinetops/fun_with_flags", branch: "fwf-sandbox", only: :test, runtime: false}
+
+# test/test_helper.exs
+FunWithFlags.Sandbox.start()
 ```
+
+With `use Wallabidi.Feature`, flag checkout/checkin is automatic. You can also pre-seed flags on checkout:
+
+```elixir
+FunWithFlags.Sandbox.checkout(flags: [my_feature: true, legacy_mode: false])
+```
+
+Both sandbox pools propagate to browser-spawned processes (Plug requests, LiveView mounts) via the `wallabidi_plug()` and `wallabidi_on_mount()` macros.
 
 ## Usage
 
@@ -287,6 +301,6 @@ Licensed under MIT, same as Wallaby.
 
 ```shell
 mix test              # unit tests
-WALLABY_DRIVER=chrome mix test   # integration tests
+WALLABIDI_DRIVER=chrome mix test  # integration tests
 mix test.all          # both
 ```
