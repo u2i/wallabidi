@@ -29,12 +29,4 @@ defmodule Wallabidi.SandboxTest do
       assert result == conn
     end
   end
-
-  describe "Wallabidi.Sandbox macros" do
-    test "wallabidi_plug and wallabidi_on_mount are defined" do
-      macros = Wallabidi.Sandbox.__info__(:macros)
-      assert {:wallabidi_plug, 0} in macros
-      assert {:wallabidi_on_mount, 0} in macros
-    end
-  end
 end

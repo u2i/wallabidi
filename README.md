@@ -151,18 +151,26 @@ Application.put_env(:wallabidi, :base_url, YourAppWeb.Endpoint.url)
 
 ### Ecto + LiveView sandbox
 
-Wallabidi propagates Ecto sandbox, Mimic stubs, and Mox stubs to all browser processes. Two macros handle everything:
+Wallabidi propagates Ecto sandbox, Mimic stubs, Mox stubs, Cachex sandbox, and FunWithFlags sandbox to all browser-spawned processes (Plug requests and LiveView mounts).
+
+Setup uses [`phoenix_test_only`](https://github.com/pinetops/phoenix_test_only) — a tiny macro library that conditionally emits `plug`/`on_mount` calls based on whether the target module is loaded. In production (where wallabidi isn't a dep), they emit nothing.
+
+```elixir
+# mix.exs — phoenix_test_only goes in all envs, wallabidi in test only
+{:phoenix_test_only, github: "pinetops/phoenix_test_only"},
+{:wallabidi, github: "u2i/wallabidi", branch: "bidi-migration", only: :test, runtime: false},
+```
 
 ```elixir
 # config/test.exs
-config :wallabidi, sandbox: true
 config :wallabidi, mox_mocks: [MyApp.MockWeather]  # if using Mox
 ```
 
 ```elixir
 # lib/your_app_web/endpoint.ex
-import Wallabidi.Sandbox
-wallabidi_plug()
+import PhoenixTestOnly
+plug_if_loaded Phoenix.Ecto.SQL.Sandbox
+plug_if_loaded Wallabidi.Sandbox.Plug
 
 socket "/live", Phoenix.LiveView.Socket,
   websocket: [connect_info: [:user_agent, session: @session_options]]
@@ -173,14 +181,12 @@ socket "/live", Phoenix.LiveView.Socket,
 def live_view do
   quote do
     use Phoenix.LiveView
-    import Wallabidi.Sandbox
-    wallabidi_on_mount()
+    import PhoenixTestOnly
+    on_mount_if_loaded Wallabidi.Sandbox.Hook
     # auth hooks after
   end
 end
 ```
-
-Both macros expand to nothing when `config :wallabidi, :sandbox` is falsy — zero production overhead.
 
 **Mimic** stubs are auto-discovered from `Mimic.copy`'d modules. **Mox** mocks are read from config.
 

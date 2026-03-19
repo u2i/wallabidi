@@ -1,7 +1,7 @@
 defmodule Wallabidi.TestApp.UsersLive do
   use Phoenix.LiveView
-  import Wallabidi.Sandbox
-  wallabidi_on_mount()
+  import PhoenixTestOnly
+  on_mount_if_loaded Wallabidi.Sandbox.Hook
 
   alias Wallabidi.TestApp.{Repo, User}
 
