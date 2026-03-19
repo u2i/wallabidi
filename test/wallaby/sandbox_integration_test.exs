@@ -98,6 +98,18 @@ defmodule Wallabidi.SandboxIntegrationTest do
     end
   end
 
+  describe "5. Mimic stub propagation to GenServer" do
+    test "GenServer spawned from LiveView sees Mimic stub", %{session: session} do
+      Mimic.stub(Wallabidi.TestApp.PriceService, :fetch_price, fn ->
+        "$1.23"
+      end)
+
+      session
+      |> visit("/price")
+      |> assert_has(Query.text("$1.23"))
+    end
+  end
+
   describe "6. Multi-session async" do
     test "two sessions share sandbox data", %{session: session1} do
       # Create a second session with the same metadata
