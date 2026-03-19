@@ -7,8 +7,8 @@ defmodule Wallabidi.Sandbox do
 
       # lib/your_app_web/endpoint.ex
       import PhoenixTestOnly
-      plug_if_loaded Phoenix.Ecto.SQL.Sandbox
-      plug_if_loaded Wallabidi.Sandbox.Plug
+      plug_if_test Phoenix.Ecto.SQL.Sandbox
+      plug_if_test Wallabidi.Sandbox.Plug
 
   ## LiveView setup
 
@@ -17,7 +17,7 @@ defmodule Wallabidi.Sandbox do
         quote do
           use Phoenix.LiveView
           import PhoenixTestOnly
-          on_mount_if_loaded Wallabidi.Sandbox.Hook
+          on_mount_if_test Wallabidi.Sandbox.Hook
         end
       end
 

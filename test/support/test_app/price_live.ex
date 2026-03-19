@@ -1,7 +1,7 @@
 defmodule Wallabidi.TestApp.PriceLive do
   use Phoenix.LiveView
   import PhoenixTestOnly
-  on_mount_if_loaded Wallabidi.Sandbox.Hook
+  on_mount_if_test Wallabidi.Sandbox.Hook
 
   alias Wallabidi.TestApp.PriceServer
 

@@ -1,8 +1,8 @@
 defmodule Wallabidi.TestApp.Endpoint do
   use Phoenix.Endpoint, otp_app: :wallabidi
   import PhoenixTestOnly
-  plug_if_loaded Phoenix.Ecto.SQL.Sandbox
-  plug_if_loaded Wallabidi.Sandbox.Plug
+  plug_if_test Phoenix.Ecto.SQL.Sandbox
+  plug_if_test Wallabidi.Sandbox.Plug
 
   socket("/live", Phoenix.LiveView.Socket, websocket: [connect_info: [:user_agent]])
 

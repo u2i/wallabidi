@@ -169,8 +169,8 @@ config :wallabidi, mox_mocks: [MyApp.MockWeather]  # if using Mox
 ```elixir
 # lib/your_app_web/endpoint.ex
 import PhoenixTestOnly
-plug_if_loaded Phoenix.Ecto.SQL.Sandbox
-plug_if_loaded Wallabidi.Sandbox.Plug
+plug_if_test Phoenix.Ecto.SQL.Sandbox
+plug_if_test Wallabidi.Sandbox.Plug
 
 socket "/live", Phoenix.LiveView.Socket,
   websocket: [connect_info: [:user_agent, session: @session_options]]
@@ -182,7 +182,7 @@ def live_view do
   quote do
     use Phoenix.LiveView
     import PhoenixTestOnly
-    on_mount_if_loaded Wallabidi.Sandbox.Hook
+    on_mount_if_test Wallabidi.Sandbox.Hook
     # auth hooks after
   end
 end
