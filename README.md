@@ -190,6 +190,36 @@ end
 
 **Mimic** stubs are auto-discovered from `Mimic.copy`'d modules. **Mox** mocks are read from config.
 
+### GenServer + Mimic stubs
+
+Mimic checks `$callers` to find allowed processes. `Task.start_link` sets this automatically, but `GenServer.start_link` does not. If a LiveView spawns a GenServer that calls a mocked module, pass `$callers` explicitly:
+
+```elixir
+defmodule MyApp.PriceServer do
+  use GenServer
+
+  def start_supervised(opts \\ []) do
+    callers = [self() | Process.get(:"$callers", [])]
+    GenServer.start_link(__MODULE__, Keyword.put(opts, :callers, callers))
+  end
+
+  @impl true
+  def init(opts) do
+    if callers = opts[:callers], do: Process.put(:"$callers", callers)
+    {:ok, %{}}
+  end
+
+  @impl true
+  def handle_call(:fetch_price, _from, state) do
+    # Mimic walks $callers to find the test process's stub
+    price = MyApp.PriceService.fetch_price()
+    {:reply, price, state}
+  end
+end
+```
+
+This also works for Ecto sandbox access — the GenServer can query the database through the test's sandbox connection.
+
 ### Cachex test isolation
 
 Cachex instances are shared across tests by default, which causes stale data leaks. The `pinetops/cachex` fork (branch `cachex-sandbox`) adds `Cachex.Sandbox` — a pool that gives each test its own clean cache:
