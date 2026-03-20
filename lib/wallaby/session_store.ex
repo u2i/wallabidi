@@ -85,7 +85,20 @@ defmodule Wallabidi.SessionStore do
     # Spawn cleanup to avoid blocking the GenServer —
     # end_session uses mint_request which does `receive` and would
     # intercept GenServer messages if run inline.
-    Task.start(fn -> Wallabidi.Chrome.end_session(session) end)
+    # Use Task.async + yield to ensure the session is actually closed
+    # before we move on, preventing resource leaks between tests.
+    task = Task.async(fn -> Wallabidi.Chrome.end_session(session) end)
+
+    unless Task.yield(task, 5_000) do
+      Task.shutdown(task)
+
+      require Logger
+
+      Logger.warning(
+        "Wallabidi: session #{session.id} cleanup timed out after 5s — " <>
+          "force-killed. This may leave a Chrome process running."
+      )
+    end
 
     :ets.delete(state.ets_table, {ref, session.id, pid})
 
