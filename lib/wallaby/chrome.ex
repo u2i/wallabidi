@@ -148,6 +148,7 @@ defmodule Wallabidi.Chrome do
     base_url = chromedriver_base_url()
 
     wait_for_chromedriver!(base_url, timeout)
+    maybe_cleanup_stale_sessions(base_url)
 
     capabilities =
       opts
@@ -281,6 +282,35 @@ defmodule Wallabidi.Chrome do
     mint_request(:delete, session.session_url, "")
   rescue
     _ -> {:ok, %{}}
+  end
+
+  defp maybe_cleanup_stale_sessions(base_url) do
+    if :persistent_term.get({__MODULE__, :cleaned_up}, false) do
+      :ok
+    else
+      :persistent_term.put({__MODULE__, :cleaned_up}, true)
+      cleanup_stale_sessions(base_url)
+    end
+  end
+
+  defp cleanup_stale_sessions(base_url) do
+    case mint_request(:get, "#{base_url}sessions", "") do
+      {:ok, %{"value" => sessions}} when is_list(sessions) and sessions != [] ->
+        require Logger
+
+        Logger.info(
+          "Wallabidi: cleaning up #{length(sessions)} stale ChromeDriver session(s)"
+        )
+
+        for %{"id" => id} <- sessions do
+          mint_request(:delete, "#{base_url}session/#{id}", "")
+        end
+
+      _ ->
+        :ok
+    end
+  rescue
+    _ -> :ok
   end
 
   @doc false
