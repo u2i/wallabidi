@@ -1588,8 +1588,8 @@ defmodule Wallabidi.Browser do
   @spec settle(session, keyword()) :: session
   def settle(%Session{} = session, opts \\ []) do
     if bidi_session?(session) do
-      timeout = Keyword.get(opts, :timeout, 5_000)
-      idle_time = Keyword.get(opts, :idle_time, 500)
+      timeout = Keyword.get(opts, :timeout, 10_000)
+      idle_time = Keyword.get(opts, :idle_time, 1_000)
 
       Wallabidi.BiDiClient.settle(session, timeout, idle_time)
     end
