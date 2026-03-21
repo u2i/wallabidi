@@ -39,7 +39,7 @@ defmodule Wallabidi.Mixfile do
     [extra_applications: [:logger], mod: {Wallabidi, []}]
   end
 
-  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(:test), do: ["lib", "test/support", "integration_test/support"]
   # need the testserver in dev for benchmarks to run
   defp elixirc_paths(:dev), do: ["lib", "integration_test/support/test_server.ex"]
   defp elixirc_paths(_), do: ["lib"]
