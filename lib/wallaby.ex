@@ -32,7 +32,15 @@ defmodule Wallabidi do
     ]
 
     opts = [strategy: :one_for_one, name: Wallabidi.Supervisor]
-    Supervisor.start_link(children, opts)
+    result = Supervisor.start_link(children, opts)
+
+    # Clean up stale sessions from previous runs before any tests start
+    case result do
+      {:ok, _} -> Wallabidi.Chrome.cleanup_stale_sessions()
+      _ -> :ok
+    end
+
+    result
   end
 
   @type reason :: any
