@@ -58,10 +58,10 @@ defmodule Wallabidi.Mixfile do
       {:phoenix, "~> 1.7", optional: true},
       {:phoenix_live_view, "~> 1.0", optional: true},
       {:lazy_html, "~> 0.1"},
-      {:phoenix_test_only, "~> 0.2"},
+      {:sandbox_case, "~> 0.2.11"},
       # Test-only deps
-      {:cachex, github: "pinetops/cachex", branch: "cachex-sandbox", only: :test},
-      {:fun_with_flags, github: "pinetops/fun_with_flags", branch: "fwf-sandbox", only: :test, runtime: false},
+      {:cachex, "~> 4.1", only: :test},
+      {:fun_with_flags, "~> 1.11", only: :test, runtime: false},
       {:ecto_sqlite3, "~> 0.22", only: :test},
       {:bandit, "~> 1.0", only: :test},
       {:mimic, "~> 1.7", only: :test},

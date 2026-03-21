@@ -1,7 +1,7 @@
 defmodule Wallabidi.TestApp.WeatherLive do
   use Phoenix.LiveView
-  import PhoenixTestOnly
-  on_mount_if_test Wallabidi.Sandbox.Hook
+  import SandboxCase
+  sandbox_on_mount()
 
   def mount(_params, _session, socket) do
     mock = Application.get_env(:wallabidi, :weather_module, Wallabidi.TestApp.WeatherBehaviour)

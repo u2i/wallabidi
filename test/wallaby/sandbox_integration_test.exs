@@ -11,21 +11,16 @@ defmodule Wallabidi.SandboxIntegrationTest do
   5. Multiple sessions share the same sandbox
   """
   use ExUnit.Case, async: true
+  use SandboxCase.Sandbox.Case
   use Wallabidi.DSL
   use Mimic
-  use Cachex.Sandbox.Case
-  import Mox, only: [set_mox_private: 1]
 
   alias Wallabidi.TestApp.{Repo, User}
 
   @endpoint Wallabidi.TestApp.Endpoint
 
-  setup do
-    # Checkout the Ecto sandbox for this test process
-    :ok = Ecto.Adapters.SQL.Sandbox.checkout(Repo)
-
-    # Start a Wallabidi session with metadata that encodes our sandbox ownership
-    metadata = Phoenix.Ecto.SQL.Sandbox.metadata_for(Repo, self())
+  setup %{sandbox: sandbox} do
+    metadata = SandboxCase.Sandbox.ecto_metadata(sandbox)
     {:ok, session} = Wallabidi.start_session(metadata: metadata)
 
     %{session: session}
@@ -87,8 +82,6 @@ defmodule Wallabidi.SandboxIntegrationTest do
   end
 
   describe "Mox stub propagation" do
-    setup :set_mox_private
-
     test "Mox stub visible to LiveView process", %{session: session} do
       Mox.stub(Wallabidi.TestApp.MockWeather, :get_temperature, fn -> "72°F" end)
 

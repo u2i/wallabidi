@@ -1,10 +1,17 @@
 defmodule Wallabidi.TestApp.Endpoint do
   use Phoenix.Endpoint, otp_app: :wallabidi
-  import PhoenixTestOnly
-  plug_if_test Phoenix.Ecto.SQL.Sandbox
-  plug_if_test Wallabidi.Sandbox.Plug
 
-  socket("/live", Phoenix.LiveView.Socket, websocket: [connect_info: [:user_agent]])
+  @session_options [
+    store: :cookie,
+    key: "_test_key",
+    signing_salt: "test_salt"
+  ]
+
+  import SandboxCase
+  sandbox_plugs()
+
+  socket_with_sandbox "/live", Phoenix.LiveView.Socket,
+    websocket: [connect_info: [session: @session_options]]
 
   plug(Plug.Static,
     at: "/assets/phoenix",
@@ -22,11 +29,6 @@ defmodule Wallabidi.TestApp.Endpoint do
     json_decoder: Jason
   )
 
-  plug(Plug.Session,
-    store: :cookie,
-    key: "_test_key",
-    signing_salt: "test_salt"
-  )
-
+  plug(Plug.Session, @session_options)
   plug(Wallabidi.TestApp.Router)
 end

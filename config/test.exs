@@ -2,8 +2,7 @@ import Config
 
 config :wallabidi,
   tmp_dir_prefix: "wallabidi_test",
-  otp_app: :wallabidi,
-  sandbox: true
+  otp_app: :wallabidi
 
 if remote_url = System.get_env("WALLABIDI_CHROMEDRIVER_REMOTE_URL") do
   config :wallabidi,
@@ -25,6 +24,19 @@ config :wallabidi, Wallabidi.TestApp.Endpoint,
   live_view: [signing_salt: "test_salt"],
   check_origin: false
 
-config :wallabidi, :sandbox, Ecto.Adapters.SQL.Sandbox
-
 config :wallabidi, ecto_repos: [Wallabidi.TestApp.Repo]
+
+# Sandbox case — batteries-included test isolation
+config :sandbox_case,
+  otp_app: :wallabidi,
+  mox_mocks: [Wallabidi.TestApp.MockWeather],
+  sandbox: [
+    ecto: true,
+    cachex: [:test_app_cache],
+    fun_with_flags: true,
+    mimic: [
+      Wallabidi.TestApp.ExternalService,
+      Wallabidi.TestApp.PriceService
+    ],
+    logger: [fail_on: false]
+  ]
