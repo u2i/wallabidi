@@ -14,20 +14,17 @@ defmodule Wallabidi.LiveViewDriver do
 
   ## Limitations
 
-  - No JavaScript execution (execute_script returns {:error, :not_supported})
+  - No JavaScript execution
   - No window management, frames, cookies, screenshots, dialogs
-  - No real HTTP (XHR, fetch) — only LiveView events
-  - Forms must use phx-change/phx-submit, not JS-driven submission
+  - Forms must use phx-change/phx-submit
   """
 
   @behaviour Wallabidi.Driver
 
-  # These are test helpers — only available in test env
-  # Using Module.concat to avoid compile-time dependency
-  @conn_test Phoenix.ConnTest
-  @lv_test Phoenix.LiveViewTest
-
   alias Wallabidi.{Session, Element}
+
+  @lv_test Phoenix.LiveViewTest
+  @conn_test Phoenix.ConnTest
 
   # --- Session lifecycle ---
 
@@ -47,7 +44,10 @@ defmodule Wallabidi.LiveViewDriver do
   end
 
   @impl true
-  def end_session(_session), do: :ok
+  def end_session(session) do
+    Process.delete({:lv_driver, session.id})
+    :ok
+  end
 
   # --- Navigation ---
 
@@ -57,54 +57,45 @@ defmodule Wallabidi.LiveViewDriver do
       @conn_test.build_conn()
       |> Plug.Conn.put_private(:phoenix_endpoint, session.server)
 
-    {:ok, view, html} = @lv_test.live(conn, path)
-    put_view(session, view, html)
+    conn = @conn_test.dispatch(conn, session.server, :get, path)
+    {:ok, view, html} = @lv_test.__live__(conn, nil, [])
+
+    put_state(session, view, html, path)
     :ok
   end
 
   @impl true
-  def current_url(session) do
-    case get_view(session) do
-      nil -> {:ok, ""}
-      _view -> {:ok, session.url}
-    end
-  end
+  def current_url(session), do: {:ok, get_state(session)[:path] || ""}
 
   @impl true
-  def current_path(session) do
-    case current_url(session) do
-      {:ok, url} -> {:ok, URI.parse(url).path || "/"}
-      error -> error
-    end
-  end
+  def current_path(session), do: {:ok, get_state(session)[:path] || "/"}
 
   # --- Finding elements ---
 
   @impl true
-  def find_elements(session_or_element, query) do
-    html = get_html(session_or_element)
-    {strategy, selector} = query
+  def find_elements(parent, {strategy, selector}) do
+    html = get_rendered_html(parent)
 
     elements =
       case strategy do
         :css ->
-          html
-          |> LazyHtml.parse()
-          |> LazyHtml.find(selector)
+          doc = LazyHTML.from_fragment(html)
+          results = LazyHTML.query(doc, selector)
+
+          results
           |> Enum.with_index()
           |> Enum.map(fn {node, idx} ->
             %Element{
-              id: "#{selector}-#{idx}",
-              parent: session_or_element,
+              id: "lv-#{selector}-#{idx}",
+              parent: parent,
               driver: __MODULE__,
               url: "",
               session_url: "",
-              bidi_shared_id: {:lv_element, selector, idx, node_to_html(node)}
+              bidi_shared_id: {:lv_element, selector, idx, LazyHTML.to_html(node)}
             }
           end)
 
-        :xpath ->
-          # XPath not supported in direct mode
+        _ ->
           []
       end
 
@@ -117,260 +108,203 @@ defmodule Wallabidi.LiveViewDriver do
   def click(%Element{} = element) do
     session = root_session(element)
     view = get_view(session)
+    selector = element_selector(element)
 
-    if view do
-      selector = element_selector(element)
-
-      case @lv_test.render_click(view, selector) do
-        html when is_binary(html) ->
-          update_html(session, html)
-          {:ok, nil}
-
-        {:error, _} = error ->
-          error
-      end
-    else
-      {:error, :no_live_view}
-    end
+    lv_element = @lv_test.element(view, selector)
+    html = @lv_test.render_click(lv_element)
+    update_html(session, html)
+    {:ok, nil}
+  rescue
+    e -> {:error, Exception.message(e)}
   end
 
   @impl true
-  def clear(%Element{} = element) do
-    set_value(element, "")
-  end
+  def clear(%Element{} = element), do: set_value(element, "")
 
   @impl true
   def set_value(%Element{} = element, value) do
     session = root_session(element)
     view = get_view(session)
+    el_html = element_html(element)
 
-    if view do
-      selector = element_selector(element)
+    # Find the input name
+    case extract_attr(el_html, "name") do
+      nil ->
+        {:error, :no_input_name}
 
-      # Determine the input name from the element HTML
-      case get_input_name(element) do
-        nil ->
-          {:error, :no_input_name}
+      name ->
+        # Find the parent form selector
+        form_selector = find_form_selector(get_rendered_html(session), element_selector(element))
 
-        name ->
-          html = @lv_test.render_change(view, selector, %{name => value})
+        if form_selector do
+          form = @lv_test.form(view, form_selector, %{name => value})
+          html = @lv_test.render_change(form)
           update_html(session, html)
-          {:ok, nil}
-      end
-    else
-      {:error, :no_live_view}
+        else
+          # No form — try direct element change
+          lv_el = @lv_test.element(view, element_selector(element))
+          html = @lv_test.render_change(lv_el, %{value: value})
+          update_html(session, html)
+        end
+
+        {:ok, nil}
     end
+  rescue
+    e -> {:error, Exception.message(e)}
   end
 
   @impl true
   def text(%Element{} = element) do
-    {:ok, element_text(element)}
+    html = element_html(element)
+    doc = LazyHTML.from_fragment(html)
+    {:ok, LazyHTML.text(doc)}
   end
 
   @impl true
   def attribute(%Element{} = element, attr_name) do
     html = element_html(element)
-
-    case LazyHtml.parse(html) |> LazyHtml.find("[#{attr_name}]") do
-      [{_tag, attrs, _children} | _] ->
-        value = Enum.find_value(attrs, fn {k, v} -> if k == attr_name, do: v end)
-        {:ok, value}
-
-      _ ->
-        # Try parsing the element itself
-        case LazyHtml.parse(html) do
-          [{_tag, attrs, _children} | _] ->
-            value = Enum.find_value(attrs, fn {k, v} -> if k == attr_name, do: v end)
-            {:ok, value}
-
-          _ ->
-            {:ok, nil}
-        end
-    end
+    {:ok, extract_attr(html, attr_name)}
   end
 
   @impl true
-  def displayed(%Element{} = _element) do
-    # In direct mode, if the element was found it's "displayed"
-    {:ok, true}
-  end
+  def displayed(%Element{} = _element), do: {:ok, true}
 
   @impl true
   def selected(%Element{} = element) do
     html = element_html(element)
-    {:ok, String.contains?(html, "selected") or String.contains?(html, "checked")}
+    doc = LazyHTML.from_fragment(html)
+
+    selected =
+      LazyHTML.attribute(doc, "selected") != nil or
+        LazyHTML.attribute(doc, "checked") != nil
+
+    {:ok, selected}
   end
 
   # --- Page content ---
 
   @impl true
-  def page_source(session) do
-    {:ok, get_html(session)}
-  end
+  def page_source(session), do: {:ok, get_rendered_html(session)}
 
   @impl true
   def page_title(session) do
-    html = get_html(session)
-
-    title =
-      case Regex.run(~r/<title[^>]*>([^<]*)<\/title>/i, html) do
-        [_, title] -> String.trim(title)
-        _ -> ""
-      end
-
-    {:ok, title}
+    view = get_view(session)
+    if view, do: {:ok, @lv_test.page_title(view) || ""}, else: {:ok, ""}
+  rescue
+    _ -> {:ok, ""}
   end
 
-  # --- Not supported in direct mode ---
+  # --- Not supported ---
 
   @impl true
-  def execute_script(_session, _script, _args), do: {:error, :not_supported}
-
+  def execute_script(_, _, _), do: {:error, :not_supported}
   @impl true
-  def execute_script_async(_session, _script, _args), do: {:error, :not_supported}
-
+  def execute_script_async(_, _, _), do: {:error, :not_supported}
   @impl true
-  def send_keys(_session, _keys), do: {:error, :not_supported}
-
+  def send_keys(_, _), do: {:error, :not_supported}
   @impl true
-  def take_screenshot(_session), do: {:error, :not_supported}
-
+  def take_screenshot(_), do: {:error, :not_supported}
   @impl true
-  def accept_alert(_session, _fun), do: {:error, :not_supported}
-
+  def accept_alert(_, _), do: {:error, :not_supported}
   @impl true
-  def accept_confirm(_session, _fun), do: {:error, :not_supported}
-
+  def accept_confirm(_, _), do: {:error, :not_supported}
   @impl true
-  def accept_prompt(_session, _input, _fun), do: {:error, :not_supported}
-
+  def accept_prompt(_, _, _), do: {:error, :not_supported}
   @impl true
-  def dismiss_confirm(_session, _fun), do: {:error, :not_supported}
-
+  def dismiss_confirm(_, _), do: {:error, :not_supported}
   @impl true
-  def dismiss_prompt(_session, _fun), do: {:error, :not_supported}
-
+  def dismiss_prompt(_, _), do: {:error, :not_supported}
   @impl true
-  def cookies(_session), do: {:ok, []}
-
+  def cookies(_), do: {:ok, []}
   @impl true
-  def set_cookie(_session, _name, _value), do: {:error, :not_supported}
-
+  def set_cookie(_, _, _), do: {:error, :not_supported}
   @impl true
-  def set_cookie(_session, _name, _value, _opts), do: {:error, :not_supported}
-
+  def set_cookie(_, _, _, _), do: {:error, :not_supported}
   @impl true
-  def window_handle(_session), do: {:ok, "lv-main"}
-
+  def window_handle(_), do: {:ok, "lv-main"}
   @impl true
-  def window_handles(_session), do: {:ok, ["lv-main"]}
-
+  def window_handles(_), do: {:ok, ["lv-main"]}
   @impl true
-  def focus_window(_session, _handle), do: {:ok, nil}
-
+  def focus_window(_, _), do: {:ok, nil}
   @impl true
-  def close_window(_session), do: {:ok, nil}
-
+  def close_window(_), do: {:ok, nil}
   @impl true
-  def maximize_window(_session), do: {:ok, nil}
-
+  def maximize_window(_), do: {:ok, nil}
   @impl true
-  def get_window_size(_session), do: {:ok, %{"width" => 1024, "height" => 768}}
-
+  def get_window_size(_), do: {:ok, %{"width" => 1024, "height" => 768}}
   @impl true
-  def set_window_size(_session, _w, _h), do: {:ok, nil}
-
+  def set_window_size(_, _, _), do: {:ok, nil}
   @impl true
-  def get_window_position(_session), do: {:ok, %{"x" => 0, "y" => 0}}
-
+  def get_window_position(_), do: {:ok, %{"x" => 0, "y" => 0}}
   @impl true
-  def set_window_position(_session, _x, _y), do: {:ok, nil}
-
+  def set_window_position(_, _, _), do: {:ok, nil}
   @impl true
-  def focus_frame(_session, _frame), do: {:ok, nil}
-
+  def focus_frame(_, _), do: {:ok, nil}
   @impl true
-  def focus_parent_frame(_session), do: {:ok, nil}
+  def focus_parent_frame(_), do: {:ok, nil}
 
-  # Also need click on session (mouse click at position)
-  def click(_session, _button), do: {:error, :not_supported}
+  def click(_, _), do: {:error, :not_supported}
+  def double_click(_), do: {:error, :not_supported}
+  def button_down(_, _), do: {:error, :not_supported}
+  def button_up(_, _), do: {:error, :not_supported}
+  def move_mouse_to(_, _), do: {:error, :not_supported}
 
-  def double_click(_session), do: {:error, :not_supported}
+  # --- Internal state ---
 
-  def button_down(_session, _button), do: {:error, :not_supported}
+  defp put_state(session, view, html, path) do
+    Process.put({:lv_driver, session.id}, %{view: view, html: html, path: path})
+  end
 
-  def button_up(_session, _button), do: {:error, :not_supported}
-
-  def move_mouse_to(_session, _element), do: {:error, :not_supported}
-
-  # --- Internal state management ---
-  # Store the LiveView and rendered HTML in the process dictionary
-  # keyed by session id. This avoids needing mutable state in the Session struct.
-
-  defp put_view(session, view, html) do
-    Process.put({:lv_driver, session.id}, %{view: view, html: html})
+  defp get_state(session) do
+    Process.get({:lv_driver, session.id}) || %{}
   end
 
   defp get_view(session) do
-    case Process.get({:lv_driver, session.id}) do
-      %{view: view} -> view
-      _ -> nil
-    end
+    get_state(session)[:view]
   end
 
-  defp get_html(%Session{} = session) do
-    case Process.get({:lv_driver, session.id}) do
-      %{html: html} -> html
-      _ -> ""
-    end
+  defp get_rendered_html(%Session{} = session) do
+    view = get_view(session)
+    if view, do: @lv_test.render(view), else: get_state(session)[:html] || ""
   end
 
-  defp get_html(%Element{} = element) do
-    get_html(root_session(element))
+  defp get_rendered_html(%Element{} = element) do
+    get_rendered_html(root_session(element))
   end
 
-  defp update_html(session, html) do
-    case Process.get({:lv_driver, session.id}) do
-      %{} = state -> Process.put({:lv_driver, session.id}, %{state | html: html})
-      _ -> :ok
-    end
+  defp update_html(session, html) when is_binary(html) do
+    state = get_state(session)
+    Process.put({:lv_driver, session.id}, %{state | html: html})
   end
 
-  defp root_session(%Element{parent: %Session{} = session}), do: session
-  defp root_session(%Element{parent: parent}), do: root_session(parent)
+  defp update_html(_, _), do: :ok
 
-  defp element_selector(%Element{bidi_shared_id: {:lv_element, selector, _idx, _html}}) do
-    selector
+  defp root_session(%Session{} = s), do: s
+  defp root_session(%Element{parent: p}), do: root_session(p)
+
+  defp element_selector(%Element{bidi_shared_id: {:lv_element, sel, _, _}}), do: sel
+  defp element_html(%Element{bidi_shared_id: {:lv_element, _, _, html}}), do: html
+
+  defp extract_attr(html, name) do
+    doc = LazyHTML.from_fragment(html)
+    LazyHTML.attribute(doc, name)
   end
 
-  defp element_html(%Element{bidi_shared_id: {:lv_element, _selector, _idx, html}}) do
-    html
+  defp find_form_selector(page_html, child_selector) do
+    doc = LazyHTML.from_fragment(page_html)
+
+    LazyHTML.query(doc, "form")
+    |> Enum.find_value(fn form ->
+      form_html = LazyHTML.to_html(form)
+
+      if LazyHTML.query(form, child_selector) != [] do
+        cond do
+          id = LazyHTML.attribute(form, "id") -> "##{id}"
+          phx = LazyHTML.attribute(form, "phx-submit") -> ~s(form[phx-submit="#{phx}"])
+          phx = LazyHTML.attribute(form, "phx-change") -> ~s(form[phx-change="#{phx}"])
+          true -> "form"
+        end
+      end
+    end)
   end
-
-  defp element_text(%Element{} = element) do
-    html = element_html(element)
-
-    html
-    |> String.replace(~r/<[^>]+>/, "")
-    |> String.trim()
-  end
-
-  defp get_input_name(%Element{} = element) do
-    html = element_html(element)
-
-    case Regex.run(~r/name="([^"]*)"/, html) do
-      [_, name] -> name
-      _ -> nil
-    end
-  end
-
-  defp node_to_html({tag, attrs, children}) do
-    attr_str = Enum.map_join(attrs, " ", fn {k, v} -> ~s(#{k}="#{v}") end)
-    children_str = Enum.map_join(children, "", &node_to_html/1)
-    open = if attr_str == "", do: "<#{tag}>", else: "<#{tag} #{attr_str}>"
-    "#{open}#{children_str}</#{tag}>"
-  end
-
-  defp node_to_html(text) when is_binary(text), do: text
-  defp node_to_html(_), do: ""
 end

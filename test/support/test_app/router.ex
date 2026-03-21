@@ -18,6 +18,7 @@ defmodule Wallabidi.TestApp.Router do
       live("/greeting", Wallabidi.TestApp.GreetingLive)
       live("/weather", Wallabidi.TestApp.WeatherLive)
       live("/price", Wallabidi.TestApp.PriceLive)
+      live("/counter", Wallabidi.TestApp.CounterLive)
     end
   end
 end
