@@ -1349,6 +1349,70 @@ defmodule Wallabidi.BiDiClient do
     end
   end
 
+  # LiveView patch awaiting
+  #
+  # Hooks into liveSocket's view channel to detect when the next server
+  # reply (diff/patch) has been applied to the DOM. Returns immediately
+  # if no LiveView is on the page.
+
+  # LiveView patch awaiting
+  #
+  # Requires the app's app.js to configure liveSocket with the
+  # onPatchEnd DOM callback (see README). Two-phase to avoid races:
+  # 1. prepare_patch — create promise BEFORE the interaction
+  # 2. await_patch — await the promise AFTER the interaction
+
+  @prepare_patch_js """
+  (() => {
+    if (!window.liveSocket || !window.liveSocket.main) return false;
+    window.__wallabidi_patch_promise = new Promise(resolve => {
+      window.__wallabidi_patch_resolve = resolve;
+    });
+    return true;
+  })()
+  """
+
+  @await_patch_js """
+  (() => {
+    if (!window.__wallabidi_patch_promise) return Promise.resolve(false);
+    const p = window.__wallabidi_patch_promise;
+    window.__wallabidi_patch_promise = null;
+    return p;
+  })()
+  """
+
+  @doc false
+  def prepare_patch(session) do
+    context = browsing_context(session)
+    {method, params} = Commands.evaluate(context, @prepare_patch_js)
+
+    case send_bidi(session, method, params) do
+      {:ok, result} ->
+        case ResponseParser.extract_value(result) do
+          {:ok, true} -> :prepared
+          _ -> :no_liveview
+        end
+
+      _ ->
+        :no_liveview
+    end
+  end
+
+  @doc false
+  def await_patch(session, timeout \\ 5_000) do
+    context = browsing_context(session)
+
+    {method, params} =
+      Commands.evaluate(context, @await_patch_js, %{await_promise: true})
+
+    task = Task.async(fn -> send_bidi(session, method, params) end)
+
+    case Task.yield(task, timeout) || Task.shutdown(task) do
+      {:ok, _} -> :ok
+      nil -> :ok
+    end
+  end
+
   # Console event listener
 
   def on_console(session, callback) do

@@ -183,8 +183,10 @@ defmodule Wallabidi.Browser do
   """
   @spec fill_in(parent, Query.t(), with: String.t()) :: parent
   def fill_in(parent, query, with: value) do
-    parent
-    |> find(query, &Element.fill_in(&1, with: value))
+    with_patch_await(parent, fn ->
+      parent
+      |> find(query, &Element.fill_in(&1, with: value))
+    end)
   end
 
   # @doc """
@@ -737,8 +739,10 @@ defmodule Wallabidi.Browser do
   end
 
   def click(parent, query) do
-    parent
-    |> find(query, &Element.click/1)
+    with_patch_await(parent, fn ->
+      parent
+      |> find(query, &Element.click/1)
+    end)
   end
 
   @doc """
@@ -1598,6 +1602,42 @@ defmodule Wallabidi.Browser do
   end
 
   @doc """
+  Waits for the next LiveView DOM patch.
+
+  Requires the app's `app.js` to include the `onPatchEnd` callback
+  in the LiveSocket config (see README).
+
+  `click/2` and `fill_in/3` call this automatically. Use `await_patch`
+  explicitly for patches triggered by something other than a direct
+  interaction (e.g. PubSub broadcast, timer).
+
+  ## Options
+
+  * `:timeout` — max wait in ms (default: 5_000)
+
+  ## Examples
+
+      # Wait for a PubSub-triggered update
+      Phoenix.PubSub.broadcast(MyApp.PubSub, "updates", :refresh)
+      session
+      |> await_patch()
+      |> assert_has(Query.css(".updated"))
+  """
+  @spec await_patch(session, keyword()) :: session
+  def await_patch(%Session{} = session, opts \\ []) do
+    if bidi_session?(session) do
+      timeout = Keyword.get(opts, :timeout, 5_000)
+
+      case Wallabidi.BiDiClient.prepare_patch(session) do
+        :prepared -> Wallabidi.BiDiClient.await_patch(session, timeout)
+        :no_liveview -> :ok
+      end
+    end
+
+    session
+  end
+
+  @doc """
   Registers a callback that is invoked for each browser console message.
 
   The callback receives two arguments: the log level (e.g. `"log"`, `"warn"`,
@@ -1662,6 +1702,27 @@ defmodule Wallabidi.Browser do
 
   defp bidi_session?(%Session{bidi_pid: pid}) when not is_nil(pid), do: true
   defp bidi_session?(_), do: false
+
+  # Wraps an interaction with prepare_patch/await_patch.
+  # Sets up the promise before the action, awaits after.
+  # No-op if the parent isn't a BiDi session or no LiveView on page.
+  defp with_patch_await(%Session{} = session, fun) do
+    if bidi_session?(session) do
+      case Wallabidi.BiDiClient.prepare_patch(session) do
+        :prepared ->
+          result = fun.()
+          Wallabidi.BiDiClient.await_patch(session)
+          result
+
+        :no_liveview ->
+          fun.()
+      end
+    else
+      fun.()
+    end
+  end
+
+  defp with_patch_await(_parent, fun), do: fun.()
 
   @doc false
   def build_file_url(path) do
