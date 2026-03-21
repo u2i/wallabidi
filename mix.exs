@@ -2,7 +2,7 @@ defmodule Wallabidi.Mixfile do
   use Mix.Project
 
   @source_url "https://github.com/u2i/wallabidi"
-  @version "0.1.15"
+  @version "0.1.16"
   @maintainers ["Tom Clarke"]
 
   def project do
