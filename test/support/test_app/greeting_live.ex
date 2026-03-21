@@ -1,6 +1,6 @@
 defmodule Wallabidi.TestApp.GreetingLive do
   use Phoenix.LiveView
-  import SandboxCase
+  import SandboxShim
   sandbox_on_mount()
 
   alias Wallabidi.TestApp.ExternalService

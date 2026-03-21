@@ -2,7 +2,7 @@ defmodule Wallabidi.Mixfile do
   use Mix.Project
 
   @source_url "https://github.com/u2i/wallabidi"
-  @version "0.1.16"
+  @version "0.1.17"
   @maintainers ["Tom Clarke"]
 
   def project do
@@ -58,8 +58,9 @@ defmodule Wallabidi.Mixfile do
       {:phoenix, "~> 1.7", optional: true},
       {:phoenix_live_view, "~> 1.0", optional: true},
       {:lazy_html, "~> 0.1"},
-      {:sandbox_case, "~> 0.2.11"},
+      {:sandbox_shim, "~> 0.1"},
       # Test-only deps
+      {:sandbox_case, "~> 0.3", only: :test},
       {:cachex, "~> 4.1", only: :test},
       {:fun_with_flags, "~> 1.11", only: :test, runtime: false},
       {:ecto_sqlite3, "~> 0.22", only: :test},

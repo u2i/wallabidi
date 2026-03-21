@@ -7,10 +7,10 @@ defmodule Wallabidi.TestApp.Endpoint do
     signing_salt: "test_salt"
   ]
 
-  import SandboxCase
+  import SandboxShim
   sandbox_plugs()
 
-  socket_with_sandbox "/live", Phoenix.LiveView.Socket,
+  sandbox_socket "/live", Phoenix.LiveView.Socket,
     websocket: [connect_info: [session: @session_options]]
 
   plug(Plug.Static,

@@ -1,6 +1,6 @@
 defmodule Wallabidi.TestApp.CachedLive do
   use Phoenix.LiveView
-  import SandboxCase
+  import SandboxShim
   sandbox_on_mount()
 
   alias Wallabidi.TestApp.{Repo, User}
