@@ -13,6 +13,7 @@ defmodule Wallabidi.Integration.LiveApp.Router do
     pipe_through :browser
     live_session :default do
       live "/counter", Wallabidi.Integration.LiveApp.CounterLive
+      live "/async", Wallabidi.Integration.LiveApp.AsyncLive
     end
   end
 end

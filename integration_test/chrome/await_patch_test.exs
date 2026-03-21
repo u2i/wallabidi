@@ -49,6 +49,28 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
     end
   end
 
+  describe "async LiveView updates" do
+    test "await_patch catches async result after start_async", %{session: session, live_url: url} do
+      session
+      |> visit("#{url}/async")
+      |> assert_has(Query.css("#status", text: "idle"))
+      |> click(Query.css("#load"))
+      # click awaits the first patch (handle_event reply — no DOM change)
+      # The async result comes 300ms later as a second patch
+      |> await_patch()
+      |> assert_has(Query.css("#status", text: "done"))
+      |> assert_has(Query.css("#result", text: "async result"))
+    end
+
+    test "settle works for async chains", %{session: session, live_url: url} do
+      session
+      |> visit("#{url}/async")
+      |> click(Query.css("#load"))
+      |> settle()
+      |> assert_has(Query.css("#result", text: "async result"))
+    end
+  end
+
   describe "fallback on non-LiveView pages" do
     @tag :pending
     test "click works normally on plain HTML pages", %{session: session} do
