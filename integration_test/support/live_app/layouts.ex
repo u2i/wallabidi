@@ -13,16 +13,7 @@ defmodule Wallabidi.Integration.LiveApp.Layouts do
       <script>
         let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content");
         let liveSocket = new window.LiveView.LiveSocket("/live", window.Phoenix.Socket, {
-          params: {_csrf_token: csrfToken},
-          dom: {
-            onPatchEnd() {
-              if (window.__wallabidi_patch_resolve) {
-                let r = window.__wallabidi_patch_resolve;
-                window.__wallabidi_patch_resolve = null;
-                r(true);
-              }
-            }
-          }
+          params: {_csrf_token: csrfToken}
         });
         liveSocket.connect();
         window.liveSocket = liveSocket;

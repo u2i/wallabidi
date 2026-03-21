@@ -1351,20 +1351,32 @@ defmodule Wallabidi.BiDiClient do
 
   # LiveView patch awaiting
   #
-  # Hooks into liveSocket's view channel to detect when the next server
-  # reply (diff/patch) has been applied to the DOM. Returns immediately
-  # if no LiveView is on the page.
-
-  # LiveView patch awaiting
-  #
-  # Requires the app's app.js to configure liveSocket with the
-  # onPatchEnd DOM callback (see README). Two-phase to avoid races:
-  # 1. prepare_patch — create promise BEFORE the interaction
+  # Hooks into liveSocket.domCallbacks.onPatchEnd to detect when the
+  # next DOM patch has been applied. Installed automatically — no app.js
+  # changes needed. Two-phase to avoid races:
+  # 1. prepare_patch — install hook + create promise BEFORE the interaction
   # 2. await_patch — await the promise AFTER the interaction
 
   @prepare_patch_js """
   (() => {
-    if (!window.liveSocket || !window.liveSocket.main) return false;
+    const ls = window.liveSocket;
+    if (!ls || !ls.main) return false;
+
+    // Install the onPatchEnd hook once (preserves any existing callback)
+    if (!window.__wallabidi_patch_hooked) {
+      const orig = ls.domCallbacks.onPatchEnd;
+      ls.domCallbacks.onPatchEnd = function(container) {
+        orig(container);
+        if (window.__wallabidi_patch_resolve) {
+          let r = window.__wallabidi_patch_resolve;
+          window.__wallabidi_patch_resolve = null;
+          r(true);
+        }
+      };
+      window.__wallabidi_patch_hooked = true;
+    }
+
+    // Set up the one-shot promise for the NEXT patch
     window.__wallabidi_patch_promise = new Promise(resolve => {
       window.__wallabidi_patch_resolve = resolve;
     });
