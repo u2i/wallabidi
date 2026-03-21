@@ -24,9 +24,7 @@ defmodule Wallabidi.Feature do
 
       setup context do
         if context[:test_type] == :feature do
-          metadata = unquote(__MODULE__).Utils.maybe_checkout_repos(context[:async])
-          caches = unquote(__MODULE__).Utils.maybe_checkout_caches()
-          flags = unquote(__MODULE__).Utils.maybe_checkout_flags()
+          {metadata, sandbox} = unquote(__MODULE__).Utils.checkout_sandbox(context[:async])
 
           start_session_opts = [metadata: metadata]
 
@@ -45,12 +43,11 @@ defmodule Wallabidi.Feature do
           test_pid = self()
 
           on_exit(fn ->
-            # End browser sessions first — closes Chrome tabs, disconnects
-            # LiveView channels, stops any in-flight requests
+            # 1. Close browser sessions — terminates LiveViews
             unquote(__MODULE__).Utils.end_all_sessions(test_pid)
 
-            unquote(__MODULE__).Utils.maybe_checkin_flags(flags)
-            unquote(__MODULE__).Utils.maybe_checkin_caches(caches)
+            # 2. Sandbox checkin — await_orphans, check logs, rollback
+            unquote(__MODULE__).Utils.checkin_sandbox(sandbox)
           end)
 
           result
@@ -181,8 +178,31 @@ defmodule Wallabidi.Feature do
       session
     end
 
+    @sandbox_case_available Code.ensure_loaded?(SandboxCase.Sandbox)
+
+    @doc false
+    def checkout_sandbox(async?) do
+      if @sandbox_case_available do
+        sandbox = SandboxCase.Sandbox.checkout(async?: async? || false)
+        metadata = SandboxCase.Sandbox.ecto_metadata(sandbox)
+        {metadata, sandbox}
+      else
+        metadata = maybe_checkout_repos(async?)
+        {metadata, nil}
+      end
+    end
+
+    @doc false
+    def checkin_sandbox(nil), do: :ok
+
+    def checkin_sandbox(sandbox) do
+      if @sandbox_case_available do
+        SandboxCase.Sandbox.checkin(sandbox)
+      end
+    end
+
     if @includes_ecto do
-      def maybe_checkout_repos(async?) do
+      defp maybe_checkout_repos(async?) do
         otp_app()
         |> ecto_repos()
         |> Enum.map(&checkout_ecto_repos(&1, async?))
@@ -196,9 +216,7 @@ defmodule Wallabidi.Feature do
 
       defp checkout_ecto_repos(repo, async) do
         :ok = Ecto.Adapters.SQL.Sandbox.checkout(repo)
-
         unless async, do: Ecto.Adapters.SQL.Sandbox.mode(repo, {:shared, self()})
-
         repo
       end
 
@@ -208,53 +226,7 @@ defmodule Wallabidi.Feature do
         Phoenix.Ecto.SQL.Sandbox.metadata_for(repos, self())
       end
     else
-      def maybe_checkout_repos(_) do
-        ""
-      end
-    end
-
-    def maybe_checkout_caches do
-      mod = cachex_sandbox_mod()
-
-      if mod && Process.whereis(mod) do
-        mod.checkout()
-      else
-        nil
-      end
-    end
-
-    def maybe_checkin_caches(nil), do: :ok
-
-    def maybe_checkin_caches(caches) do
-      mod = cachex_sandbox_mod()
-      if mod && Process.whereis(mod), do: mod.checkin(caches)
-    end
-
-    defp cachex_sandbox_mod do
-      mod = Module.concat([Cachex, Sandbox])
-      if Code.ensure_loaded?(mod), do: mod
-    end
-
-    def maybe_checkout_flags do
-      mod = fwf_sandbox_mod()
-
-      if mod && Process.whereis(mod) do
-        mod.checkout()
-      else
-        nil
-      end
-    end
-
-    def maybe_checkin_flags(nil), do: :ok
-
-    def maybe_checkin_flags(flags) do
-      mod = fwf_sandbox_mod()
-      if mod && Process.whereis(mod), do: mod.checkin(flags)
-    end
-
-    defp fwf_sandbox_mod do
-      mod = Module.concat([FunWithFlags, Sandbox])
-      if Code.ensure_loaded?(mod), do: mod
+      defp maybe_checkout_repos(_), do: ""
     end
 
     def end_all_sessions(owner_pid) do
