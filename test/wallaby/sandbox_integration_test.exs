@@ -23,6 +23,10 @@ defmodule Wallabidi.SandboxIntegrationTest do
     metadata = SandboxCase.Sandbox.ecto_metadata(sandbox)
     {:ok, session} = Wallabidi.start_session(metadata: metadata)
 
+    on_exit(fn ->
+      Wallabidi.end_session(session)
+    end)
+
     %{session: session}
   end
 

@@ -258,58 +258,14 @@ defmodule Wallabidi.Feature do
     end
 
     def end_all_sessions(owner_pid) do
-      sessions = Wallabidi.SessionStore.list_sessions_for(owner_pid: owner_pid)
-
-      if sessions != [] do
-        # Find processes with our test pid in $callers BEFORE closing sessions
-        child_pids = find_callers_of(owner_pid)
-
-        # Monitor them so we can wait for termination
-        refs =
-          for pid <- child_pids do
-            Process.monitor(pid)
-          end
-
-        # Close all browser sessions — triggers WebSocket close → channel termination
-        for session <- sessions do
-          try do
-            Wallabidi.end_session(session)
-          rescue
-            _ -> :ok
-          end
+      Wallabidi.SessionStore.list_sessions_for(owner_pid: owner_pid)
+      |> Enum.each(fn session ->
+        try do
+          Wallabidi.end_session(session)
+        rescue
+          _ -> :ok
         end
-
-        # Wait for LiveView channel processes to terminate (up to 5s)
-        for ref <- refs do
-          receive do
-            {:DOWN, ^ref, :process, _, _} -> :ok
-          after
-            5_000 -> Process.demonitor(ref, [:flush])
-          end
-        end
-      end
-    end
-
-    defp find_callers_of(owner_pid) do
-      Process.list()
-      |> Enum.filter(fn pid ->
-        pid != owner_pid and pid != self() and has_caller?(pid, owner_pid)
       end)
-    end
-
-    defp has_caller?(pid, owner) do
-      case :erlang.process_info(pid, :dictionary) do
-        {:dictionary, dict} ->
-          case List.keyfind(dict, :"$callers", 0) do
-            {:"$callers", callers} -> owner in callers
-            _ -> false
-          end
-
-        _ ->
-          false
-      end
-    catch
-      _, _ -> false
     end
 
     def take_screenshots_for_sessions(pid, test_name) do
