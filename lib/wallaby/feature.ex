@@ -42,7 +42,13 @@ defmodule Wallabidi.Feature do
             end)
             |> unquote(__MODULE__).Utils.build_setup_return()
 
+          test_pid = self()
+
           on_exit(fn ->
+            # End browser sessions first — closes Chrome tabs, disconnects
+            # LiveView channels, stops any in-flight requests
+            unquote(__MODULE__).Utils.end_all_sessions(test_pid)
+
             unquote(__MODULE__).Utils.maybe_checkin_flags(flags)
             unquote(__MODULE__).Utils.maybe_checkin_caches(caches)
           end)
@@ -249,6 +255,17 @@ defmodule Wallabidi.Feature do
     defp fwf_sandbox_mod do
       mod = Module.concat([FunWithFlags, Sandbox])
       if Code.ensure_loaded?(mod), do: mod
+    end
+
+    def end_all_sessions(owner_pid) do
+      Wallabidi.SessionStore.list_sessions_for(owner_pid: owner_pid)
+      |> Enum.each(fn session ->
+        try do
+          Wallabidi.end_session(session)
+        rescue
+          _ -> :ok
+        end
+      end)
     end
 
     def take_screenshots_for_sessions(pid, test_name) do
