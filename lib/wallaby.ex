@@ -79,9 +79,15 @@ defmodule Wallabidi do
   """
   @spec start_session([start_session_opts]) :: {:ok, Session.t()} | {:error, reason}
   def start_session(opts \\ []) do
-    with {:ok, session} <- Wallabidi.Chrome.start_session(opts),
-         :ok <- SessionStore.monitor(session),
-         do: {:ok, session}
+    case Keyword.get(opts, :driver) do
+      :live_view ->
+        Wallabidi.LiveViewDriver.start_session(opts)
+
+      _ ->
+        with {:ok, session} <- Wallabidi.Chrome.start_session(opts),
+             :ok <- SessionStore.monitor(session),
+             do: {:ok, session}
+    end
   end
 
   @doc """
