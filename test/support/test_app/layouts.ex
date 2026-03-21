@@ -7,10 +7,14 @@ defmodule Wallabidi.TestApp.Layouts do
     <html>
     <head>
       <title>Test App</title>
+      <meta name="csrf-token" content={Plug.CSRFProtection.get_csrf_token()}/>
       <script src="/assets/phoenix/phoenix.min.js"></script>
       <script src="/assets/phoenix_live_view/phoenix_live_view.min.js"></script>
       <script>
-        window.liveSocket = new LiveView.LiveSocket("/live", Phoenix.Socket);
+        let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content");
+        window.liveSocket = new LiveView.LiveSocket("/live", Phoenix.Socket, {
+          params: {_csrf_token: csrfToken}
+        });
         window.liveSocket.connect();
       </script>
     </head>

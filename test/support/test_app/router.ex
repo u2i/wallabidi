@@ -5,6 +5,7 @@ defmodule Wallabidi.TestApp.Router do
   pipeline :browser do
     plug(:accepts, ["html"])
     plug(:fetch_session)
+    plug(:protect_from_forgery)
     plug(:put_root_layout, html: {Wallabidi.TestApp.Layouts, :root})
   end
 
