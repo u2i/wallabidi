@@ -1411,6 +1411,70 @@ defmodule Wallabidi.BiDiClient do
   end
 
   @doc false
+  def await_selector(session, css_selector, timeout \\ 5_000) do
+    context = browsing_context(session)
+
+    js = """
+    (() => {
+      const selector = #{Jason.encode!(css_selector)};
+
+      // Already present?
+      if (document.querySelector(selector)) return Promise.resolve(true);
+
+      return new Promise((resolve, reject) => {
+        let timeout = setTimeout(() => { cleanup(); resolve(false); }, #{timeout});
+
+        // LiveView: check after each complete patch
+        let origOnPatchEnd;
+        const ls = window.liveSocket;
+        if (ls && ls.domCallbacks) {
+          origOnPatchEnd = ls.domCallbacks.onPatchEnd;
+          ls.domCallbacks.onPatchEnd = function(container) {
+            if (origOnPatchEnd) origOnPatchEnd(container);
+            if (document.querySelector(selector)) { cleanup(); resolve(true); }
+          };
+        }
+
+        // Fallback: MutationObserver for JS-driven changes
+        const observer = new MutationObserver(() => {
+          requestAnimationFrame(() => {
+            if (document.querySelector(selector)) { cleanup(); resolve(true); }
+          });
+        });
+        observer.observe(document.body, {
+          childList: true, subtree: true,
+          attributes: true, characterData: true
+        });
+
+        function cleanup() {
+          clearTimeout(timeout);
+          observer.disconnect();
+          if (origOnPatchEnd && ls && ls.domCallbacks) {
+            ls.domCallbacks.onPatchEnd = origOnPatchEnd;
+          }
+        }
+      });
+    })()
+    """
+
+    {method, params} =
+      Commands.evaluate(context, js, %{await_promise: true})
+
+    task = Task.async(fn -> send_bidi(session, method, params) end)
+
+    case Task.yield(task, timeout + 1_000) || Task.shutdown(task) do
+      {:ok, {:ok, result}} ->
+        case ResponseParser.extract_value(result) do
+          {:ok, true} -> :found
+          _ -> :not_found
+        end
+
+      _ ->
+        :not_found
+    end
+  end
+
+  @doc false
   def await_patch(session, timeout \\ 5_000) do
     context = browsing_context(session)
 

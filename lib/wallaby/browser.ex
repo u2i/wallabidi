@@ -1485,6 +1485,9 @@ defmodule Wallabidi.Browser do
   end
 
   def execute_query(%{driver: driver} = parent, query) do
+    # For BiDi sessions, try event-driven wait before polling
+    maybe_await_selector(parent, query)
+
     retry(fn ->
       try do
         with {:ok, query} <- Query.validate(query),
@@ -1503,6 +1506,23 @@ defmodule Wallabidi.Browser do
       end
     end)
   end
+
+  # For BiDi sessions with CSS queries, wait for the selector to appear
+  # in the DOM via onPatchEnd + MutationObserver before polling.
+  defp maybe_await_selector(parent, query) do
+    with %Session{} = session <- get_session(parent),
+         true <- bidi_session?(session),
+         {:ok, validated} <- Query.validate(query),
+         {:css, selector} <- Query.compile(validated) do
+      Wallabidi.BiDiClient.await_selector(session, selector)
+    else
+      _ -> :ok
+    end
+  end
+
+  defp get_session(%Session{} = s), do: s
+  defp get_session(%Element{parent: p}), do: get_session(p)
+  defp get_session(_), do: nil
 
   defp max_time_exceeded?(start_time) do
     current_time() - start_time > max_wait_time()
