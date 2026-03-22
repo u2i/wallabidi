@@ -265,6 +265,11 @@ defmodule Wallabidi.Chrome do
 
   @doc false
   def end_session(%Wallabidi.Session{} = session, _opts \\ []) do
+    # DELETE first — tells ChromeDriver to kill the Chrome process.
+    # Then close the WebSocket. Reversing this order causes ChromeDriver
+    # to lose its handle, leaving zombie Chrome processes.
+    delete_session(session)
+
     if session.bidi_pid do
       try do
         WebSocketClient.close(session.bidi_pid)
@@ -273,7 +278,6 @@ defmodule Wallabidi.Chrome do
       end
     end
 
-    delete_session(session)
     :ok
   end
 
