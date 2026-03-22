@@ -88,7 +88,9 @@ defmodule Wallabidi do
     result =
       cond do
         pool ->
-          session = Wallabidi.SessionPool.checkout(pool)
+          metadata = Keyword.get(opts, :metadata)
+          pool_opts = if metadata, do: [metadata: metadata], else: []
+          session = Wallabidi.SessionPool.checkout(pool, pool_opts)
           {:ok, session}
 
         Keyword.get(opts, :driver) == :live_view ->

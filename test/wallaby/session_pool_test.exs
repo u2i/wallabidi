@@ -35,6 +35,22 @@ defmodule Wallabidi.SessionPoolTest do
       Application.delete_env(:wallabidi, :session_pool)
     end
 
+    test "checkout accepts metadata and injects it into the session" do
+      {:ok, pool} = Wallabidi.SessionPool.start_link(pool_size: 1)
+
+      # Simulate sandbox metadata
+      metadata = %{owner: self(), repo: [SomeRepo]}
+
+      session = Wallabidi.SessionPool.checkout(pool, metadata: metadata)
+      assert %Wallabidi.Session{} = session
+
+      # The session should have the metadata stored so the Plug can read it
+      assert session.metadata == metadata
+
+      Wallabidi.SessionPool.checkin(pool, session)
+      GenServer.stop(pool)
+    end
+
     test "checkin navigates to about:blank" do
       {:ok, pool} = Wallabidi.SessionPool.start_link(pool_size: 1)
 

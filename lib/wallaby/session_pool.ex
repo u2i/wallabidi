@@ -27,8 +27,30 @@ defmodule Wallabidi.SessionPool do
     GenServer.start_link(__MODULE__, opts, name: name)
   end
 
-  @doc "Check out a session from the pool. Blocks if none available."
-  def checkout(pool \\ __MODULE__, timeout \\ 10_000) do
+  @doc """
+  Check out a session from the pool. Blocks if none available.
+
+  Options:
+  * `:metadata` — sandbox metadata to inject into the session
+  * `:timeout` — checkout timeout (default: 10_000)
+  """
+  def checkout(pool \\ __MODULE__, opts \\ [])
+
+  def checkout(pool, opts) when is_list(opts) do
+    timeout = Keyword.get(opts, :timeout, 10_000)
+    session = GenServer.call(pool, :checkout, timeout)
+
+    case Keyword.get(opts, :metadata) do
+      nil ->
+        session
+
+      metadata ->
+        update_user_agent(session, metadata)
+        %{session | metadata: metadata}
+    end
+  end
+
+  def checkout(pool, timeout) when is_integer(timeout) do
     GenServer.call(pool, :checkout, timeout)
   end
 
@@ -92,6 +114,28 @@ defmodule Wallabidi.SessionPool do
       Wallabidi.BiDiClient.visit(session, "about:blank")
     rescue
       _ -> :ok
+    end
+  end
+
+  # Update Chrome's user-agent for the pooled session via CDP.
+  # This changes the User-Agent header for all subsequent HTTP requests,
+  # so the sandbox Plug can read the new test's metadata.
+  defp update_user_agent(session, metadata) do
+    sandbox_mod = Module.concat([Phoenix, Ecto, SQL, Sandbox])
+
+    if Code.ensure_loaded?(sandbox_mod) do
+      ua = sandbox_mod.encode_metadata(metadata)
+
+      try do
+        pid = session.bidi_pid
+
+        Wallabidi.BiDi.WebSocketClient.send_command(pid, "cdp.sendCommand", %{
+          method: "Network.setUserAgentOverride",
+          params: %{userAgent: ua}
+        })
+      rescue
+        _ -> :ok
+      end
     end
   end
 end

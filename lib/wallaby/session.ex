@@ -23,6 +23,7 @@ defmodule Wallabidi.Session do
     :capabilities,
     :bidi_pid,
     :browsing_context,
+    :metadata,
     server: :none,
     screenshots: []
   ]
