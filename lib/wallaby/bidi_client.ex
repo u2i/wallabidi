@@ -1411,15 +1411,27 @@ defmodule Wallabidi.BiDiClient do
   end
 
   @doc false
-  def await_selector(session, css_selector, timeout \\ 5_000) do
+  def await_selector(session, css_selector, opts \\ []) do
+    timeout = Keyword.get(opts, :timeout, 5_000)
+    text = Keyword.get(opts, :text)
     context = browsing_context(session)
+
+    text_js = if text, do: Jason.encode!(text), else: "null"
 
     js = """
     (() => {
       const selector = #{Jason.encode!(css_selector)};
+      const text = #{text_js};
+
+      function matches() {
+        const el = document.querySelector(selector);
+        if (!el) return false;
+        if (!text) return true;
+        return el.textContent.includes(text);
+      }
 
       // Already present?
-      if (document.querySelector(selector)) return Promise.resolve(true);
+      if (matches()) return Promise.resolve(true);
 
       return new Promise((resolve, reject) => {
         let timeout = setTimeout(() => { cleanup(); resolve(false); }, #{timeout});
@@ -1431,14 +1443,14 @@ defmodule Wallabidi.BiDiClient do
           origOnPatchEnd = ls.domCallbacks.onPatchEnd;
           ls.domCallbacks.onPatchEnd = function(container) {
             if (origOnPatchEnd) origOnPatchEnd(container);
-            if (document.querySelector(selector)) { cleanup(); resolve(true); }
+            if (matches()) { cleanup(); resolve(true); }
           };
         }
 
         // Fallback: MutationObserver for JS-driven changes
         const observer = new MutationObserver(() => {
           requestAnimationFrame(() => {
-            if (document.querySelector(selector)) { cleanup(); resolve(true); }
+            if (matches()) { cleanup(); resolve(true); }
           });
         });
         observer.observe(document.body, {

@@ -71,6 +71,25 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
     end
   end
 
+  describe "text-aware await_selector" do
+    test "assert_has with text waits for text content change", %{session: session, live_url: url} do
+      # h1#title exists immediately (dead render) with "Loading..."
+      # After connected mount + 200ms async load, it changes to "Dashboard"
+      # await_selector should wait for the text, not just the element
+      session
+      |> visit("#{url}/text-change")
+      |> assert_has(Query.css("#title", text: "Dashboard"))
+    end
+
+    test "assert_has with text after click", %{session: session, live_url: url} do
+      session
+      |> visit("#{url}/text-change")
+      |> assert_has(Query.css("#title", text: "Dashboard"))
+      |> click(Query.css("#rename"))
+      |> assert_has(Query.css("#title", text: "Renamed"))
+    end
+  end
+
   describe "fallback on non-LiveView pages" do
     @tag :pending
     test "click works normally on plain HTML pages", %{session: session} do

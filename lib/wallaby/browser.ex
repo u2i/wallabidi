@@ -1514,7 +1514,9 @@ defmodule Wallabidi.Browser do
          true <- bidi_session?(session),
          {:ok, validated} <- Query.validate(query),
          {:css, selector} <- Query.compile(validated) do
-      Wallabidi.BiDiClient.await_selector(session, selector)
+      text = Query.inner_text(validated)
+      opts = if text, do: [text: text], else: []
+      Wallabidi.BiDiClient.await_selector(session, selector, opts)
     else
       _ -> :ok
     end
