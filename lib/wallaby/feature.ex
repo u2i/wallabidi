@@ -42,17 +42,15 @@ defmodule Wallabidi.Feature do
 
           test_pid = self()
 
+          # Register session close as a cleanup callback — runs before
+          # sandbox rollback, OwnershipErrors from dying LiveViews are swallowed
+          if sandbox do
+            unquote(__MODULE__).Utils.register_session_cleanup(sandbox, test_pid)
+          end
+
           on_exit(fn ->
-            # Mark cleanup before session close — OwnershipErrors from
-            # dying LiveViews/Tasks are sandbox noise, not test failures
-            if Code.ensure_loaded?(SandboxCase.Sandbox) do
-              SandboxCase.Sandbox.mark_cleanup_started()
-            end
-
-            # 1. Close browser sessions — terminates LiveViews
-            unquote(__MODULE__).Utils.end_all_sessions(test_pid)
-
-            # 2. Sandbox checkin — await_orphans, check logs, rollback
+            # Sandbox checkin runs cleanup callbacks first, then
+            # await_orphans, rollback, kill, check logs
             unquote(__MODULE__).Utils.checkin_sandbox(sandbox)
           end)
 
@@ -195,6 +193,15 @@ defmodule Wallabidi.Feature do
       else
         metadata = maybe_checkout_repos(async?)
         {metadata, nil}
+      end
+    end
+
+    @doc false
+    def register_session_cleanup(sandbox, test_pid) do
+      if @sandbox_case_available do
+        SandboxCase.Sandbox.on_cleanup(sandbox, fn ->
+          end_all_sessions(test_pid)
+        end)
       end
     end
 
