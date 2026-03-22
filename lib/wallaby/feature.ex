@@ -43,6 +43,12 @@ defmodule Wallabidi.Feature do
           test_pid = self()
 
           on_exit(fn ->
+            # Mark cleanup before session close — OwnershipErrors from
+            # dying LiveViews/Tasks are sandbox noise, not test failures
+            if Code.ensure_loaded?(SandboxCase.Sandbox) do
+              SandboxCase.Sandbox.mark_cleanup_started()
+            end
+
             # 1. Close browser sessions — terminates LiveViews
             unquote(__MODULE__).Utils.end_all_sessions(test_pid)
 
