@@ -182,13 +182,13 @@ defmodule Wallabidi.Feature do
       session
     end
 
-    @sandbox_case_available Code.ensure_loaded?(SandboxCase.Sandbox)
-
     @doc false
     def checkout_sandbox(async?) do
-      if @sandbox_case_available do
-        sandbox = SandboxCase.Sandbox.checkout(async?: async? || false)
-        metadata = SandboxCase.Sandbox.ecto_metadata(sandbox)
+      sandbox_mod = sandbox_case_mod()
+
+      if sandbox_mod do
+        sandbox = sandbox_mod.checkout(async?: async? || false)
+        metadata = sandbox_mod.ecto_metadata(sandbox)
         {metadata, sandbox}
       else
         metadata = maybe_checkout_repos(async?)
@@ -198,8 +198,10 @@ defmodule Wallabidi.Feature do
 
     @doc false
     def register_session_cleanup(sandbox, test_pid) do
-      if @sandbox_case_available do
-        SandboxCase.Sandbox.on_cleanup(sandbox, fn ->
+      sandbox_mod = sandbox_case_mod()
+
+      if sandbox_mod do
+        sandbox_mod.on_cleanup(sandbox, fn ->
           end_all_sessions(test_pid)
         end)
       end
@@ -209,9 +211,13 @@ defmodule Wallabidi.Feature do
     def checkin_sandbox(nil), do: :ok
 
     def checkin_sandbox(sandbox) do
-      if @sandbox_case_available do
-        SandboxCase.Sandbox.checkin(sandbox)
-      end
+      sandbox_mod = sandbox_case_mod()
+      if sandbox_mod, do: sandbox_mod.checkin(sandbox)
+    end
+
+    defp sandbox_case_mod do
+      mod = Module.concat([SandboxCase, Sandbox])
+      if Code.ensure_loaded?(mod), do: mod
     end
 
     if @includes_ecto do
