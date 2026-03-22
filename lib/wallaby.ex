@@ -36,8 +36,12 @@ defmodule Wallabidi do
 
     # Clean up stale sessions from previous runs before any tests start
     case result do
-      {:ok, _} -> Wallabidi.Chrome.cleanup_stale_sessions()
-      _ -> :ok
+      {:ok, _} ->
+        Wallabidi.Chrome.cleanup_stale_sessions()
+        maybe_start_session_pool()
+
+      _ ->
+        :ok
     end
 
     result
@@ -79,7 +83,7 @@ defmodule Wallabidi do
   """
   @spec start_session([start_session_opts]) :: {:ok, Session.t()} | {:error, reason}
   def start_session(opts \\ []) do
-    pool = Keyword.get(opts, :pool)
+    pool = Keyword.get(opts, :pool) || session_pool()
 
     result =
       cond do
@@ -103,8 +107,12 @@ defmodule Wallabidi do
           if pool do
             ExUnit.Callbacks.on_exit({__MODULE__, session.id}, fn ->
               try do
-                if Process.alive?(pool) or (is_atom(pool) and Process.whereis(pool)) do
+                if is_pid(pool) and Process.alive?(pool) do
                   Wallabidi.SessionPool.checkin(pool, session)
+                else
+                  if is_atom(pool) and Process.whereis(pool) do
+                    Wallabidi.SessionPool.checkin(pool, session)
+                  end
                 end
               rescue
                 _ -> :ok
@@ -160,5 +168,31 @@ defmodule Wallabidi do
   @doc false
   def js_logger do
     Application.get_env(:wallabidi, :js_logger, :stdio)
+  end
+
+  defp session_pool do
+    case Application.get_env(:wallabidi, :session_pool) do
+      nil -> nil
+      false -> nil
+      true -> Wallabidi.SessionPool
+      name when is_atom(name) -> name
+      _opts -> Wallabidi.SessionPool
+    end
+  end
+
+  defp maybe_start_session_pool do
+    case Application.get_env(:wallabidi, :session_pool) do
+      nil -> :ok
+      false -> :ok
+
+      true ->
+        Wallabidi.SessionPool.start_link()
+
+      opts when is_list(opts) ->
+        Wallabidi.SessionPool.start_link(opts)
+
+      _ ->
+        :ok
+    end
   end
 end

@@ -23,14 +23,16 @@ defmodule Wallabidi.SessionPoolTest do
       GenServer.stop(pool)
     end
 
-    test "start_session with pool: true uses the pool" do
-      {:ok, pool} = Wallabidi.SessionPool.start_link(pool_size: 1)
+    test "start_session uses pool from config" do
+      Application.put_env(:wallabidi, :session_pool, pool_size: 1)
+      {:ok, _} = Wallabidi.SessionPool.start_link(pool_size: 1)
 
-      {:ok, session} = Wallabidi.start_session(pool: pool)
+      {:ok, session} = Wallabidi.start_session()
       assert %Wallabidi.Session{} = session
 
-      Wallabidi.end_session(session)
-      GenServer.stop(pool)
+      Wallabidi.SessionPool.checkin(session)
+      GenServer.stop(Wallabidi.SessionPool)
+      Application.delete_env(:wallabidi, :session_pool)
     end
 
     test "checkin navigates to about:blank" do
