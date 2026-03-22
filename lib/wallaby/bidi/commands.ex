@@ -105,6 +105,14 @@ defmodule Wallabidi.BiDi.Commands do
      }}
   end
 
+  def continue_request(request_id, opts \\ %{}) do
+    params =
+      %{request: request_id}
+      |> maybe_merge(:headers, opts[:headers])
+
+    {"network.continueRequest", params}
+  end
+
   def provide_response(request_id, opts \\ %{}) do
     params =
       %{request: request_id}

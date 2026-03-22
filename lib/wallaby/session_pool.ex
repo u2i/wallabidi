@@ -110,6 +110,8 @@ defmodule Wallabidi.SessionPool do
   end
 
   defp reset_session(session) do
+    kill_ua_handler(session)
+
     try do
       Wallabidi.BiDiClient.visit(session, "about:blank")
     rescue
@@ -117,25 +119,72 @@ defmodule Wallabidi.SessionPool do
     end
   end
 
-  # Update Chrome's user-agent for the pooled session via CDP.
-  # This changes the User-Agent header for all subsequent HTTP requests,
-  # so the sandbox Plug can read the new test's metadata.
+  # Set up BiDi network interception to override the User-Agent header
+  # on all requests with the current test's sandbox metadata.
   defp update_user_agent(session, metadata) do
     sandbox_mod = Module.concat([Phoenix, Ecto, SQL, Sandbox])
 
     if Code.ensure_loaded?(sandbox_mod) do
       ua = sandbox_mod.encode_metadata(metadata)
+      bidi_pid = session.bidi_pid
 
       try do
-        pid = session.bidi_pid
+        # Add a catch-all network intercept (once per session lifetime)
+        {method, params} =
+          Wallabidi.BiDi.Commands.add_intercept("", ["beforeRequestSent"])
 
-        Wallabidi.BiDi.WebSocketClient.send_command(pid, "cdp.sendCommand", %{
-          method: "Network.setUserAgentOverride",
-          params: %{userAgent: ua}
-        })
+        Wallabidi.BiDi.WebSocketClient.send_command(bidi_pid, method, params)
+
+        # Subscribe to events
+        Wallabidi.BiDi.WebSocketClient.subscribe(bidi_pid, "network.beforeRequestSent")
+
+        # Spawn handler that modifies user-agent on each request
+        kill_ua_handler(session)
+
+        handler =
+          spawn_link(fn -> ua_handler_loop(bidi_pid, ua) end)
+
+        Process.put({:wallabidi_ua_handler, session.id}, handler)
       rescue
         _ -> :ok
       end
+    end
+  end
+
+  defp kill_ua_handler(session) do
+    case Process.get({:wallabidi_ua_handler, session.id}) do
+      pid when is_pid(pid) ->
+        Process.unlink(pid)
+        Process.exit(pid, :kill)
+        Process.delete({:wallabidi_ua_handler, session.id})
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp ua_handler_loop(bidi_pid, ua) do
+    receive do
+      {:bidi_event, "network.beforeRequestSent", event} ->
+        request_id = get_in(event, ["params", "request"])
+
+        if request_id do
+          headers = [%{name: "User-Agent", value: %{type: "string", value: ua}}]
+
+          {method, params} =
+            Wallabidi.BiDi.Commands.continue_request(request_id, headers: headers)
+
+          try do
+            Wallabidi.BiDi.WebSocketClient.send_command(bidi_pid, method, params)
+          rescue
+            _ -> :ok
+          end
+        end
+
+        ua_handler_loop(bidi_pid, ua)
+
+      _ ->
+        ua_handler_loop(bidi_pid, ua)
     end
   end
 end
