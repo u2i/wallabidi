@@ -79,14 +79,39 @@ defmodule Wallabidi do
   """
   @spec start_session([start_session_opts]) :: {:ok, Session.t()} | {:error, reason}
   def start_session(opts \\ []) do
-    case Keyword.get(opts, :driver) do
-      :live_view ->
-        Wallabidi.LiveViewDriver.start_session(opts)
+    result =
+      case Keyword.get(opts, :driver) do
+        :live_view ->
+          Wallabidi.LiveViewDriver.start_session(opts)
 
-      _ ->
-        with {:ok, session} <- Wallabidi.Chrome.start_session(opts),
-             :ok <- SessionStore.monitor(session),
-             do: {:ok, session}
+        _ ->
+          with {:ok, session} <- Wallabidi.Chrome.start_session(opts),
+               :ok <- SessionStore.monitor(session),
+               do: {:ok, session}
+      end
+
+    # Auto-register cleanup so sessions are always closed when the
+    # test process exits, even if the test doesn't call end_session
+    case result do
+      {:ok, session} ->
+        try do
+          ExUnit.Callbacks.on_exit({__MODULE__, session.id}, fn ->
+            try do
+              end_session(session)
+            rescue
+              _ -> :ok
+            end
+          end)
+        rescue
+          # on_exit fails outside test context — that's fine,
+          # SessionStore :DOWN handler is the fallback
+          _ -> :ok
+        end
+
+        {:ok, session}
+
+      error ->
+        error
     end
   end
 
