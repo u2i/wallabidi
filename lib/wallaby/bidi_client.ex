@@ -1461,9 +1461,24 @@ defmodule Wallabidi.BiDiClient do
           attributes: true, characterData: true
         });
 
+        // Bail on navigation — the new page needs a fresh await.
+        // Track the URL at setup time; if it changes, resolve immediately.
+        var startUrl = window.location.href;
+        function onNav() { cleanup(); resolve(false); }
+        window.addEventListener('beforeunload', onNav, {once: true});
+
+        // Poll URL for LiveView push_navigate (no beforeunload for SPA nav)
+        var navCheck = setInterval(function() {
+          if (window.location.href !== startUrl) {
+            cleanup(); resolve(false);
+          }
+        }, 100);
+
         function cleanup() {
           clearTimeout(timeout);
+          clearInterval(navCheck);
           observer.disconnect();
+          window.removeEventListener('beforeunload', onNav);
           if (origOnPatchEnd && ls && ls.domCallbacks) {
             ls.domCallbacks.onPatchEnd = origOnPatchEnd;
           }
