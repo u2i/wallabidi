@@ -1542,9 +1542,10 @@ defmodule Wallabidi.Browser do
     end
   end
 
+  # Only :text queries have a selector that's guaranteed to be visible text.
+  # :button and :link selectors could be IDs — searching body text for an
+  # ID like "check-in-link" would always time out.
   defp extract_await_text(%Query{method: :text, selector: text}) when is_binary(text), do: text
-  defp extract_await_text(%Query{method: :button, selector: text}) when is_binary(text), do: text
-  defp extract_await_text(%Query{method: :link, selector: text}) when is_binary(text), do: text
   defp extract_await_text(%Query{} = query), do: Query.inner_text(query)
 
   defp get_session(%Session{} = s), do: s
