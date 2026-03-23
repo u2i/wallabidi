@@ -1812,11 +1812,11 @@ defmodule Wallabidi.Browser do
     }
 
     if (type === 'change') {
-      // Check element or parent form for phx-change
-      if (el.getAttribute('phx-change')) return true;
-      var form = el.closest('form');
-      if (form && form.getAttribute('phx-change')) return true;
-      return false;
+      // Check element or parent form for phx-change with server push
+      var phxChange = el.getAttribute('phx-change') ||
+        (el.closest('form') && el.closest('form').getAttribute('phx-change'));
+      if (!phxChange) return false;
+      return phxChange.includes('push') || !phxChange.startsWith('[');
     }
 
     return true;
