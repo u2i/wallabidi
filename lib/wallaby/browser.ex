@@ -1781,6 +1781,13 @@ defmodule Wallabidi.Browser do
               fun.()
           end
 
+        :full_page ->
+          Wallabidi.BiDiClient.prepare_page_load(session)
+          result = fun.()
+          Wallabidi.BiDiClient.await_page_load(session)
+          Wallabidi.BiDiClient.await_liveview_connected(session)
+          result
+
         :none ->
           fun.()
       end
@@ -1791,10 +1798,11 @@ defmodule Wallabidi.Browser do
 
   defp with_patch_await(_parent, _query, _interaction, fun), do: fun.()
 
-  # Classify the interaction: :patch, :navigate, or :none.
-  # :patch    — phx-click, phx-submit, phx-change, <.link patch=...>
-  # :navigate — <.link navigate=...> (data-phx-link="redirect")
-  # :none     — no LiveView binding (plain HTML)
+  # Classify the interaction: :patch, :navigate, :full_page, or :none.
+  # :patch     — phx-click, phx-submit, phx-change, <.link patch=...>
+  # :navigate  — <.link navigate=...> (data-phx-link="redirect")
+  # :full_page — plain <a href="..."> (full HTTP navigation)
+  # :none      — no LiveView binding, no link
   defp classify_interaction(session, query, interaction) do
     with {:ok, validated} <- Query.validate(query),
          compiled <- Query.compile(validated) do
@@ -1834,6 +1842,11 @@ defmodule Wallabidi.Browser do
         var form = el.closest('form');
         if (form && form.getAttribute('phx-submit')) return 'patch';
       }
+      // Check if it's a plain link that will cause a full page navigation
+      var anchor = el.closest('a[href]');
+      if (anchor && anchor.getAttribute('href') && !anchor.getAttribute('href').startsWith('#')) {
+        return 'full_page';
+      }
       return 'none';
     }
 
@@ -1849,6 +1862,7 @@ defmodule Wallabidi.Browser do
 
     case Wallabidi.BiDiClient.execute_script(session, js, [selector, to_string(interaction)]) do
       {:ok, "navigate"} -> :navigate
+      {:ok, "full_page"} -> :full_page
       {:ok, "patch"} -> :patch
       {:ok, "none"} -> :none
       _ -> :patch

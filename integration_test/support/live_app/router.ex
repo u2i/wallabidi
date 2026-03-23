@@ -19,5 +19,10 @@ defmodule Wallabidi.Integration.LiveApp.Router do
       live "/nav-dest", Wallabidi.Integration.LiveApp.NavDestLive
       live "/multi", Wallabidi.Integration.LiveApp.MultiElementLive
     end
+
+    # Separate live_session — navigating here from :default triggers a full page load
+    live_session :other do
+      live "/full-nav-dest", Wallabidi.Integration.LiveApp.FullNavDestLive
+    end
   end
 end

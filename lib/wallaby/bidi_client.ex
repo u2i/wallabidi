@@ -1555,6 +1555,28 @@ defmodule Wallabidi.BiDiClient do
   end
 
   @doc false
+  def prepare_page_load(session) do
+    pid = bidi_pid(session)
+
+    # Subscribe to browsingContext.load at the BiDi protocol level
+    {method, params} = Commands.subscribe(["browsingContext.load"])
+    WebSocketClient.send_command(pid, method, params)
+
+    # Register this process to receive the event
+    WebSocketClient.subscribe(pid, "browsingContext.load")
+    :ok
+  end
+
+  @doc false
+  def await_page_load(_session, timeout \\ 10_000) do
+    receive do
+      {:bidi_event, "browsingContext.load", _event} -> :ok
+    after
+      timeout -> :ok
+    end
+  end
+
+  @doc false
   def await_patch(session, timeout \\ 5_000) do
     context = browsing_context(session)
 

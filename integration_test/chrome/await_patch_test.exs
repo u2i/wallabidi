@@ -142,6 +142,23 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
     end
   end
 
+  describe "full page navigation" do
+    test "click on plain link waits for page load and LV connected", %{session: session, live_url: url} do
+      # #go-full-nav is a plain <a href="/full-nav-dest"> — no data-phx-link.
+      # This triggers a full HTTP navigation to a different live_session.
+      # FullNavDestLive has a 200ms sleep in connected mount.
+      # Without waiting for page load + LV connected, the element
+      # either doesn't exist (page not loaded) or shows "no".
+      session
+      |> visit("#{url}/nav-source")
+      |> click(Query.css("#go-full-nav"))
+      |> execute_script(
+        "var el = document.getElementById('full-lv-connected'); return el ? el.textContent : 'missing'",
+        fn value -> assert value == "yes" end
+      )
+    end
+  end
+
   describe "multiple matching elements" do
     test "assert_has with text checks all matching elements", %{session: session, live_url: url} do
       session
