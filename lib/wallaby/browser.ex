@@ -1756,24 +1756,32 @@ defmodule Wallabidi.Browser do
   # Skips if: not BiDi, no LiveView, or the element is a JS-only click
   # (phx-click without a push command, e.g. JS.toggle).
   defp with_patch_await(%Session{} = session, query, interaction, fun) do
-    if bidi_session?(session) and expects_server_patch?(session, query, interaction) do
-      case Wallabidi.BiDiClient.prepare_patch(session) do
-        :prepared ->
-          {:ok, url_before} = Wallabidi.BiDiClient.current_url(session)
-          result = fun.()
-          Wallabidi.BiDiClient.await_patch(session)
+    if bidi_session?(session) do
+      case classify_interaction(session, query, interaction) do
+        :patch ->
+          case Wallabidi.BiDiClient.prepare_patch(session) do
+            :prepared ->
+              result = fun.()
+              Wallabidi.BiDiClient.await_patch(session)
+              result
 
-          # If the URL changed, this was a navigation (push_navigate), not a patch.
-          # Wait for the destination LiveView to fully connect.
-          {:ok, url_after} = Wallabidi.BiDiClient.current_url(session)
-
-          if url_before != url_after do
-            Wallabidi.BiDiClient.await_liveview_connected(session)
+            :no_liveview ->
+              fun.()
           end
 
-          result
+        :navigate ->
+          case Wallabidi.BiDiClient.prepare_patch(session) do
+            :prepared ->
+              result = fun.()
+              Wallabidi.BiDiClient.await_patch(session)
+              Wallabidi.BiDiClient.await_liveview_connected(session)
+              result
 
-        :no_liveview ->
+            :no_liveview ->
+              fun.()
+          end
+
+        :none ->
           fun.()
       end
     else
@@ -1783,8 +1791,11 @@ defmodule Wallabidi.Browser do
 
   defp with_patch_await(_parent, _query, _interaction, fun), do: fun.()
 
-  # Check if the interaction would trigger a server event that produces a patch.
-  defp expects_server_patch?(session, query, interaction) do
+  # Classify the interaction: :patch, :navigate, or :none.
+  # :patch    — phx-click, phx-submit, phx-change, <.link patch=...>
+  # :navigate — <.link navigate=...> (data-phx-link="redirect")
+  # :none     — no LiveView binding (plain HTML)
+  defp classify_interaction(session, query, interaction) do
     with {:ok, validated} <- Query.validate(query),
          compiled <- Query.compile(validated) do
       case compiled do
@@ -1792,57 +1803,58 @@ defmodule Wallabidi.Browser do
           check_phx_binding(session, selector, interaction)
 
         {:xpath, _} ->
-          true
+          :patch
       end
     else
-      _ -> true
+      _ -> :patch
     end
   end
 
-  # Check if the element (or its parent form) has a phx binding that
-  # would trigger a server event for this interaction type.
   defp check_phx_binding(session, selector, interaction) do
     js = """
     var el = document.querySelector(arguments[0]);
-    if (!el) return true;
+    if (!el) return "patch";
 
     var type = arguments[1];
 
     if (type === 'click') {
-      // Check for LiveView navigate/patch links (<.link navigate=... /> or <.link patch=... />)
+      // Check for LiveView navigate/patch links
       var link = el.closest('[data-phx-link]');
-      if (link) return true;
+      if (link) {
+        return link.getAttribute('data-phx-link') === 'redirect' ? 'navigate' : 'patch';
+      }
 
       // Check phx-click on the element itself
       var phxClick = el.getAttribute('phx-click');
       if (phxClick) {
-        return phxClick.includes('push') || !phxClick.startsWith('[');
+        return (phxClick.includes('push') || !phxClick.startsWith('[')) ? 'patch' : 'none';
       }
       // Check if it's a submit button inside a phx-submit form
       if (el.type === 'submit' || el.tagName === 'BUTTON') {
         var form = el.closest('form');
-        if (form && form.getAttribute('phx-submit')) return true;
+        if (form && form.getAttribute('phx-submit')) return 'patch';
       }
-      return false;
+      return 'none';
     }
 
     if (type === 'change') {
-      // Check element or parent form for phx-change with server push
       var phxChange = el.getAttribute('phx-change') ||
         (el.closest('form') && el.closest('form').getAttribute('phx-change'));
-      if (!phxChange) return false;
-      return phxChange.includes('push') || !phxChange.startsWith('[');
+      if (!phxChange) return 'none';
+      return (phxChange.includes('push') || !phxChange.startsWith('[')) ? 'patch' : 'none';
     }
 
-    return true;
+    return 'patch';
     """
 
     case Wallabidi.BiDiClient.execute_script(session, js, [selector, to_string(interaction)]) do
-      {:ok, false} -> false
-      _ -> true
+      {:ok, "navigate"} -> :navigate
+      {:ok, "patch"} -> :patch
+      {:ok, "none"} -> :none
+      _ -> :patch
     end
   rescue
-    _ -> true
+    _ -> :patch
   end
 
   @doc false

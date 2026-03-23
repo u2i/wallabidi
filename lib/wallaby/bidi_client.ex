@@ -1389,19 +1389,9 @@ defmodule Wallabidi.BiDiClient do
     if (!window.__wallabidi_patch_promise) return Promise.resolve(false);
     const p = window.__wallabidi_patch_promise;
     window.__wallabidi_patch_promise = null;
-
-    var startUrl = window.location.href;
     return Promise.race([
       p,
-      new Promise(resolve => {
-        var navCheck = setInterval(function() {
-          if (window.location.href !== startUrl) {
-            clearInterval(navCheck);
-            resolve("navigated");
-          }
-        }, 50);
-        setTimeout(() => { clearInterval(navCheck); resolve(false); }, 5000);
-      })
+      new Promise(resolve => setTimeout(() => resolve(false), 5000))
     ]);
   })()
   """
@@ -1573,20 +1563,8 @@ defmodule Wallabidi.BiDiClient do
 
     task = Task.async(fn -> send_bidi(session, method, params) end)
 
-    case Task.yield(task, timeout) || Task.shutdown(task) do
-      {:ok, {:ok, result}} ->
-        case ResponseParser.extract_value(result) do
-          {:ok, "navigated"} ->
-            # Navigation detected — wait for new page's LiveView to connect
-            await_liveview_connected(session)
-
-          _ ->
-            :ok
-        end
-
-      _ ->
-        :ok
-    end
+    Task.yield(task, timeout) || Task.shutdown(task)
+    :ok
   end
 
   # Console event listener
