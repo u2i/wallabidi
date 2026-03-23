@@ -1507,20 +1507,41 @@ defmodule Wallabidi.Browser do
     end)
   end
 
-  # For BiDi sessions with CSS queries, wait for the selector to appear
-  # in the DOM via onPatchEnd + MutationObserver before polling.
+  # For BiDi sessions, wait for the element to appear in the DOM via
+  # onPatchEnd + MutationObserver before polling. Handles both CSS and
+  # XPath queries (XPath falls back to text-based body check).
   defp maybe_await_selector(parent, query) do
     with %Session{} = session <- get_session(parent),
          true <- bidi_session?(session),
-         {:ok, validated} <- Query.validate(query),
-         {:css, selector} <- Query.compile(validated) do
-      text = Query.inner_text(validated)
-      opts = if text, do: [text: text], else: []
-      Wallabidi.BiDiClient.await_selector(session, selector, opts)
+         {:ok, validated} <- Query.validate(query) do
+      case Query.compile(validated) do
+        {:css, selector} ->
+          text = Query.inner_text(validated)
+          opts = if text, do: [text: text], else: []
+          Wallabidi.BiDiClient.await_selector(session, selector, opts)
+
+        {:xpath, _} ->
+          # XPath can't be used with querySelector. For text-based queries
+          # (Query.text, Query.button, Query.link), await the text appearing
+          # anywhere on the page via a body check.
+          text = extract_await_text(validated)
+
+          if text do
+            Wallabidi.BiDiClient.await_selector(session, "body", text: text)
+          end
+
+        _ ->
+          :ok
+      end
     else
       _ -> :ok
     end
   end
+
+  defp extract_await_text(%Query{method: :text, selector: text}) when is_binary(text), do: text
+  defp extract_await_text(%Query{method: :button, selector: text}) when is_binary(text), do: text
+  defp extract_await_text(%Query{method: :link, selector: text}) when is_binary(text), do: text
+  defp extract_await_text(%Query{} = query), do: Query.inner_text(query)
 
   defp get_session(%Session{} = s), do: s
   defp get_session(%Element{parent: p}), do: get_session(p)
