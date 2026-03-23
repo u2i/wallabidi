@@ -1461,18 +1461,22 @@ defmodule Wallabidi.BiDiClient do
           attributes: true, characterData: true
         });
 
-        // Bail on navigation — the new page needs a fresh await.
-        // Track the URL at setup time; if it changes, resolve immediately.
+        // Detect navigation — resolve with "navigated" so Elixir can
+        // wait for the new page and re-run await_selector.
         var startUrl = window.location.href;
-        function onNav() { cleanup(); resolve(false); }
+        function onNav() { cleanup(); resolve("navigated"); }
         window.addEventListener('beforeunload', onNav, {once: true});
 
         // Poll URL for LiveView push_navigate (no beforeunload for SPA nav)
         var navCheck = setInterval(function() {
           if (window.location.href !== startUrl) {
-            cleanup(); resolve(false);
+            // URL changed — wait for new DOM to be ready, then check
+            requestAnimationFrame(function() {
+              if (matches()) { cleanup(); resolve(true); }
+              else { cleanup(); resolve("navigated"); }
+            });
           }
-        }, 100);
+        }, 50);
 
         function cleanup() {
           clearTimeout(timeout);
@@ -1495,8 +1499,23 @@ defmodule Wallabidi.BiDiClient do
     case Task.yield(task, timeout + 1_000) || Task.shutdown(task) do
       {:ok, {:ok, result}} ->
         case ResponseParser.extract_value(result) do
-          {:ok, true} -> :found
-          _ -> :not_found
+          {:ok, true} ->
+            :found
+
+          {:ok, "navigated"} ->
+            # Page navigated — wait for new page to settle, then retry once
+            retries = Keyword.get(opts, :retries, 0)
+
+            if retries < 2 do
+              Process.sleep(200)
+              opts = opts |> Keyword.put(:timeout, timeout) |> Keyword.put(:retries, retries + 1)
+              await_selector(session, css_selector, opts)
+            else
+              :not_found
+            end
+
+          _ ->
+            :not_found
         end
 
       _ ->

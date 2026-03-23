@@ -15,6 +15,8 @@ defmodule Wallabidi.Integration.LiveApp.Router do
       live "/counter", Wallabidi.Integration.LiveApp.CounterLive
       live "/async", Wallabidi.Integration.LiveApp.AsyncLive
       live "/text-change", Wallabidi.Integration.LiveApp.TextChangeLive
+      live "/nav-source", Wallabidi.Integration.LiveApp.NavSourceLive
+      live "/nav-dest", Wallabidi.Integration.LiveApp.NavDestLive
     end
   end
 end

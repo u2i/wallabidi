@@ -90,6 +90,31 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
     end
   end
 
+  describe "navigation + assert_has" do
+    test "assert_has finds element after push_navigate", %{session: session, live_url: url} do
+      session
+      |> visit("#{url}/nav-source")
+      |> assert_has(Query.css("#nav-source"))
+      |> click(Query.css("#go-to-dest"))
+      # This assert is on the DESTINATION page — await_selector must
+      # bail on the navigation and let retry find it on the new page
+      |> assert_has(Query.css("#dest-title", text: "Destination Page"))
+    end
+
+    test "assert_has with text after navigation doesn't waste 5s", %{session: session, live_url: url} do
+      start = System.monotonic_time(:millisecond)
+
+      session
+      |> visit("#{url}/nav-source")
+      |> click(Query.css("#go-to-dest"))
+      |> assert_has(Query.css("#dest-status", text: "arrived"))
+
+      elapsed = System.monotonic_time(:millisecond) - start
+      # Should be well under 5s — navigation detection bails fast
+      assert elapsed < 4_000
+    end
+  end
+
   describe "fallback on non-LiveView pages" do
     @tag :pending
     test "click works normally on plain HTML pages", %{session: session} do
