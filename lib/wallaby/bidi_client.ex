@@ -1397,7 +1397,7 @@ defmodule Wallabidi.BiDiClient do
         var navCheck = setInterval(function() {
           if (window.location.href !== startUrl) {
             clearInterval(navCheck);
-            resolve(false);
+            resolve("navigated");
           }
         }, 50);
         setTimeout(() => { clearInterval(navCheck); resolve(false); }, 5000);
@@ -1573,8 +1573,18 @@ defmodule Wallabidi.BiDiClient do
     task = Task.async(fn -> send_bidi(session, method, params) end)
 
     case Task.yield(task, timeout) || Task.shutdown(task) do
-      {:ok, _} -> :ok
-      nil -> :ok
+      {:ok, {:ok, result}} ->
+        case ResponseParser.extract_value(result) do
+          {:ok, "navigated"} ->
+            # Navigation detected — wait for new page's LiveView to connect
+            await_liveview_connected(session)
+
+          _ ->
+            :ok
+        end
+
+      _ ->
+        :ok
     end
   end
 
