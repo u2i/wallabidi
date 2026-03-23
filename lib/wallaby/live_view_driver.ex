@@ -295,8 +295,6 @@ defmodule Wallabidi.LiveViewDriver do
 
     LazyHTML.query(doc, "form")
     |> Enum.find_value(fn form ->
-      form_html = LazyHTML.to_html(form)
-
       if LazyHTML.query(form, child_selector) != [] do
         cond do
           id = LazyHTML.attribute(form, "id") -> "##{id}"
