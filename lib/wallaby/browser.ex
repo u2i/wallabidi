@@ -1759,8 +1759,18 @@ defmodule Wallabidi.Browser do
     if bidi_session?(session) and expects_server_patch?(session, query, interaction) do
       case Wallabidi.BiDiClient.prepare_patch(session) do
         :prepared ->
+          {:ok, url_before} = Wallabidi.BiDiClient.current_url(session)
           result = fun.()
           Wallabidi.BiDiClient.await_patch(session)
+
+          # If the URL changed, this was a navigation (push_navigate), not a patch.
+          # Wait for the destination LiveView to fully connect.
+          {:ok, url_after} = Wallabidi.BiDiClient.current_url(session)
+
+          if url_before != url_after do
+            Wallabidi.BiDiClient.await_liveview_connected(session)
+          end
+
           result
 
         :no_liveview ->
@@ -1799,6 +1809,10 @@ defmodule Wallabidi.Browser do
     var type = arguments[1];
 
     if (type === 'click') {
+      // Check for LiveView navigate/patch links (<.link navigate=... /> or <.link patch=... />)
+      var link = el.closest('[data-phx-link]');
+      if (link) return true;
+
       // Check phx-click on the element itself
       var phxClick = el.getAttribute('phx-click');
       if (phxClick) {

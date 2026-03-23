@@ -1540,10 +1540,10 @@ defmodule Wallabidi.BiDiClient do
     return new Promise(resolve => {
       function check() {
         var ls = window.liveSocket;
-        if (ls && ls.main && !document.querySelector('[data-phx-main-loading]')) {
+        if (ls && ls.main && !ls.main.joinPending) {
           resolve(true);
         } else {
-          requestAnimationFrame(check);
+          setTimeout(check, 10);
         }
       }
       check();
@@ -1552,7 +1552,8 @@ defmodule Wallabidi.BiDiClient do
   })()
   """
 
-  defp await_liveview_connected(session) do
+  @doc false
+  def await_liveview_connected(session) do
     context = browsing_context(session)
 
     {method, params} =

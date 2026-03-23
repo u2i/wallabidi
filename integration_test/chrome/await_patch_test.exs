@@ -114,6 +114,20 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
       assert elapsed < 3_000
     end
 
+    test "click on navigate link waits for LiveView connected", %{session: session, live_url: url} do
+      # NavDestLive has a 200ms sleep in connected mount. Without
+      # await_liveview_connected, click returns before the LV connects
+      # and the element doesn't exist yet (same live_session nav has
+      # no dead render — DOM only appears after connected mount).
+      session
+      |> visit("#{url}/nav-source")
+      |> click(Query.css("#go-to-dest"))
+      |> execute_script(
+        "var el = document.getElementById('lv-connected'); return el ? el.textContent : 'missing'",
+        fn value -> assert value == "yes" end
+      )
+    end
+
     test "assert_has with text after navigation doesn't waste 5s", %{session: session, live_url: url} do
       start = System.monotonic_time(:millisecond)
 
