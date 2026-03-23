@@ -183,7 +183,7 @@ defmodule Wallabidi.Browser do
   """
   @spec fill_in(parent, Query.t(), with: String.t()) :: parent
   def fill_in(parent, query, with: value) do
-    with_patch_await(parent, fn ->
+    with_patch_await(parent, query, :change, fn ->
       parent
       |> find(query, &Element.fill_in(&1, with: value))
     end)
@@ -739,7 +739,7 @@ defmodule Wallabidi.Browser do
   end
 
   def click(parent, query) do
-    with_patch_await(parent, fn ->
+    with_patch_await(parent, query, :click, fn ->
       parent
       |> find(query, &Element.click/1)
     end)
@@ -1748,9 +1748,10 @@ defmodule Wallabidi.Browser do
 
   # Wraps an interaction with prepare_patch/await_patch.
   # Sets up the promise before the action, awaits after.
-  # No-op if the parent isn't a BiDi session or no LiveView on page.
-  defp with_patch_await(%Session{} = session, fun) do
-    if bidi_session?(session) do
+  # Skips if: not BiDi, no LiveView, or the element is a JS-only click
+  # (phx-click without a push command, e.g. JS.toggle).
+  defp with_patch_await(%Session{} = session, query, interaction, fun) do
+    if bidi_session?(session) and expects_server_patch?(session, query, interaction) do
       case Wallabidi.BiDiClient.prepare_patch(session) do
         :prepared ->
           result = fun.()
@@ -1765,7 +1766,56 @@ defmodule Wallabidi.Browser do
     end
   end
 
-  defp with_patch_await(_parent, fun), do: fun.()
+  defp with_patch_await(_parent, _query, _interaction, fun), do: fun.()
+
+  # Check if the interaction would trigger a server event that produces a patch.
+  defp expects_server_patch?(session, query, interaction) do
+    with {:ok, validated} <- Query.validate(query),
+         compiled <- Query.compile(validated) do
+      case compiled do
+        {:css, selector} ->
+          check_phx_binding(session, selector, interaction)
+
+        {:xpath, _} ->
+          true
+      end
+    else
+      _ -> true
+    end
+  end
+
+  # Check if the element (or its parent form) has a phx binding that
+  # would trigger a server event for this interaction type.
+  defp check_phx_binding(session, selector, interaction) do
+    js = """
+    var el = document.querySelector(arguments[0]);
+    if (!el) return true;
+
+    var type = arguments[1];
+
+    if (type === 'click') {
+      var phxClick = el.getAttribute('phx-click');
+      if (!phxClick) return false;
+      return phxClick.includes('push') || !phxClick.startsWith('[');
+    }
+
+    if (type === 'change') {
+      if (el.getAttribute('phx-change')) return true;
+      var form = el.closest('form');
+      if (form && form.getAttribute('phx-change')) return true;
+      return false;
+    }
+
+    return true;
+    """
+
+    case Wallabidi.BiDiClient.execute_script(session, js, [selector, to_string(interaction)]) do
+      {:ok, false} -> false
+      _ -> true
+    end
+  rescue
+    _ -> true
+  end
 
   @doc false
   def build_file_url(path) do
