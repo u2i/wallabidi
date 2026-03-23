@@ -1515,11 +1515,11 @@ defmodule Wallabidi.BiDiClient do
             :found
 
           {:ok, "navigated"} ->
-            # Page navigated — wait for new page to settle, then retry once
+            # Page navigated — wait for LiveView to connect, then retry
             retries = Keyword.get(opts, :retries, 0)
 
             if retries < 2 do
-              Process.sleep(200)
+              await_liveview_connected(session)
               opts = opts |> Keyword.put(:timeout, timeout) |> Keyword.put(:retries, retries + 1)
               await_selector(session, css_selector, opts)
             else
@@ -1533,6 +1533,34 @@ defmodule Wallabidi.BiDiClient do
       _ ->
         :not_found
     end
+  end
+
+  @await_lv_connected_js """
+  (() => {
+    return new Promise(resolve => {
+      function check() {
+        var ls = window.liveSocket;
+        if (ls && ls.main && !document.querySelector('[data-phx-main-loading]')) {
+          resolve(true);
+        } else {
+          requestAnimationFrame(check);
+        }
+      }
+      check();
+      setTimeout(() => resolve(false), 5000);
+    });
+  })()
+  """
+
+  defp await_liveview_connected(session) do
+    context = browsing_context(session)
+
+    {method, params} =
+      Commands.evaluate(context, @await_lv_connected_js, %{await_promise: true})
+
+    task = Task.async(fn -> send_bidi(session, method, params) end)
+    Task.yield(task, 6_000) || Task.shutdown(task)
+    :ok
   end
 
   @doc false
