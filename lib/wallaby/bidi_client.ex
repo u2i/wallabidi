@@ -1389,9 +1389,19 @@ defmodule Wallabidi.BiDiClient do
     if (!window.__wallabidi_patch_promise) return Promise.resolve(false);
     const p = window.__wallabidi_patch_promise;
     window.__wallabidi_patch_promise = null;
+
+    var startUrl = window.location.href;
     return Promise.race([
       p,
-      new Promise(resolve => setTimeout(() => resolve(false), 5000))
+      new Promise(resolve => {
+        var navCheck = setInterval(function() {
+          if (window.location.href !== startUrl) {
+            clearInterval(navCheck);
+            resolve(false);
+          }
+        }, 50);
+        setTimeout(() => { clearInterval(navCheck); resolve(false); }, 5000);
+      })
     ]);
   })()
   """

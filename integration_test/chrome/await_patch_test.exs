@@ -101,6 +101,19 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
       |> assert_has(Query.css("#dest-title", text: "Destination Page"))
     end
 
+    test "click on navigate link doesn't waste 5s on await_patch", %{session: session, live_url: url} do
+      start = System.monotonic_time(:millisecond)
+
+      session
+      |> visit("#{url}/nav-source")
+      # click triggers push_navigate — await_patch should bail on URL change
+      |> click(Query.css("#go-to-dest"))
+
+      elapsed = System.monotonic_time(:millisecond) - start
+      # click itself should return fast — not wait 5s for a patch
+      assert elapsed < 3_000
+    end
+
     test "assert_has with text after navigation doesn't waste 5s", %{session: session, live_url: url} do
       start = System.monotonic_time(:millisecond)
 
