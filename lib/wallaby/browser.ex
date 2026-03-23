@@ -196,8 +196,10 @@ defmodule Wallabidi.Browser do
   @spec clear(parent, Query.t()) :: parent
 
   def clear(parent, query) do
-    parent
-    |> find(query, &Element.clear/1)
+    with_patch_await(parent, query, :change, fn ->
+      parent
+      |> find(query, &Element.clear/1)
+    end)
   end
 
   @doc """
@@ -663,9 +665,11 @@ defmodule Wallabidi.Browser do
   @spec send_keys(parent, Element.keys_to_send()) :: parent
 
   def send_keys(parent, query, list) do
-    find(parent, query, fn element ->
-      element
-      |> Element.send_keys(list)
+    with_patch_await(parent, query, :change, fn ->
+      find(parent, query, fn element ->
+        element
+        |> Element.send_keys(list)
+      end)
     end)
   end
 
@@ -1794,12 +1798,21 @@ defmodule Wallabidi.Browser do
     var type = arguments[1];
 
     if (type === 'click') {
+      // Check phx-click on the element itself
       var phxClick = el.getAttribute('phx-click');
-      if (!phxClick) return false;
-      return phxClick.includes('push') || !phxClick.startsWith('[');
+      if (phxClick) {
+        return phxClick.includes('push') || !phxClick.startsWith('[');
+      }
+      // Check if it's a submit button inside a phx-submit form
+      if (el.type === 'submit' || el.tagName === 'BUTTON') {
+        var form = el.closest('form');
+        if (form && form.getAttribute('phx-submit')) return true;
+      }
+      return false;
     }
 
     if (type === 'change') {
+      // Check element or parent form for phx-change
       if (el.getAttribute('phx-change')) return true;
       var form = el.closest('form');
       if (form && form.getAttribute('phx-change')) return true;
