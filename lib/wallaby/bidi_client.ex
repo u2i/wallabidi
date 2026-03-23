@@ -1389,7 +1389,10 @@ defmodule Wallabidi.BiDiClient do
     if (!window.__wallabidi_patch_promise) return Promise.resolve(false);
     const p = window.__wallabidi_patch_promise;
     window.__wallabidi_patch_promise = null;
-    return p;
+    return Promise.race([
+      p,
+      new Promise(resolve => setTimeout(() => resolve(false), 5000))
+    ]);
   })()
   """
 
