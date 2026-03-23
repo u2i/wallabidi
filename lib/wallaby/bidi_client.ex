@@ -1427,10 +1427,12 @@ defmodule Wallabidi.BiDiClient do
       const text = #{text_js};
 
       function matches() {
-        const el = document.querySelector(selector);
-        if (!el) return false;
-        if (!text) return true;
-        return el.textContent.includes(text);
+        if (!text) return !!document.querySelector(selector);
+        var els = document.querySelectorAll(selector);
+        for (var i = 0; i < els.length; i++) {
+          if (els[i].textContent.includes(text)) return true;
+        }
+        return false;
       }
 
       // Already present?

@@ -115,6 +115,18 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
     end
   end
 
+  describe "multiple matching elements" do
+    test "assert_has with text checks all matching elements", %{session: session, live_url: url} do
+      session
+      |> visit("#{url}/multi")
+      |> assert_has(Query.css(".message", text: "Hello"))
+      |> assert_has(Query.css(".message", text: "World"))
+      |> click(Query.css("#add"))
+      # "New message" is the THIRD .message — querySelector would miss it
+      |> assert_has(Query.css(".message", text: "New message"))
+    end
+  end
+
   describe "fallback on non-LiveView pages" do
     @tag :pending
     test "click works normally on plain HTML pages", %{session: session} do
