@@ -1826,13 +1826,13 @@ defmodule Wallabidi.Browser do
           check_phx_binding_xpath(session, xpath, interaction)
       end
     else
-      _ -> :patch
+      _ -> :none
     end
   end
 
   @classify_el_js """
   function classifyEl(el, type) {
-    if (!el) return "patch";
+    if (!el) return "none";
 
     if (type === 'click') {
       // Check for LiveView navigate/patch links
@@ -1877,10 +1877,10 @@ defmodule Wallabidi.Browser do
 
     case Wallabidi.BiDiClient.execute_script(session, js, [selector, to_string(interaction)]) do
       {:ok, result} -> parse_classification(result)
-      _ -> :patch
+      _ -> :none
     end
   rescue
-    _ -> :patch
+    _ -> :none
   end
 
   defp check_phx_binding_xpath(session, xpath, interaction) do
@@ -1891,10 +1891,10 @@ defmodule Wallabidi.Browser do
 
     case Wallabidi.BiDiClient.execute_script(session, js, [xpath, to_string(interaction)]) do
       {:ok, result} -> parse_classification(result)
-      _ -> :patch
+      _ -> :none
     end
   rescue
-    _ -> :patch
+    _ -> :none
   end
 
   defp parse_classification("navigate"), do: :navigate

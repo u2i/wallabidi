@@ -228,6 +228,37 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
     end
   end
 
+  describe "JS-only interactions (#5)" do
+    test "Query.button with # in ID doesn't waste 5s on await_patch", %{session: session, live_url: url} do
+      # Button has id="#menu-btn" and phx-click={JS.toggle(...)}.
+      # Query.button compiles to XPath. The # in the ID can break
+      # XPath resolution, and JS-only phx-click should be :none.
+      start = System.monotonic_time(:millisecond)
+
+      session
+      |> visit("#{url}/js-toggle")
+      |> click(Query.button("#menu-btn"))
+      |> assert_has(Query.css("#menu-content", text: "Menu is open"))
+
+      elapsed = System.monotonic_time(:millisecond) - start
+      # Should be fast — JS toggle is immediate, no server round-trip
+      assert elapsed < 2_000
+    end
+
+    test "CSS selector with # in ID works correctly", %{session: session, live_url: url} do
+      # Workaround from the issue — CSS attribute selector handles # fine
+      start = System.monotonic_time(:millisecond)
+
+      session
+      |> visit("#{url}/js-toggle")
+      |> click(Query.css("[id='#menu-btn']"))
+      |> assert_has(Query.css("#menu-content", text: "Menu is open"))
+
+      elapsed = System.monotonic_time(:millisecond) - start
+      assert elapsed < 2_000
+    end
+  end
+
   describe "multiple matching elements" do
     test "assert_has with text checks all matching elements", %{session: session, live_url: url} do
       session
