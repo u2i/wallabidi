@@ -197,6 +197,19 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
         fn value -> assert value == "yes" end
       )
     end
+
+    test "phx-submit redirect is detected quickly, not via 5s timeout", %{session: session, live_url: url} do
+      start = System.monotonic_time(:millisecond)
+
+      session
+      |> visit("#{url}/form-redirect")
+      |> click(Query.css("#submit-btn"))
+      |> assert_has(Query.css("#full-dest-title", text: "Full Nav Destination"))
+
+      elapsed = System.monotonic_time(:millisecond) - start
+      # beforeunload resolves immediately — should be well under 2s
+      assert elapsed < 2_000
+    end
   end
 
   describe "multiple matching elements" do

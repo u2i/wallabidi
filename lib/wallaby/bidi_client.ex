@@ -1391,7 +1391,10 @@ defmodule Wallabidi.BiDiClient do
     window.__wallabidi_patch_promise = null;
     return Promise.race([
       p,
-      new Promise(resolve => setTimeout(() => resolve(false), 5000))
+      new Promise(resolve => {
+        window.addEventListener('beforeunload', () => resolve("navigated"), {once: true});
+        setTimeout(() => resolve(false), 5000);
+      })
     ]);
   })()
   """
@@ -1586,8 +1589,18 @@ defmodule Wallabidi.BiDiClient do
     task = Task.async(fn -> send_bidi(session, method, params) end)
 
     case Task.yield(task, timeout) || Task.shutdown(task) do
+      {:ok, {:ok, result}} ->
+        case ResponseParser.extract_value(result) do
+          {:ok, "navigated"} ->
+            # beforeunload fired — server triggered a full page redirect
+            :page_navigated
+
+          _ ->
+            :ok
+        end
+
       {:ok, {:error, _}} ->
-        # JS evaluation failed — likely a full page navigation cleared the context
+        # JS evaluation failed — context cleared by navigation
         :page_navigated
 
       _ ->
