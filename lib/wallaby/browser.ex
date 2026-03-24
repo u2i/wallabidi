@@ -1761,9 +1761,20 @@ defmodule Wallabidi.Browser do
         :patch ->
           case Wallabidi.BiDiClient.prepare_patch(session) do
             :prepared ->
+              # Also prepare for possible full page redirect (server may redirect)
+              Wallabidi.BiDiClient.prepare_page_load(session)
               result = fun.()
-              Wallabidi.BiDiClient.await_patch(session)
-              result
+
+              case Wallabidi.BiDiClient.await_patch(session) do
+                :ok ->
+                  result
+
+                :page_navigated ->
+                  # Server triggered a redirect — wait for the new page
+                  Wallabidi.BiDiClient.await_page_load(session)
+                  Wallabidi.BiDiClient.await_liveview_connected(session)
+                  result
+              end
 
             :no_liveview ->
               fun.()
@@ -1810,20 +1821,17 @@ defmodule Wallabidi.Browser do
         {:css, selector} ->
           check_phx_binding(session, selector, interaction)
 
-        {:xpath, _} ->
-          :patch
+        {:xpath, xpath} ->
+          check_phx_binding_xpath(session, xpath, interaction)
       end
     else
       _ -> :patch
     end
   end
 
-  defp check_phx_binding(session, selector, interaction) do
-    js = """
-    var el = document.querySelector(arguments[0]);
+  @classify_el_js """
+  function classifyEl(el, type) {
     if (!el) return "patch";
-
-    var type = arguments[1];
 
     if (type === 'click') {
       // Check for LiveView navigate/patch links
@@ -1858,18 +1866,41 @@ defmodule Wallabidi.Browser do
     }
 
     return 'patch';
+  }
+  """
+
+  defp check_phx_binding(session, selector, interaction) do
+    js = @classify_el_js <> """
+    return classifyEl(document.querySelector(arguments[0]), arguments[1]);
     """
 
     case Wallabidi.BiDiClient.execute_script(session, js, [selector, to_string(interaction)]) do
-      {:ok, "navigate"} -> :navigate
-      {:ok, "full_page"} -> :full_page
-      {:ok, "patch"} -> :patch
-      {:ok, "none"} -> :none
+      {:ok, result} -> parse_classification(result)
       _ -> :patch
     end
   rescue
     _ -> :patch
   end
+
+  defp check_phx_binding_xpath(session, xpath, interaction) do
+    js = @classify_el_js <> """
+    var result = document.evaluate(arguments[0], document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+    return classifyEl(result.singleNodeValue, arguments[1]);
+    """
+
+    case Wallabidi.BiDiClient.execute_script(session, js, [xpath, to_string(interaction)]) do
+      {:ok, result} -> parse_classification(result)
+      _ -> :patch
+    end
+  rescue
+    _ -> :patch
+  end
+
+  defp parse_classification("navigate"), do: :navigate
+  defp parse_classification("full_page"), do: :full_page
+  defp parse_classification("patch"), do: :patch
+  defp parse_classification("none"), do: :none
+  defp parse_classification(_), do: :patch
 
   @doc false
   def build_file_url(path) do

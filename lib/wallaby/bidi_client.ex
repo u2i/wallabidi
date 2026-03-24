@@ -1585,8 +1585,14 @@ defmodule Wallabidi.BiDiClient do
 
     task = Task.async(fn -> send_bidi(session, method, params) end)
 
-    Task.yield(task, timeout) || Task.shutdown(task)
-    :ok
+    case Task.yield(task, timeout) || Task.shutdown(task) do
+      {:ok, {:error, _}} ->
+        # JS evaluation failed — likely a full page navigation cleared the context
+        :page_navigated
+
+      _ ->
+        :ok
+    end
   end
 
   # Console event listener

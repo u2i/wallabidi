@@ -159,6 +159,46 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
     end
   end
 
+  describe "XPath query classification" do
+    test "click via XPath on navigate link waits for LV connected", %{session: session, live_url: url} do
+      # XPath queries currently default to :patch — they should detect
+      # the actual binding on the resolved element. This navigate link
+      # has a 200ms slow mount on the destination.
+      session
+      |> visit("#{url}/nav-source")
+      |> click(Query.xpath("//a[@id='go-to-dest']"))
+      |> execute_script(
+        "var el = document.getElementById('lv-connected'); return el ? el.textContent : 'missing'",
+        fn value -> assert value == "yes" end
+      )
+    end
+
+    test "click via XPath on plain link waits for page load", %{session: session, live_url: url} do
+      session
+      |> visit("#{url}/nav-source")
+      |> click(Query.xpath("//a[@id='go-full-nav']"))
+      |> execute_script(
+        "var el = document.getElementById('full-lv-connected'); return el ? el.textContent : 'missing'",
+        fn value -> assert value == "yes" end
+      )
+    end
+  end
+
+  describe "form submit with redirect" do
+    test "phx-submit that redirects waits for page load and LV connected", %{session: session, live_url: url} do
+      # The form has phx-submit (classified as :patch), but the server
+      # handler calls redirect/2 which triggers a full page navigation.
+      # Without handling this, await_patch fails with stale context.
+      session
+      |> visit("#{url}/form-redirect")
+      |> click(Query.css("#submit-btn"))
+      |> execute_script(
+        "var el = document.getElementById('full-lv-connected'); return el ? el.textContent : 'missing'",
+        fn value -> assert value == "yes" end
+      )
+    end
+  end
+
   describe "multiple matching elements" do
     test "assert_has with text checks all matching elements", %{session: session, live_url: url} do
       session

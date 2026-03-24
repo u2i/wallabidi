@@ -18,6 +18,7 @@ defmodule Wallabidi.Integration.LiveApp.Router do
       live "/nav-source", Wallabidi.Integration.LiveApp.NavSourceLive
       live "/nav-dest", Wallabidi.Integration.LiveApp.NavDestLive
       live "/multi", Wallabidi.Integration.LiveApp.MultiElementLive
+      live "/form-redirect", Wallabidi.Integration.LiveApp.FormRedirectLive
     end
 
     # Separate live_session — navigating here from :default triggers a full page load
