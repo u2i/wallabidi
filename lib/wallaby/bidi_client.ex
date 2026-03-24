@@ -1529,11 +1529,12 @@ defmodule Wallabidi.BiDiClient do
   end
 
   @await_lv_connected_js """
-  (() => {
+  (preUrl) => {
     return new Promise(resolve => {
       function check() {
         var ls = window.liveSocket;
-        if (ls && ls.main && !ls.main.joinPending) {
+        var urlChanged = !preUrl || window.location.href !== preUrl;
+        if (ls && ls.main && !ls.main.joinPending && urlChanged) {
           resolve(true);
         } else {
           setTimeout(check, 10);
@@ -1542,21 +1543,26 @@ defmodule Wallabidi.BiDiClient do
       check();
       setTimeout(() => resolve(false), 5000);
     });
-  })()
+  }
   """
 
   @doc false
-  def await_liveview_connected(session) do
-    await_lv_connected_with_retry(session, 6_000)
+  def await_liveview_connected(session, opts \\ []) do
+    await_lv_connected_with_retry(session, opts, 6_000)
   end
 
-  defp await_lv_connected_with_retry(_session, remaining) when remaining <= 0, do: :ok
+  defp await_lv_connected_with_retry(_session, _opts, remaining) when remaining <= 0, do: :ok
 
-  defp await_lv_connected_with_retry(session, remaining) do
+  defp await_lv_connected_with_retry(session, opts, remaining) do
     context = browsing_context(session)
+    pre_url = Keyword.get(opts, :pre_url)
+
+    args = [
+      if(pre_url, do: %{type: "string", value: pre_url}, else: %{type: "null"})
+    ]
 
     {method, params} =
-      Commands.evaluate(context, @await_lv_connected_js, %{await_promise: true})
+      Commands.call_function(context, @await_lv_connected_js, args, %{await_promise: true})
 
     start = System.monotonic_time(:millisecond)
     task = Task.async(fn -> send_bidi(session, method, params) end)
@@ -1569,7 +1575,7 @@ defmodule Wallabidi.BiDiClient do
         # Context temporarily unavailable (e.g. during navigation) — retry
         elapsed = System.monotonic_time(:millisecond) - start
         Process.sleep(50)
-        await_lv_connected_with_retry(session, remaining - elapsed - 50)
+        await_lv_connected_with_retry(session, opts, remaining - elapsed - 50)
 
       _ ->
         :ok

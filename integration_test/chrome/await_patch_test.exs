@@ -134,8 +134,9 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
       # Use execute_script to trigger the click, then call
       # await_liveview_connected manually — without await_patch's delay.
       session = visit(session, "#{url}/nav-source")
+      {:ok, pre_url} = Wallabidi.BiDiClient.current_url(session)
       execute_script(session, "document.getElementById('go-to-dest').click()")
-      Wallabidi.BiDiClient.await_liveview_connected(session)
+      Wallabidi.BiDiClient.await_liveview_connected(session, pre_url: pre_url)
 
       execute_script(session,
         "var el = document.getElementById('lv-connected'); return el ? el.textContent : 'missing'",

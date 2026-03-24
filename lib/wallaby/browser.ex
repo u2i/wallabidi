@@ -1783,9 +1783,10 @@ defmodule Wallabidi.Browser do
         :navigate ->
           case Wallabidi.BiDiClient.prepare_patch(session) do
             :prepared ->
+              {:ok, pre_url} = Wallabidi.BiDiClient.current_url(session)
               result = fun.()
               Wallabidi.BiDiClient.await_patch(session)
-              Wallabidi.BiDiClient.await_liveview_connected(session)
+              Wallabidi.BiDiClient.await_liveview_connected(session, pre_url: pre_url)
               result
 
             :no_liveview ->
