@@ -128,6 +128,21 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
       )
     end
 
+    test "await_liveview_connected waits for NEW LiveView, not old one", %{session: session, live_url: url} do
+      # Directly test that await_liveview_connected doesn't resolve
+      # on the OLD liveSocket.main (which is already connected).
+      # Use execute_script to trigger the click, then call
+      # await_liveview_connected manually — without await_patch's delay.
+      session = visit(session, "#{url}/nav-source")
+      execute_script(session, "document.getElementById('go-to-dest').click()")
+      Wallabidi.BiDiClient.await_liveview_connected(session)
+
+      execute_script(session,
+        "var el = document.getElementById('lv-connected'); return el ? el.textContent : 'missing'",
+        fn value -> assert value == "yes" end
+      )
+    end
+
     test "assert_has with text after navigation doesn't waste 5s", %{session: session, live_url: url} do
       start = System.monotonic_time(:millisecond)
 

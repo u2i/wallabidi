@@ -1547,14 +1547,33 @@ defmodule Wallabidi.BiDiClient do
 
   @doc false
   def await_liveview_connected(session) do
+    await_lv_connected_with_retry(session, 6_000)
+  end
+
+  defp await_lv_connected_with_retry(_session, remaining) when remaining <= 0, do: :ok
+
+  defp await_lv_connected_with_retry(session, remaining) do
     context = browsing_context(session)
 
     {method, params} =
       Commands.evaluate(context, @await_lv_connected_js, %{await_promise: true})
 
+    start = System.monotonic_time(:millisecond)
     task = Task.async(fn -> send_bidi(session, method, params) end)
-    Task.yield(task, 6_000) || Task.shutdown(task)
-    :ok
+
+    case Task.yield(task, remaining) || Task.shutdown(task) do
+      {:ok, {:ok, _}} ->
+        :ok
+
+      {:ok, {:error, _}} ->
+        # Context temporarily unavailable (e.g. during navigation) — retry
+        elapsed = System.monotonic_time(:millisecond) - start
+        Process.sleep(50)
+        await_lv_connected_with_retry(session, remaining - elapsed - 50)
+
+      _ ->
+        :ok
+    end
   end
 
   @doc false
