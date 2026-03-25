@@ -50,8 +50,9 @@ defmodule Wallabidi.BiDiClient do
   def visit(session, url) do
     context = browsing_context(session)
     {method, params} = Commands.navigate(context, url)
+    pid = bidi_pid(session)
 
-    case send_bidi(session, method, params) do
+    case WebSocketClient.send_command(pid, method, params, 30_000) |> ResponseParser.check_error() do
       {:ok, _} ->
         await_liveview_connected(session)
         :ok

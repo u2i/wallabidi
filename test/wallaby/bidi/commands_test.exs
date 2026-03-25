@@ -10,7 +10,7 @@ defmodule Wallabidi.BiDi.CommandsTest do
 
       assert params.context == "ctx-1"
       assert params.url == "https://example.com"
-      assert params.wait == "complete"
+      assert params.wait == "interactive"
     end
   end
 

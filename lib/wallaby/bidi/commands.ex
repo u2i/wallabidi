@@ -5,7 +5,7 @@ defmodule Wallabidi.BiDi.Commands do
   # Browsing Context commands
 
   def navigate(context, url) do
-    {"browsingContext.navigate", %{context: context, url: url, wait: "complete"}}
+    {"browsingContext.navigate", %{context: context, url: url, wait: "interactive"}}
   end
 
   def get_tree(opts \\ %{}) do
