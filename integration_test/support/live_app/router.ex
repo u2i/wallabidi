@@ -26,5 +26,8 @@ defmodule Wallabidi.Integration.LiveApp.Router do
     live_session :other do
       live "/full-nav-dest", Wallabidi.Integration.LiveApp.FullNavDestLive
     end
+
+    get "/plain-form", Wallabidi.Integration.LiveApp.PlainFormController, :show
+    post "/plain-form", Wallabidi.Integration.LiveApp.PlainFormController, :submit
   end
 end

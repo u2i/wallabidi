@@ -1846,10 +1846,11 @@ defmodule Wallabidi.Browser do
       if (phxClick) {
         return (phxClick.includes('push') || !phxClick.startsWith('[')) ? 'patch' : 'none';
       }
-      // Check if it's a submit button inside a phx-submit form
+      // Check if it's a submit button inside a form
       if (el.type === 'submit' || el.tagName === 'BUTTON') {
         var form = el.closest('form');
         if (form && form.getAttribute('phx-submit')) return 'patch';
+        if (form) return 'full_page';
       }
       // Check if it's a plain link that will cause a full page navigation
       var anchor = el.closest('a[href]');

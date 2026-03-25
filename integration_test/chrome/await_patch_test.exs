@@ -228,6 +228,21 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
     end
   end
 
+  describe "plain form submit (#6)" do
+    test "submit button in non-LV form waits for page load and LV connected", %{session: session, live_url: url} do
+      # Plain HTML form (no phx-submit) that POSTs and redirects to a LV page.
+      # The submit button should be classified as :full_page so we wait for
+      # the page load and LiveView connection.
+      session
+      |> visit("#{url}/plain-form")
+      |> click(Query.css("#plain-submit"))
+      |> execute_script(
+        "var el = document.getElementById('full-lv-connected'); return el ? el.textContent : 'missing'",
+        fn value -> assert value == "yes" end
+      )
+    end
+  end
+
   describe "JS-only interactions (#5)" do
     test "Query.button with # in ID doesn't waste 5s on await_patch", %{session: session, live_url: url} do
       # Button has id="#menu-btn" and phx-click={JS.toggle(...)}.
