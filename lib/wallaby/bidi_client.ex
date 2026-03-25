@@ -52,8 +52,12 @@ defmodule Wallabidi.BiDiClient do
     {method, params} = Commands.navigate(context, url)
 
     case send_bidi(session, method, params) do
-      {:ok, _} -> :ok
-      error -> error
+      {:ok, _} ->
+        await_liveview_connected(session)
+        :ok
+
+      error ->
+        error
     end
   end
 
@@ -1531,11 +1535,15 @@ defmodule Wallabidi.BiDiClient do
   @await_lv_connected_js """
   (preUrl) => {
     return new Promise(resolve => {
+      var start = Date.now();
       function check() {
         var ls = window.liveSocket;
         var urlChanged = !preUrl || window.location.href !== preUrl;
         if (ls && ls.main && !ls.main.joinPending && urlChanged) {
           resolve(true);
+        } else if (!ls && Date.now() - start > 200) {
+          // No liveSocket after 200ms — page likely has no LiveView
+          resolve(false);
         } else {
           setTimeout(check, 10);
         }

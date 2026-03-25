@@ -8,6 +8,43 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
     {:ok, session: session, live_url: live_url}
   end
 
+  describe "visit waits for LiveSocket (#7)" do
+    test "LiveSocket is connected immediately after visit", %{session: session, live_url: url} do
+      # After visit, LiveSocket should be connected. Without waiting,
+      # liveSocket.main.joinPending would be true or liveSocket.main
+      # wouldn't exist yet (JS hasn't initialized).
+      session = visit(session, "#{url}/counter")
+
+      execute_script(session,
+        """
+        var ls = window.liveSocket;
+        var main = ls && ls.main;
+        return {
+          hasLiveSocket: !!ls,
+          hasMain: !!main,
+          joinPending: main ? main.joinPending : null
+        }
+        """,
+        fn value ->
+          assert value["hasLiveSocket"] == true
+          assert value["hasMain"] == true
+          assert value["joinPending"] == false
+        end
+      )
+    end
+
+    test "visit to non-LV page doesn't wait 5s", %{session: session, live_url: url} do
+      # Plain HTML page (no LiveSocket) — visit should return quickly,
+      # not block 5s waiting for a LiveSocket that will never appear.
+      start = System.monotonic_time(:millisecond)
+      visit(session, "#{url}/plain-form")
+      elapsed = System.monotonic_time(:millisecond) - start
+
+      # Should be fast — page load only, no LV wait
+      assert elapsed < 3_000
+    end
+  end
+
   describe "await_patch (via click)" do
     test "click waits for LiveView patch before returning", %{session: session, live_url: url} do
       session
