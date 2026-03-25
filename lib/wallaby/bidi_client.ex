@@ -1541,8 +1541,8 @@ defmodule Wallabidi.BiDiClient do
         var urlChanged = !preUrl || window.location.href !== preUrl;
         if (ls && ls.main && !ls.main.joinPending && urlChanged) {
           resolve(true);
-        } else if (!ls && Date.now() - start > 200) {
-          // No liveSocket after 200ms — page likely has no LiveView
+        } else if (!document.querySelector('[data-phx-main]')) {
+          // No LiveView root element — page has no LiveView
           resolve(false);
         } else {
           setTimeout(check, 10);
