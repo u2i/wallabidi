@@ -17,8 +17,6 @@ defmodule Wallabidi.SandboxIntegrationTest do
 
   alias Wallabidi.TestApp.{Repo, User}
 
-  @endpoint Wallabidi.TestApp.Endpoint
-
   setup %{sandbox: sandbox} do
     metadata = SandboxCase.Sandbox.ecto_metadata(sandbox)
     {:ok, session} = Wallabidi.start_session(metadata: metadata)

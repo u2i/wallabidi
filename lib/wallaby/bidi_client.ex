@@ -52,7 +52,8 @@ defmodule Wallabidi.BiDiClient do
     {method, params} = Commands.navigate(context, url)
     pid = bidi_pid(session)
 
-    case WebSocketClient.send_command(pid, method, params, 30_000) |> ResponseParser.check_error() do
+    case WebSocketClient.send_command(pid, method, params, 30_000)
+         |> ResponseParser.check_error() do
       {:ok, _} ->
         await_liveview_connected(session)
         :ok

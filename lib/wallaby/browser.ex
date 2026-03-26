@@ -1881,9 +1881,11 @@ defmodule Wallabidi.Browser do
   """
 
   defp check_phx_binding(session, selector, interaction) do
-    js = @classify_el_js <> """
-    return classifyEl(document.querySelector(arguments[0]), arguments[1]);
-    """
+    js =
+      @classify_el_js <>
+        """
+        return classifyEl(document.querySelector(arguments[0]), arguments[1]);
+        """
 
     case Wallabidi.BiDiClient.execute_script(session, js, [selector, to_string(interaction)]) do
       {:ok, result} -> parse_classification(result)
@@ -1894,10 +1896,12 @@ defmodule Wallabidi.Browser do
   end
 
   defp check_phx_binding_xpath(session, xpath, interaction) do
-    js = @classify_el_js <> """
-    var result = document.evaluate(arguments[0], document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-    return classifyEl(result.singleNodeValue, arguments[1]);
-    """
+    js =
+      @classify_el_js <>
+        """
+        var result = document.evaluate(arguments[0], document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+        return classifyEl(result.singleNodeValue, arguments[1]);
+        """
 
     case Wallabidi.BiDiClient.execute_script(session, js, [xpath, to_string(interaction)]) do
       {:ok, result} -> parse_classification(result)

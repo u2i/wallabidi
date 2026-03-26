@@ -7,13 +7,15 @@ defmodule Wallabidi.Integration.LiveApp.Endpoint do
     signing_salt: "integration_test_salt"
   ]
 
-  socket "/live", Phoenix.LiveView.Socket,
+  socket("/live", Phoenix.LiveView.Socket,
     websocket: [connect_info: [:user_agent, session: @session_options]]
+  )
 
-  plug Plug.Parsers,
+  plug(Plug.Parsers,
     parsers: [:urlencoded],
     pass: ["*/*"]
+  )
 
-  plug Plug.Session, @session_options
-  plug Wallabidi.Integration.LiveApp.Router
+  plug(Plug.Session, @session_options)
+  plug(Wallabidi.Integration.LiveApp.Router)
 end

@@ -10,8 +10,9 @@ defmodule Wallabidi.TestApp.Endpoint do
   import SandboxShim
   sandbox_plugs()
 
-  sandbox_socket "/live", Phoenix.LiveView.Socket,
+  sandbox_socket("/live", Phoenix.LiveView.Socket,
     websocket: [connect_info: [session: @session_options]]
+  )
 
   plug(Plug.Static,
     at: "/assets/phoenix",

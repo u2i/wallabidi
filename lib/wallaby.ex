@@ -144,5 +144,4 @@ defmodule Wallabidi do
   def js_logger do
     Application.get_env(:wallabidi, :js_logger, :stdio)
   end
-
 end

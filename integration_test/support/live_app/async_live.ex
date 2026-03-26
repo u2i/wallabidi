@@ -6,10 +6,11 @@ defmodule Wallabidi.Integration.LiveApp.AsyncLive do
   end
 
   def handle_event("load", _params, socket) do
-    {:noreply, start_async(socket, :fetch, fn ->
-      Process.sleep(300)
-      "async result"
-    end)}
+    {:noreply,
+     start_async(socket, :fetch, fn ->
+       Process.sleep(300)
+       "async result"
+     end)}
   end
 
   def handle_async(:fetch, {:ok, result}, socket) do

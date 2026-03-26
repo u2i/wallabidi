@@ -15,7 +15,8 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
       # wouldn't exist yet (JS hasn't initialized).
       session = visit(session, "#{url}/counter")
 
-      execute_script(session,
+      execute_script(
+        session,
         """
         var ls = window.liveSocket;
         var main = ls && ls.main;
@@ -138,7 +139,10 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
       |> assert_has(Query.css("#dest-title", text: "Destination Page"))
     end
 
-    test "click on navigate link doesn't waste 5s on await_patch", %{session: session, live_url: url} do
+    test "click on navigate link doesn't waste 5s on await_patch", %{
+      session: session,
+      live_url: url
+    } do
       start = System.monotonic_time(:millisecond)
 
       session
@@ -165,7 +169,10 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
       )
     end
 
-    test "await_liveview_connected waits for NEW LiveView, not old one", %{session: session, live_url: url} do
+    test "await_liveview_connected waits for NEW LiveView, not old one", %{
+      session: session,
+      live_url: url
+    } do
       # Directly test that await_liveview_connected doesn't resolve
       # on the OLD liveSocket.main (which is already connected).
       # Use execute_script to trigger the click, then call
@@ -175,13 +182,17 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
       execute_script(session, "document.getElementById('go-to-dest').click()")
       Wallabidi.BiDiClient.await_liveview_connected(session, pre_url: pre_url)
 
-      execute_script(session,
+      execute_script(
+        session,
         "var el = document.getElementById('lv-connected'); return el ? el.textContent : 'missing'",
         fn value -> assert value == "yes" end
       )
     end
 
-    test "assert_has with text after navigation doesn't waste 5s", %{session: session, live_url: url} do
+    test "assert_has with text after navigation doesn't waste 5s", %{
+      session: session,
+      live_url: url
+    } do
       start = System.monotonic_time(:millisecond)
 
       session
@@ -196,7 +207,10 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
   end
 
   describe "full page navigation" do
-    test "click on plain link waits for page load and LV connected", %{session: session, live_url: url} do
+    test "click on plain link waits for page load and LV connected", %{
+      session: session,
+      live_url: url
+    } do
       # #go-full-nav is a plain <a href="/full-nav-dest"> — no data-phx-link.
       # This triggers a full HTTP navigation to a different live_session.
       # FullNavDestLive has a 200ms sleep in connected mount.
@@ -213,7 +227,10 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
   end
 
   describe "XPath query classification" do
-    test "click via XPath on navigate link waits for LV connected", %{session: session, live_url: url} do
+    test "click via XPath on navigate link waits for LV connected", %{
+      session: session,
+      live_url: url
+    } do
       # XPath queries currently default to :patch — they should detect
       # the actual binding on the resolved element. This navigate link
       # has a 200ms slow mount on the destination.
@@ -238,7 +255,10 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
   end
 
   describe "fill_in + submit (#9)" do
-    test "fill_in awaits the set_value patch, not the clear patch", %{session: session, live_url: url} do
+    test "fill_in awaits the set_value patch, not the clear patch", %{
+      session: session,
+      live_url: url
+    } do
       # fill_in calls clear() then set_value(). Both trigger phx-change.
       # await_patch must resolve after set_value's patch, not clear's.
       # The server should have the full value immediately after fill_in.
@@ -253,7 +273,10 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
   end
 
   describe "form submit with redirect" do
-    test "phx-submit that redirects waits for page load and LV connected", %{session: session, live_url: url} do
+    test "phx-submit that redirects waits for page load and LV connected", %{
+      session: session,
+      live_url: url
+    } do
       # The form has phx-submit (classified as :patch), but the server
       # handler calls redirect/2 which triggers a full page navigation.
       # Without handling this, await_patch fails with stale context.
@@ -266,7 +289,10 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
       )
     end
 
-    test "phx-submit redirect is detected quickly, not via 5s timeout", %{session: session, live_url: url} do
+    test "phx-submit redirect is detected quickly, not via 5s timeout", %{
+      session: session,
+      live_url: url
+    } do
       start = System.monotonic_time(:millisecond)
 
       session
@@ -281,7 +307,10 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
   end
 
   describe "plain form submit (#6)" do
-    test "submit button in non-LV form waits for page load and LV connected", %{session: session, live_url: url} do
+    test "submit button in non-LV form waits for page load and LV connected", %{
+      session: session,
+      live_url: url
+    } do
       # Plain HTML form (no phx-submit) that POSTs and redirects to a LV page.
       # The submit button should be classified as :full_page so we wait for
       # the page load and LiveView connection.
@@ -296,7 +325,10 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
   end
 
   describe "JS-only interactions (#5)" do
-    test "Query.button with # in ID doesn't waste 5s on await_patch", %{session: session, live_url: url} do
+    test "Query.button with # in ID doesn't waste 5s on await_patch", %{
+      session: session,
+      live_url: url
+    } do
       # Button has id="#menu-btn" and phx-click={JS.toggle(...)}.
       # Query.button compiles to XPath. The # in the ID can break
       # XPath resolution, and JS-only phx-click should be :none.
