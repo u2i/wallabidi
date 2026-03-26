@@ -237,6 +237,21 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
     end
   end
 
+  describe "fill_in + submit (#9)" do
+    test "fill_in awaits the set_value patch, not the clear patch", %{session: session, live_url: url} do
+      # fill_in calls clear() then set_value(). Both trigger phx-change.
+      # await_patch must resolve after set_value's patch, not clear's.
+      # The server should have the full value immediately after fill_in.
+      session
+      |> visit("#{url}/form")
+      |> fill_in(Query.text_field("email"), with: "user@test.com")
+      |> execute_script(
+        "return document.getElementById('server-email').textContent",
+        fn value -> assert value == "user@test.com" end
+      )
+    end
+  end
+
   describe "form submit with redirect" do
     test "phx-submit that redirects waits for page load and LV connected", %{session: session, live_url: url} do
       # The form has phx-submit (classified as :patch), but the server

@@ -182,11 +182,20 @@ defmodule Wallabidi.Browser do
   Using JavaScript is a known workaround for filling in fields with Emojis and other non-BMP characters.
   """
   @spec fill_in(parent, Query.t(), with: String.t()) :: parent
-  def fill_in(parent, query, with: value) do
-    with_patch_await(parent, query, :change, fn ->
+  def fill_in(%Session{} = parent, query, with: value) do
+    if bidi_session?(parent) and classify_interaction(parent, query, :change) != :none do
+      # Type the value (silent clear + keystrokes), then drain all pending
+      # phx-change patches so the server has processed the final value.
+      result =
+        parent
+        |> find(query, &Element.fill_in(&1, with: value))
+
+      Wallabidi.BiDiClient.drain_patches(parent)
+      result
+    else
       parent
       |> find(query, &Element.fill_in(&1, with: value))
-    end)
+    end
   end
 
   # @doc """

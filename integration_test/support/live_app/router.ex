@@ -20,6 +20,7 @@ defmodule Wallabidi.Integration.LiveApp.Router do
       live "/multi", Wallabidi.Integration.LiveApp.MultiElementLive
       live "/form-redirect", Wallabidi.Integration.LiveApp.FormRedirectLive
       live "/js-toggle", Wallabidi.Integration.LiveApp.JsToggleLive
+      live "/form", Wallabidi.Integration.LiveApp.FormLive
     end
 
     # Separate live_session — navigating here from :default triggers a full page load

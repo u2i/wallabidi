@@ -65,10 +65,15 @@ defmodule Wallabidi.Element do
     fill_in(element, with: to_string(value))
   end
 
-  def fill_in(element, with: value) when is_binary(value) do
-    element
-    |> clear
-    |> set_value(value)
+  def fill_in(%__MODULE__{driver: driver} = element, with: value) when is_binary(value) do
+    # Silent clear — don't dispatch events, so phx-change only fires
+    # for the typed value, not for the intermediate empty state.
+    case driver.clear(element, silent: true) do
+      {:ok, _} -> :ok
+      {:error, _} = err -> throw(err)
+    end
+
+    set_value(element, value)
   end
 
   @doc """

@@ -417,7 +417,7 @@ defmodule Wallabidi.Chrome do
     do: delegate(:touch_scroll, element, [x_offset, y_offset])
 
   @doc false
-  def clear(element), do: delegate(:clear, element)
+  def clear(element, opts \\ []), do: delegate(:clear, element, [opts])
   @doc false
   def displayed(element), do: delegate(:displayed, element)
   @doc false

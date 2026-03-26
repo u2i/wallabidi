@@ -245,16 +245,25 @@ defmodule Wallabidi.BiDiClient do
     end
   end
 
-  def clear(%Element{bidi_shared_id: shared_id} = element) when not is_nil(shared_id) do
-    context = browsing_context(element)
+  def clear(element, opts \\ [])
 
-    js = """
-    (el) => {
-      el.value = '';
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-    """
+  def clear(%Element{bidi_shared_id: shared_id} = element, opts)
+      when not is_nil(shared_id) do
+    context = browsing_context(element)
+    silent = Keyword.get(opts, :silent, false)
+
+    js =
+      if silent do
+        "(el) => { el.value = ''; }"
+      else
+        """
+        (el) => {
+          el.value = '';
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        """
+      end
 
     {method, params} = Commands.call_function(context, js, [element_arg(shared_id)])
 
@@ -264,7 +273,7 @@ defmodule Wallabidi.BiDiClient do
     end
   end
 
-  def clear(%Element{} = _element), do: {:error, :no_bidi_shared_id}
+  def clear(%Element{}, _opts), do: {:error, :no_bidi_shared_id}
 
   def set_value(%Element{bidi_shared_id: shared_id} = element, value)
       when not is_nil(shared_id) do
@@ -1388,6 +1397,51 @@ defmodule Wallabidi.BiDiClient do
     return true;
   })()
   """
+
+  # Wait for all pending patches to be applied. Keeps awaiting patches
+  # in a loop until no patch arrives within `idle_ms`. Used after fill_in
+  # where multiple phx-change events fire (one per keystroke).
+  @drain_patches_js """
+  (() => {
+    const ls = window.liveSocket;
+    if (!ls || !ls.domCallbacks) return Promise.resolve(true);
+
+    return new Promise(resolve => {
+      let timer = null;
+      const idle = 300;
+
+      function resetTimer() {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => {
+          // Restore original callback
+          ls.domCallbacks.onPatchEnd = orig;
+          resolve(true);
+        }, idle);
+      }
+
+      const orig = ls.domCallbacks.onPatchEnd;
+      ls.domCallbacks.onPatchEnd = function(container) {
+        orig(container);
+        resetTimer();
+      };
+
+      // Start the idle timer — if no patch arrives within idle_ms, we're done
+      resetTimer();
+    });
+  })()
+  """
+
+  @doc false
+  def drain_patches(session, timeout \\ 5_000) do
+    context = browsing_context(session)
+
+    {method, params} =
+      Commands.evaluate(context, @drain_patches_js, %{await_promise: true})
+
+    task = Task.async(fn -> send_bidi(session, method, params) end)
+    Task.yield(task, timeout) || Task.shutdown(task)
+    :ok
+  end
 
   @await_patch_js """
   (() => {
