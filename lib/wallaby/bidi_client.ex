@@ -1561,30 +1561,34 @@ defmodule Wallabidi.BiDiClient do
 
     task = Task.async(fn -> send_bidi(session, method, params) end)
 
-    case Task.yield(task, timeout + 1_000) || Task.shutdown(task) do
-      {:ok, {:ok, result}} ->
-        case ResponseParser.extract_value(result) do
-          {:ok, true} ->
-            :found
+    result =
+      case Task.yield(task, timeout + 1_000) || Task.shutdown(task) do
+        {:ok, {:ok, result}} -> parse_selector_result(result)
+        _ -> :not_found
+      end
 
-          {:ok, "navigated"} ->
-            # Page navigated — wait for LiveView to connect, then retry
-            retries = Keyword.get(opts, :retries, 0)
+    case result do
+      :navigated ->
+        retries = Keyword.get(opts, :retries, 0)
 
-            if retries < 2 do
-              await_liveview_connected(session)
-              opts = opts |> Keyword.put(:timeout, timeout) |> Keyword.put(:retries, retries + 1)
-              await_selector(session, css_selector, opts)
-            else
-              :not_found
-            end
-
-          _ ->
-            :not_found
+        if retries < 2 do
+          await_liveview_connected(session)
+          opts = opts |> Keyword.put(:timeout, timeout) |> Keyword.put(:retries, retries + 1)
+          await_selector(session, css_selector, opts)
+        else
+          :not_found
         end
 
-      _ ->
-        :not_found
+      other ->
+        other
+    end
+  end
+
+  defp parse_selector_result(result) do
+    case ResponseParser.extract_value(result) do
+      {:ok, true} -> :found
+      {:ok, "navigated"} -> :navigated
+      _ -> :not_found
     end
   end
 

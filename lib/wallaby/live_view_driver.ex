@@ -21,7 +21,7 @@ defmodule Wallabidi.LiveViewDriver do
 
   @behaviour Wallabidi.Driver
 
-  alias Wallabidi.{Session, Element}
+  alias Wallabidi.{Element, Session}
 
   @lv_test Phoenix.LiveViewTest
   @conn_test Phoenix.ConnTest
@@ -294,15 +294,16 @@ defmodule Wallabidi.LiveViewDriver do
     doc = LazyHTML.from_fragment(page_html)
 
     LazyHTML.query(doc, "form")
-    |> Enum.find_value(fn form ->
-      if LazyHTML.query(form, child_selector) != [] do
-        cond do
-          id = LazyHTML.attribute(form, "id") -> "##{id}"
-          phx = LazyHTML.attribute(form, "phx-submit") -> ~s(form[phx-submit="#{phx}"])
-          phx = LazyHTML.attribute(form, "phx-change") -> ~s(form[phx-change="#{phx}"])
-          true -> "form"
-        end
-      end
-    end)
+    |> Enum.filter(fn form -> LazyHTML.query(form, child_selector) != [] end)
+    |> Enum.find_value(&form_selector/1)
+  end
+
+  defp form_selector(form) do
+    cond do
+      id = LazyHTML.attribute(form, "id") -> "##{id}"
+      phx = LazyHTML.attribute(form, "phx-submit") -> ~s(form[phx-submit="#{phx}"])
+      phx = LazyHTML.attribute(form, "phx-change") -> ~s(form[phx-change="#{phx}"])
+      true -> "form"
+    end
   end
 end
