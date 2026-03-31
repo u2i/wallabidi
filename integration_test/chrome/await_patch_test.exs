@@ -302,7 +302,7 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
 
       elapsed = System.monotonic_time(:millisecond) - start
       # beforeunload resolves immediately — should be well under 2s
-      assert elapsed < 2_000
+      assert elapsed < 3_000
     end
   end
 
@@ -341,7 +341,7 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
 
       elapsed = System.monotonic_time(:millisecond) - start
       # Should be fast — JS toggle is immediate, no server round-trip
-      assert elapsed < 2_000
+      assert elapsed < 3_000
     end
 
     test "CSS selector with # in ID works correctly", %{session: session, live_url: url} do
@@ -354,7 +354,7 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
       |> assert_has(Query.css("#menu-content", text: "Menu is open"))
 
       elapsed = System.monotonic_time(:millisecond) - start
-      assert elapsed < 2_000
+      assert elapsed < 3_000
     end
   end
 

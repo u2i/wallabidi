@@ -1768,39 +1768,10 @@ defmodule Wallabidi.Browser do
     if bidi_session?(session) do
       case classify_interaction(session, query, interaction) do
         :patch ->
-          case Wallabidi.BiDiClient.prepare_patch(session) do
-            :prepared ->
-              # Also prepare for possible full page redirect (server may redirect)
-              Wallabidi.BiDiClient.prepare_page_load(session)
-              result = fun.()
-
-              case Wallabidi.BiDiClient.await_patch(session) do
-                :ok ->
-                  result
-
-                :page_navigated ->
-                  # Server triggered a redirect — wait for the new page
-                  Wallabidi.BiDiClient.await_page_load(session)
-                  Wallabidi.BiDiClient.await_liveview_connected(session)
-                  result
-              end
-
-            :no_liveview ->
-              fun.()
-          end
+          do_patch_await(session, fun)
 
         :navigate ->
-          case Wallabidi.BiDiClient.prepare_patch(session) do
-            :prepared ->
-              {:ok, pre_url} = Wallabidi.BiDiClient.current_url(session)
-              result = fun.()
-              Wallabidi.BiDiClient.await_patch(session)
-              Wallabidi.BiDiClient.await_liveview_connected(session, pre_url: pre_url)
-              result
-
-            :no_liveview ->
-              fun.()
-          end
+          do_navigate_await(session, fun)
 
         :full_page ->
           Wallabidi.BiDiClient.prepare_page_load(session)
@@ -1820,6 +1791,42 @@ defmodule Wallabidi.Browser do
   defp with_patch_await(_parent, _query, _interaction, fun), do: fun.()
 
   # Classify the interaction: :patch, :navigate, :full_page, or :none.
+  defp do_patch_await(session, fun) do
+    case Wallabidi.BiDiClient.prepare_patch(session) do
+      :prepared ->
+        # Also prepare for possible full page redirect (server may redirect)
+        Wallabidi.BiDiClient.prepare_page_load(session)
+        result = fun.()
+
+        case Wallabidi.BiDiClient.await_patch(session) do
+          :ok ->
+            result
+
+          :page_navigated ->
+            Wallabidi.BiDiClient.await_page_load(session)
+            Wallabidi.BiDiClient.await_liveview_connected(session)
+            result
+        end
+
+      :no_liveview ->
+        fun.()
+    end
+  end
+
+  defp do_navigate_await(session, fun) do
+    case Wallabidi.BiDiClient.prepare_patch(session) do
+      :prepared ->
+        {:ok, pre_url} = Wallabidi.BiDiClient.current_url(session)
+        result = fun.()
+        Wallabidi.BiDiClient.await_patch(session)
+        Wallabidi.BiDiClient.await_liveview_connected(session, pre_url: pre_url)
+        result
+
+      :no_liveview ->
+        fun.()
+    end
+  end
+
   # :patch     — phx-click, phx-submit, phx-change, <.link patch=...>
   # :navigate  — <.link navigate=...> (data-phx-link="redirect")
   # :full_page — plain <a href="..."> (full HTTP navigation)
