@@ -10,16 +10,26 @@ Wallabidi is a fork of [Wallaby](https://github.com/elixir-wallaby/wallaby) that
 
 Wallaby is excellent. We forked because the changes we wanted were too invasive to contribute upstream — replacing the entire transport layer, removing Selenium, dropping four HTTP dependencies, and changing the default click mechanism. These aren't bug fixes; they're architectural decisions that would break backward compatibility for Wallaby's existing users.
 
-We also wanted features that only make sense with BiDi: `settle()` for LiveView, request interception, event-driven log capture. Building these on top of Wallaby's HTTP polling model would have been the wrong abstraction.
+We also wanted features that only make sense with BiDi: automatic LiveView-aware waiting on every interaction, request interception, event-driven log capture. Building these on top of Wallaby's HTTP polling model would have been the wrong abstraction.
 
-If you're starting a new project or are willing to do a find-and-replace, Wallabidi gives you a simpler dependency tree, better LiveView support, and access to modern browser APIs. If you need Selenium (the Java server) support, stay with Wallaby. Firefox support via GeckoDriver is architecturally possible (it also speaks BiDi) but not yet implemented.
+If you're starting a new project or are willing to do a find-and-replace, Wallabidi gives you a simpler dependency tree, automatic LiveView-aware waiting on every interaction, and access to modern browser APIs. If you need Selenium (the Java server) support, stay with Wallaby. Firefox support via GeckoDriver is architecturally possible (it also speaks BiDi) but not yet implemented.
 
 ## What's different from Wallaby?
 
 **Protocol**: All browser communication uses WebDriver BiDi over WebSocket instead of HTTP polling. This means event-driven log capture, lower latency, and access to features impossible with request-response HTTP.
 
+**LiveView-aware by default**: Every interaction automatically waits for the right thing — no manual sleeps or retry loops needed:
+
+- `visit/2` waits for the LiveSocket to connect before returning.
+- `click/2` inspects the target element's bindings (`phx-click`, `data-phx-link`, plain `href`) and classifies the interaction as patch, navigate, or full-page. It then awaits the corresponding DOM patch, page load, or LiveView reconnection automatically.
+- `fill_in/3` on `phx-change` inputs drains all pending patches (one per keystroke) before returning.
+- `assert_has/2` uses an event-driven `await_selector` that hooks into LiveView's `onPatchEnd` callback — it waits for the next DOM patch before polling, avoiding both false negatives and busy-waiting.
+
+All of this is installed via injected JavaScript — no changes to your `app.js` or LiveSocket config are needed.
+
 **New features**:
-- `settle/2` — Wait for the page to settle after an action. LiveView-aware: watches both network activity and `phx-*-loading` states.
+- `settle/2` — Wait for the page to become idle (no pending HTTP requests, no `phx-*-loading` classes). Useful after PubSub broadcasts, timers, or other non-interaction updates.
+- `await_patch/2` — Wait for the next LiveView DOM patch. Useful for server-pushed updates that aren't triggered by a browser interaction.
 - `on_console/2` — Register a callback for real-time browser console output.
 - `intercept_request/3` — Mock HTTP responses directly in the browser without Bypass or a test server.
 
@@ -81,19 +91,7 @@ end
 
 Wallabidi needs ChromeDriver + Chrome to run tests. There are three modes, tried in this order:
 
-#### 1. Automatic Docker (zero config)
-
-If no local ChromeDriver is installed, Wallabidi will automatically start a Docker container with ChromeDriver and Chromium. No configuration needed — just have Docker running.
-
-```
-$ mix test  # Just works. Docker container starts and stops automatically.
-```
-
-The container (`erseco/alpine-chromedriver`) is multi-arch (ARM64 + AMD64) and is cleaned up when your test suite finishes. The image is ~750MB (Chromium is large — but this is half the size of the Selenium Grid image). URLs are automatically rewritten so Chrome in the container can reach your local test server.
-
-This is the recommended mode for teams — no local dependencies to install beyond Docker.
-
-#### 2. Docker Compose (explicit remote)
+#### 1. Remote (explicit `remote_url`)
 
 When Chrome runs as a service in your Docker Compose stack (e.g. in a devcontainer), point Wallabidi at it:
 
@@ -118,7 +116,7 @@ services:
 
 No automatic container management — you control the lifecycle via Compose. Wallabidi polls the `/status` endpoint until the service is ready.
 
-#### 3. Local ChromeDriver
+#### 2. Local ChromeDriver
 
 If ChromeDriver and Chrome are installed locally, Wallabidi uses them directly. This is the fastest mode (no Docker overhead) and how CI typically works (GitHub Actions has Chrome pre-installed).
 
@@ -137,43 +135,61 @@ config :wallabidi,
   ]
 ```
 
+#### 3. Automatic Docker (fallback)
+
+If no `remote_url` is configured and no local ChromeDriver is found, Wallabidi will automatically start a Docker container with ChromeDriver and Chromium. No configuration needed — just have Docker running.
+
+```
+$ mix test  # Just works. Docker container starts and stops automatically.
+```
+
+The container (`erseco/alpine-chromedriver`) is multi-arch (ARM64 + AMD64) and is cleaned up when your test suite finishes. The image is ~750MB (Chromium is large — but this is half the size of the Selenium Grid image). URLs are automatically rewritten so Chrome in the container can reach your local test server.
+
+This is the recommended mode for teams — no local dependencies to install beyond Docker.
+
 ### Phoenix
 
 ```elixir
 # config/test.exs
 config :your_app, YourAppWeb.Endpoint, server: true
-config :wallabidi, otp_app: :your_app
-config :your_app, :sandbox, Ecto.Adapters.SQL.Sandbox
 
 # test/test_helper.exs
 Application.put_env(:wallabidi, :base_url, YourAppWeb.Endpoint.url)
 ```
 
-### Ecto + LiveView sandbox
+### Test isolation (Ecto, Mimic, Mox, Cachex, FunWithFlags)
 
-Wallabidi propagates Ecto sandbox, Mimic stubs, Mox stubs, Cachex sandbox, and FunWithFlags sandbox to all browser-spawned processes (Plug requests and LiveView mounts).
+Browser tests need sandbox access propagated to every server-side process the browser triggers (Plug requests, LiveView mounts, async tasks). Wallabidi integrates with [`sandbox_case`](https://github.com/pinetops/sandbox_case) and [`sandbox_shim`](https://github.com/pinetops/sandbox_shim) to handle this automatically.
 
-Setup uses [`phoenix_test_only`](https://github.com/pinetops/phoenix_test_only) — a tiny macro library that conditionally emits `plug`/`on_mount` calls based on whether the target module is loaded. In production (where wallabidi isn't a dep), they emit nothing.
+`sandbox_case` manages checkout/checkin of all sandbox adapters (Ecto, Cachex, FunWithFlags, Mimic, Mox) from a single config. `sandbox_shim` provides compile-time macros that wire the sandbox plugs and hooks into your endpoint and LiveViews — emitting nothing in production.
 
 ```elixir
-# mix.exs — phoenix_test_only goes in all envs, wallabidi in test only
-{:phoenix_test_only, github: "pinetops/phoenix_test_only"},
-{:wallabidi, github: "u2i/wallabidi", branch: "bidi-migration", only: :test, runtime: false},
+# mix.exs
+{:sandbox_shim, "~> 0.1"},                                    # all envs (compile-time only)
+{:sandbox_case, "~> 0.3", only: :test},                       # test only
+{:wallabidi, "~> 0.1", only: :test, runtime: false},           # test only
 ```
 
 ```elixir
 # config/test.exs
-config :wallabidi, mox_mocks: [MyApp.MockWeather]  # if using Mox
+config :sandbox_case,
+  otp_app: :your_app,
+  sandbox: [
+    ecto: true,
+    cachex: [:my_cache],            # optional
+    fun_with_flags: true,           # optional
+    mimic: true,                    # auto-discovers Mimic.copy'd modules
+    mox: [MyApp.MockWeather]        # optional
+  ]
 ```
 
 ```elixir
 # lib/your_app_web/endpoint.ex
-import PhoenixTestOnly
-plug_if_test Phoenix.Ecto.SQL.Sandbox
-plug_if_test Wallabidi.Sandbox.Plug
+import SandboxShim
+sandbox_plugs()
 
-socket "/live", Phoenix.LiveView.Socket,
-  websocket: [connect_info: [:user_agent, session: @session_options]]
+sandbox_socket "/live", Phoenix.LiveView.Socket,
+  websocket: [connect_info: [session: @session_options]]
 ```
 
 ```elixir
@@ -181,78 +197,20 @@ socket "/live", Phoenix.LiveView.Socket,
 def live_view do
   quote do
     use Phoenix.LiveView
-    import PhoenixTestOnly
-    on_mount_if_test Wallabidi.Sandbox.Hook
+    import SandboxShim
+    sandbox_on_mount()
     # auth hooks after
   end
 end
 ```
 
-**Mimic** stubs are auto-discovered from `Mimic.copy`'d modules. **Mox** mocks are read from config.
-
-### GenServer + Mimic stubs
-
-Mimic checks `$callers` to find allowed processes. `Task.start_link` sets this automatically, but `GenServer.start_link` does not. If a LiveView spawns a GenServer that calls a mocked module, pass `$callers` explicitly:
-
 ```elixir
-defmodule MyApp.PriceServer do
-  use GenServer
-
-  def start_supervised(opts \\ []) do
-    callers = [self() | Process.get(:"$callers", [])]
-    GenServer.start_link(__MODULE__, Keyword.put(opts, :callers, callers))
-  end
-
-  @impl true
-  def init(opts) do
-    if callers = opts[:callers], do: Process.put(:"$callers", callers)
-    {:ok, %{}}
-  end
-
-  @impl true
-  def handle_call(:fetch_price, _from, state) do
-    # Mimic walks $callers to find the test process's stub
-    price = MyApp.PriceService.fetch_price()
-    {:reply, price, state}
-  end
-end
-```
-
-This also works for Ecto sandbox access — the GenServer can query the database through the test's sandbox connection.
-
-### Cachex test isolation
-
-Cachex instances are shared across tests by default, which causes stale data leaks. The `pinetops/cachex` fork (branch `cachex-sandbox`) adds `Cachex.Sandbox` — a pool that gives each test its own clean cache:
-
-```elixir
-# mix.exs
-{:cachex, github: "pinetops/cachex", branch: "cachex-sandbox", only: :test}
-
 # test/test_helper.exs
-Cachex.Sandbox.start([:my_cache])
+SandboxCase.Sandbox.setup()
+{:ok, _} = Application.ensure_all_started(:wallabidi)
 ```
 
-With `use Wallabidi.Feature`, cache checkout/checkin is automatic.
-
-### FunWithFlags test isolation
-
-Feature flags have the same shared-state problem. The `pinetops/fun_with_flags` fork (branch `fwf-sandbox`) adds `FunWithFlags.Sandbox` — each test gets an isolated ETS table that bypasses the real store/cache/persistence stack entirely:
-
-```elixir
-# mix.exs
-{:fun_with_flags, github: "pinetops/fun_with_flags", branch: "fwf-sandbox", only: :test, runtime: false}
-
-# test/test_helper.exs
-FunWithFlags.Sandbox.start()
-```
-
-With `use Wallabidi.Feature`, flag checkout/checkin is automatic. You can also pre-seed flags on checkout:
-
-```elixir
-FunWithFlags.Sandbox.checkout(flags: [my_feature: true, legacy_mode: false])
-```
-
-Both sandbox pools propagate to browser-spawned processes (Plug requests, LiveView mounts) via the `wallabidi_plug()` and `wallabidi_on_mount()` macros.
+With `use Wallabidi.Feature`, sandbox checkout/checkin is automatic — no manual `Ecto.Adapters.SQL.Sandbox.checkout` calls needed.
 
 ## Usage
 
@@ -266,7 +224,6 @@ defmodule MyApp.Features.TodoTest do
     |> visit("/todos")
     |> fill_in(Query.text_field("New Todo"), with: "Write a test")
     |> click(Query.button("Save"))
-    |> settle()
     |> assert_has(Query.css(".todo", text: "Write a test"))
   end
 end
@@ -274,16 +231,17 @@ end
 
 ### settle
 
-Wait for the page to settle after an action. Works with both traditional AJAX and LiveView:
+Wait for the page to become idle. Checks two signals: no pending HTTP requests for the idle period, and no LiveView `phx-*-loading` classes present.
+
+You don't need `settle` after `click`, `fill_in`, or `visit` — those already wait automatically. Use `settle` for updates triggered by something other than a direct interaction:
 
 ```elixir
+# PubSub broadcast — no browser interaction triggered it
+Phoenix.PubSub.broadcast(MyApp.PubSub, "updates", :refresh)
 session
-|> click(Query.button("Save"))
 |> settle()
-|> assert_has(Query.css(".saved"))
+|> assert_has(Query.css(".updated"))
 ```
-
-Checks two signals: no new HTTP requests for the idle period, and no LiveView `phx-*-loading` classes present.
 
 ### intercept_request
 

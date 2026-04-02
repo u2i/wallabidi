@@ -1,35 +1,11 @@
 defmodule Wallabidi.Sandbox do
   @moduledoc """
-  Runtime hooks for propagating test sandbox access
+  Legacy runtime hooks for propagating test sandbox access
   (Ecto, Mimic, Mox, Cachex, FunWithFlags) to browser-spawned processes.
 
-  ## Endpoint setup
-
-      # lib/your_app_web/endpoint.ex
-      import PhoenixTestOnly
-      plug_if_test Phoenix.Ecto.SQL.Sandbox
-      plug_if_test Wallabidi.Sandbox.Plug
-
-  ## LiveView setup
-
-      # lib/your_app_web.ex
-      def live_view do
-        quote do
-          use Phoenix.LiveView
-          import PhoenixTestOnly
-          on_mount_if_test Wallabidi.Sandbox.Hook
-        end
-      end
-
-  ## Configuration
-
-      # config/test.exs
-      config :wallabidi,
-        otp_app: :your_app,
-        mox_mocks: [MyApp.MockWeather]  # if using Mox
-
-  The `PhoenixTestOnly` macros check module availability at compile time.
-  In production (where wallabidi isn't a dep), they emit nothing.
+  Prefer `sandbox_case` + `sandbox_shim` for new projects — they provide
+  the same propagation with less setup. See `SandboxCase.Sandbox.Plug`
+  and `SandboxCase.Sandbox.Hook`.
   """
 end
 

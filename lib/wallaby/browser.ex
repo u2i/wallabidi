@@ -1661,8 +1661,7 @@ defmodule Wallabidi.Browser do
   @doc """
   Waits for the next LiveView DOM patch.
 
-  Requires the app's `app.js` to include the `onPatchEnd` callback
-  in the LiveSocket config (see README).
+  Installed automatically via JavaScript — no `app.js` changes needed.
 
   `click/2` and `fill_in/3` call this automatically. Use `await_patch`
   explicitly for patches triggered by something other than a direct
