@@ -26,7 +26,14 @@ defmodule Wallabidi.Feature do
         if context[:test_type] == :feature do
           {metadata, sandbox} = unquote(__MODULE__).Utils.checkout_sandbox(context[:async])
 
-          start_session_opts = [metadata: metadata]
+          driver =
+            if context[:browser] do
+              Application.get_env(:wallabidi, :browser, :chrome)
+            else
+              Wallabidi.resolve_driver()
+            end
+
+          start_session_opts = [driver: driver, metadata: metadata]
 
           result =
             get_in(context, [:registered, :sessions])

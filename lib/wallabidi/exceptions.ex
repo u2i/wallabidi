@@ -79,6 +79,18 @@ defmodule Wallabidi.CookieError do
   end
 end
 
+defmodule Wallabidi.DriverError do
+  defexception [:message]
+
+  def not_supported(operation) do
+    %__MODULE__{
+      message:
+        "#{operation} is not supported by the LiveView driver. " <>
+          "Tag this test with @tag :browser to run it with a browser driver."
+    }
+  end
+end
+
 defmodule Wallabidi.DependencyError do
   defexception [:message]
 

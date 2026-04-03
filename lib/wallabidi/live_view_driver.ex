@@ -30,7 +30,13 @@ defmodule Wallabidi.LiveViewDriver do
 
   @impl true
   def start_session(opts) do
-    endpoint = Keyword.fetch!(opts, :endpoint)
+    endpoint =
+      Keyword.get_lazy(opts, :endpoint, fn ->
+        Application.get_env(:wallabidi, :endpoint) ||
+          raise ArgumentError,
+                "LiveView driver requires an endpoint. Either pass endpoint: MyAppWeb.Endpoint " <>
+                  "in opts or set config :wallabidi, endpoint: MyAppWeb.Endpoint"
+      end)
 
     session = %Session{
       id: "lv-#{System.unique_integer([:positive])}",
@@ -194,32 +200,40 @@ defmodule Wallabidi.LiveViewDriver do
     _ -> {:ok, ""}
   end
 
-  # --- Not supported ---
+  # --- Browser-only operations ---
+  #
+  # These raise Wallabidi.DriverError with a clear message directing the
+  # developer to tag the test with @tag :browser.
 
   @impl true
-  def execute_script(_, _, _), do: {:error, :not_supported}
+  def execute_script(_, _, _), do: raise(Wallabidi.DriverError.not_supported("execute_script/3"))
   @impl true
-  def execute_script_async(_, _, _), do: {:error, :not_supported}
+  def execute_script_async(_, _, _),
+    do: raise(Wallabidi.DriverError.not_supported("execute_script_async/3"))
+
   @impl true
-  def send_keys(_, _), do: {:error, :not_supported}
+  def send_keys(_, _), do: raise(Wallabidi.DriverError.not_supported("send_keys/2"))
   @impl true
-  def take_screenshot(_), do: {:error, :not_supported}
+  def take_screenshot(_), do: raise(Wallabidi.DriverError.not_supported("take_screenshot/1"))
   @impl true
-  def accept_alert(_, _), do: {:error, :not_supported}
+  def accept_alert(_, _), do: raise(Wallabidi.DriverError.not_supported("accept_alert/2"))
   @impl true
-  def accept_confirm(_, _), do: {:error, :not_supported}
+  def accept_confirm(_, _), do: raise(Wallabidi.DriverError.not_supported("accept_confirm/2"))
   @impl true
-  def accept_prompt(_, _, _), do: {:error, :not_supported}
+  def accept_prompt(_, _, _), do: raise(Wallabidi.DriverError.not_supported("accept_prompt/3"))
   @impl true
-  def dismiss_confirm(_, _), do: {:error, :not_supported}
+  def dismiss_confirm(_, _), do: raise(Wallabidi.DriverError.not_supported("dismiss_confirm/2"))
   @impl true
-  def dismiss_prompt(_, _), do: {:error, :not_supported}
+  def dismiss_prompt(_, _), do: raise(Wallabidi.DriverError.not_supported("dismiss_prompt/2"))
   @impl true
-  def cookies(_), do: {:ok, []}
+  def cookies(_), do: raise(Wallabidi.DriverError.not_supported("cookies/1"))
   @impl true
-  def set_cookie(_, _, _), do: {:error, :not_supported}
+  def set_cookie(_, _, _), do: raise(Wallabidi.DriverError.not_supported("set_cookie/3"))
   @impl true
-  def set_cookie(_, _, _, _), do: {:error, :not_supported}
+  def set_cookie(_, _, _, _), do: raise(Wallabidi.DriverError.not_supported("set_cookie/4"))
+
+  # --- Stubbed window/frame operations (no-op, don't require a browser) ---
+
   @impl true
   def window_handle(_), do: {:ok, "lv-main"}
   @impl true
@@ -243,11 +257,11 @@ defmodule Wallabidi.LiveViewDriver do
   @impl true
   def focus_parent_frame(_), do: {:ok, nil}
 
-  def click(_, _), do: {:error, :not_supported}
-  def double_click(_), do: {:error, :not_supported}
-  def button_down(_, _), do: {:error, :not_supported}
-  def button_up(_, _), do: {:error, :not_supported}
-  def move_mouse_to(_, _), do: {:error, :not_supported}
+  def click(_, _), do: raise(Wallabidi.DriverError.not_supported("click/2 (mouse button)"))
+  def double_click(_), do: raise(Wallabidi.DriverError.not_supported("double_click/1"))
+  def button_down(_, _), do: raise(Wallabidi.DriverError.not_supported("button_down/2"))
+  def button_up(_, _), do: raise(Wallabidi.DriverError.not_supported("button_up/2"))
+  def move_mouse_to(_, _), do: raise(Wallabidi.DriverError.not_supported("move_mouse_to/2"))
 
   # --- Internal state ---
 

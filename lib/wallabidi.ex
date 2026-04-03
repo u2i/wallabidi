@@ -80,11 +80,11 @@ defmodule Wallabidi do
   @spec start_session([start_session_opts]) :: {:ok, Session.t()} | {:error, reason}
   def start_session(opts \\ []) do
     result =
-      case Keyword.get(opts, :driver) do
+      case resolve_driver(opts) do
         :live_view ->
           Wallabidi.LiveViewDriver.start_session(opts)
 
-        _ ->
+        _browser ->
           with {:ok, session} <- Wallabidi.Chrome.start_session(opts),
                :ok <- SessionStore.monitor(session),
                do: {:ok, session}
@@ -117,9 +117,9 @@ defmodule Wallabidi do
   Ends a browser session.
   """
   @spec end_session(Session.t()) :: :ok | {:error, reason}
-  def end_session(%Session{} = session) do
+  def end_session(%Session{driver: driver} = session) do
     with :ok <- SessionStore.demonitor(session) do
-      Wallabidi.Chrome.end_session(session)
+      driver.end_session(session)
     end
   end
 
@@ -128,6 +128,17 @@ defmodule Wallabidi do
     # Clean up Docker container if we started one
     Wallabidi.Chrome.Docker.stop()
     :ok
+  end
+
+  @doc """
+  Resolves which driver to use.
+
+  Checks in order: explicit opts, application config, default (:chrome).
+  """
+  def resolve_driver(opts \\ []) do
+    Keyword.get_lazy(opts, :driver, fn ->
+      Application.get_env(:wallabidi, :driver, :chrome)
+    end)
   end
 
   @doc false
