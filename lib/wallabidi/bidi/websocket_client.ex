@@ -241,8 +241,13 @@ defmodule Wallabidi.BiDi.WebSocketClient do
     end
   end
 
-  defp parse_bidi_response(%{"error" => error, "message" => message}),
+  # BiDi error format: %{"error" => "invalid argument", "message" => "..."}
+  defp parse_bidi_response(%{"error" => error, "message" => message}) when is_binary(error),
     do: {:error, {error, message}}
+
+  # CDP error format: %{"error" => %{"code" => -32000, "message" => "..."}}
+  defp parse_bidi_response(%{"error" => %{"message" => message} = error}),
+    do: {:error, {Map.get(error, "code", "unknown"), message}}
 
   defp parse_bidi_response(%{"result" => result}), do: {:ok, result}
   defp parse_bidi_response(other), do: {:ok, other}

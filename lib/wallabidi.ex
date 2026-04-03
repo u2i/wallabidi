@@ -21,23 +21,23 @@ defmodule Wallabidi do
 
   @doc false
   def start(_type, _args) do
-    case Wallabidi.Chrome.validate() do
+    driver_mod = driver_module()
+
+    case driver_mod.validate() do
       :ok -> :ok
       {:error, exception} -> raise exception
     end
 
     children = [
-      {Wallabidi.Chrome, [name: Wallabidi.Driver.Supervisor]},
+      {driver_mod, [name: Wallabidi.Driver.Supervisor]},
       {Wallabidi.SessionStore, [name: Wallabidi.SessionStore]}
     ]
 
     opts = [strategy: :one_for_one, name: Wallabidi.Supervisor]
     result = Supervisor.start_link(children, opts)
 
-    # Clean up stale sessions from previous runs before any tests start
-    case result do
-      {:ok, _} -> Wallabidi.Chrome.cleanup_stale_sessions()
-      _ -> :ok
+    if match?({:ok, _}, result) and function_exported?(driver_mod, :cleanup_stale_sessions, 0) do
+      driver_mod.cleanup_stale_sessions()
     end
 
     result
@@ -84,6 +84,11 @@ defmodule Wallabidi do
         :live_view ->
           Wallabidi.LiveViewDriver.start_session(opts)
 
+        :lightpanda ->
+          with {:ok, session} <- Wallabidi.Lightpanda.start_session(opts),
+               :ok <- SessionStore.monitor(session),
+               do: {:ok, session}
+
         _browser ->
           with {:ok, session} <- Wallabidi.Chrome.start_session(opts),
                :ok <- SessionStore.monitor(session),
@@ -128,6 +133,15 @@ defmodule Wallabidi do
     # Clean up Docker container if we started one
     Wallabidi.Chrome.Docker.stop()
     :ok
+  end
+
+  @doc false
+  def driver_module do
+    case resolve_driver() do
+      :lightpanda -> Wallabidi.Lightpanda
+      :live_view -> Wallabidi.Chrome
+      _ -> Wallabidi.Chrome
+    end
   end
 
   @doc """

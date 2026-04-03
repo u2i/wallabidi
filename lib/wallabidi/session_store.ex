@@ -87,7 +87,7 @@ defmodule Wallabidi.SessionStore do
     # intercept GenServer messages if run inline.
     # Use Task.async + yield to ensure the session is actually closed
     # before we move on, preventing resource leaks between tests.
-    task = Task.async(fn -> Wallabidi.Chrome.end_session(session) end)
+    task = Task.async(fn -> session.driver.end_session(session) end)
 
     unless Task.yield(task, 5_000) do
       Task.shutdown(task)
@@ -114,7 +114,7 @@ defmodule Wallabidi.SessionStore do
 
   defp cleanup_session({_, session}) do
     # Run in a Task so mint_request's `receive` doesn't interfere
-    task = Task.async(fn -> Wallabidi.Chrome.end_session(session) end)
+    task = Task.async(fn -> session.driver.end_session(session) end)
     Task.yield(task, 5_000) || Task.shutdown(task)
   rescue
     _ -> :ok
