@@ -177,6 +177,13 @@ defmodule Wallabidi.Lightpanda do
   @impl true
   def take_screenshot(session), do: CDPClient.take_screenshot(session)
 
+  def blank_page?(session) do
+    case current_url(session) do
+      {:ok, url} -> url in ["data:,", "about:blank", ""]
+      _ -> false
+    end
+  end
+
   @impl true
   def get_window_size(session), do: CDPClient.get_window_size(session)
 

@@ -3,6 +3,8 @@ defmodule Wallabidi.Integration.Browser.InvalidSelectorsTest do
 
   import Wallabidi.Query, only: [css: 1]
 
+  @moduletag :browser
+
   describe "with an invalid selector state" do
     test "find returns an exception", %{session: session} do
       assert_raise Wallabidi.QueryError, ~r/The css 'checkbox:foo' is not a valid query/, fn ->

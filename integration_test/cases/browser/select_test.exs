@@ -16,6 +16,7 @@ defmodule Wallabidi.Integration.Browser.SelectTest do
   end
 
   describe "selected?/2" do
+    @tag :browser
     test "returns a boolean if the option is selected", %{page: page} do
       select =
         page
@@ -31,6 +32,7 @@ defmodule Wallabidi.Integration.Browser.SelectTest do
   end
 
   describe "selected?/1" do
+    @tag :browser
     test "returns a boolean if the option is selected", %{page: page} do
       page
       |> find(select("My Select"))

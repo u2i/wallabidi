@@ -1,6 +1,6 @@
 defmodule Wallabidi.Integration.Browser.CookiesTest do
   use Wallabidi.Integration.SessionCase, async: true
-  @moduletag :browser
+  @moduletag :headless
 
   alias Wallabidi.CookieError
 
@@ -41,6 +41,7 @@ defmodule Wallabidi.Integration.Browser.CookiesTest do
   end
 
   describe "set_cookie/4" do
+    @tag :browser
     test "sets a cookie in the browser", %{session: session} do
       expiry = DateTime.utc_now() |> DateTime.to_unix() |> Kernel.+(1000)
 

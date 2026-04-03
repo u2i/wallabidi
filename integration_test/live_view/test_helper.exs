@@ -1,4 +1,4 @@
-ExUnit.configure(exclude: [pending: true, browser: true])
+ExUnit.configure(exclude: [pending: true, headless: true, browser: true])
 EventEmitter.start_link([])
 
 # Start the test app

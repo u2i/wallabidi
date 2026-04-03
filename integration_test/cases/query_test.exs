@@ -10,6 +10,7 @@ defmodule Wallabidi.Integration.QueryTest do
     assert elements != "Failure"
   end
 
+  @tag :browser
   test "disregards elements that don't match all filters", %{session: session} do
     elements =
       session
@@ -19,6 +20,7 @@ defmodule Wallabidi.Integration.QueryTest do
     assert Enum.count(elements) == 2
   end
 
+  @tag :browser
   test "queries can be composed via functions", %{session: session} do
     composed_query =
       Query.css(".select-options")
@@ -38,6 +40,7 @@ defmodule Wallabidi.Integration.QueryTest do
   end
 
   describe "filtering queries by selected status" do
+    @tag :browser
     test "raises QueryError if too many elements are specified", %{session: session} do
       assert_raise Wallabidi.QueryError, fn ->
         session
@@ -46,6 +49,7 @@ defmodule Wallabidi.Integration.QueryTest do
       end
     end
 
+    @tag :browser
     test "finds elements that are not selected", %{session: session} do
       elements =
         session
@@ -56,6 +60,7 @@ defmodule Wallabidi.Integration.QueryTest do
       assert Enum.count(elements) == 2
     end
 
+    @tag :browser
     test "finds elements that are selected", %{session: session} do
       element =
         session
@@ -78,6 +83,7 @@ defmodule Wallabidi.Integration.QueryTest do
   end
 
   describe "filtering queries by visibility" do
+    @tag :browser
     test "finds elements that are invisible", %{session: session} do
       assert_raise Wallabidi.QueryError, fn ->
         session
@@ -93,6 +99,7 @@ defmodule Wallabidi.Integration.QueryTest do
       assert Enum.count(elements) == 3
     end
 
+    @tag :browser
     test "doesn't error if the count is 'any' and some elements are visible", %{session: session} do
       element =
         session

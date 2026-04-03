@@ -13,6 +13,7 @@ defmodule Wallabidi.Integration.Browser.StaleElementsTest do
       assert element
     end
 
+    @tag :browser
     test "when a DOM element disappears", %{session: session} do
       element =
         session

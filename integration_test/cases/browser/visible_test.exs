@@ -1,6 +1,8 @@
 defmodule Wallabidi.Integration.Browser.VisibleTest do
   use Wallabidi.Integration.SessionCase, async: true
 
+  @moduletag :browser
+
   describe "visible?/1" do
     setup :visit_page
 

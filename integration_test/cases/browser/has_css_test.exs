@@ -14,6 +14,7 @@ defmodule Wallabidi.Integration.Browser.HasCssTest do
   end
 
   describe "has_no_css/2" do
+    @tag :browser
     test "checks that there is no visible matching css", %{page: page} do
       assert page
              |> has_no_css?("#invisible")

@@ -28,6 +28,7 @@ defmodule Wallabidi.Integration.Browser.FindTest do
       assert element
     end
 
+    @tag :browser
     test "queries can be scoped by elements", %{session: session} do
       users =
         session
@@ -64,6 +65,7 @@ defmodule Wallabidi.Integration.Browser.FindTest do
       end
     end
 
+    @tag :browser
     test "find/2 raises an error if the element is not visible", %{session: session} do
       session
       |> visit("page_1.html")
@@ -76,6 +78,7 @@ defmodule Wallabidi.Integration.Browser.FindTest do
              |> length == 1
     end
 
+    @tag :browser
     test "finds invisible elements", %{page: page} do
       assert find(page, Query.css("#invisible", visible: false))
     end
@@ -95,6 +98,7 @@ defmodule Wallabidi.Integration.Browser.FindTest do
       assert find(page, Query.css(".plus-one", text: "+ 1"))
     end
 
+    @tag :browser
     test "scopes can be composed together", %{page: page} do
       assert find(page, Query.css(".user", text: "Same User", count: 2))
       assert find(page, Query.css(".user", text: "Visible User", visible: true))

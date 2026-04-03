@@ -13,6 +13,7 @@ defmodule Wallabidi.Integration.Browser.ClickTest do
              |> click(Query.button("Submit button"))
     end
 
+    @tag :browser
     test "can click invisible elements", %{page: page} do
       assert page
              |> click(Query.button("Invisible Button", visible: false))
