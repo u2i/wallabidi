@@ -67,7 +67,7 @@ defmodule Wallabidi.Lightpanda do
   # --- Session lifecycle ---
 
   @impl true
-  def start_session(_opts \\ []) do
+  def start_session(opts \\ []) do
     ws_url =
       if remote_url() do
         remote_url()
@@ -88,9 +88,12 @@ defmodule Wallabidi.Lightpanda do
         server: __MODULE__,
         bidi_pid: pid,
         browsing_context: session_id,
-        # Store target_id in capabilities for close_session
         capabilities: %{target_id: target_id}
       }
+
+      if window_size = Keyword.get(opts, :window_size) do
+        {:ok, _} = set_window_size(session, window_size[:width], window_size[:height])
+      end
 
       {:ok, session}
     end

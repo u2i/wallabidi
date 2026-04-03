@@ -119,10 +119,12 @@ defmodule Wallabidi.CDPClient do
 
   def find_elements(%Element{bidi_shared_id: parent_id} = parent, {:css, selector})
       when not is_nil(parent_id) do
+    # Lightpanda's querySelectorAll on elements doesn't scope to descendants.
+    # Workaround: use :scope pseudo-class to force scoping.
     find_elements_on(
       parent,
       parent_id,
-      "function(s) { return Array.from(this.querySelectorAll(s)); }",
+      "function(s) { return Array.from(this.querySelectorAll(':scope ' + s)); }",
       [selector]
     )
   end
@@ -200,7 +202,23 @@ defmodule Wallabidi.CDPClient do
     session = root_session(element)
 
     {method, params} =
-      Commands.call_function_on_value(object_id, "function() { this.focus(); this.click(); }")
+      Commands.call_function_on_value(object_id, """
+      function() {
+        if (this.tagName === 'OPTION') {
+          var select = this.closest('select');
+          if (select && !select.multiple) {
+            select.value = this.value;
+            Array.from(select.options).forEach(function(o) { o.selected = (o === this); }.bind(this));
+          } else {
+            this.selected = !this.selected;
+          }
+          if (select) select.dispatchEvent(new Event('change', { bubbles: true }));
+          return;
+        }
+        this.focus();
+        this.click();
+      }
+      """)
 
     case send_cdp_session(session, method, params) do
       {:ok, _} -> {:ok, nil}
@@ -256,8 +274,12 @@ defmodule Wallabidi.CDPClient do
     {method, params} =
       Commands.call_function_on_value(object_id, """
       function() {
+        var never = ['TITLE','HEAD','META','LINK','SCRIPT','STYLE','NOSCRIPT'];
+        if (never.indexOf(this.tagName) >= 0) return false;
+        if (!document.body || !document.body.contains(this)) return false;
         var style = window.getComputedStyle(this);
-        return style.display !== 'none' && style.visibility !== 'hidden' && this.offsetParent !== null;
+        if (style.display === 'none' || style.visibility === 'hidden') return false;
+        return true;
       }
       """)
 
@@ -374,11 +396,27 @@ defmodule Wallabidi.CDPClient do
   def send_keys(%Element{bidi_shared_id: object_id} = element, keys)
       when not is_nil(object_id) and is_list(keys) do
     session = root_session(element)
-    # Focus the element first
-    Commands.call_function_on_value(object_id, "function() { this.focus(); }")
-    |> then(fn {m, p} -> send_cdp_session(session, m, p) end)
 
-    send_keys(session, keys)
+    # Lightpanda's Input.dispatchKeyEvent doesn't insert text into inputs.
+    # Use a JS-based approach: focus, then set value char by char with events.
+    text = keys |> Enum.filter(&is_binary/1) |> Enum.join()
+
+    {method, params} =
+      Commands.call_function_on_value(
+        object_id,
+        """
+        function(text) {
+          this.focus();
+          this.value = (this.value || '') + text;
+          this.dispatchEvent(new Event('input', { bubbles: true }));
+          this.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        """,
+        [text]
+      )
+
+    send_cdp_session(session, method, params)
+    {:ok, nil}
   end
 
   defp send_key_event(session, code, key_val) do
@@ -432,36 +470,27 @@ defmodule Wallabidi.CDPClient do
   # --- Window ---
 
   def get_window_size(session) do
-    # Try reading from browser first, fall back to stored size
+    # Check if we've set a custom size (stored via JS on the session's page)
     case evaluate_value(
            session,
-           "JSON.stringify({width: window.innerWidth, height: window.innerHeight})"
+           "JSON.stringify(window.__wallabidi_window_size || {width: window.innerWidth, height: window.innerHeight})"
          ) do
-      {:ok, json} when is_binary(json) ->
-        size = Jason.decode!(json)
-        # If browser returns default/unchanged size, use our stored size if available
-        stored = Process.get({:cdp_window_size, session.id})
-
-        if stored && size == %{"height" => 1080, "width" => 1920},
-          do: {:ok, stored},
-          else: {:ok, size}
-
-      other ->
-        case Process.get({:cdp_window_size, session.id}) do
-          nil -> other
-          stored -> {:ok, stored}
-        end
+      {:ok, json} when is_binary(json) -> {:ok, Jason.decode!(json)}
+      other -> other
     end
   end
 
   def set_window_size(session, width, height) do
     {method, params} = Commands.set_device_metrics(width, height)
-    Process.put({:cdp_window_size, session.id}, %{"width" => width, "height" => height})
+    send_cdp_session(session, method, params)
 
-    case send_cdp_session(session, method, params) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
-    end
+    # Also store in JS as fallback (Lightpanda doesn't implement emulation)
+    evaluate_value(
+      session,
+      "window.__wallabidi_window_size = {width: #{width}, height: #{height}}"
+    )
+
+    {:ok, nil}
   end
 
   # --- Screenshots ---
