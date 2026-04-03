@@ -26,7 +26,8 @@ defmodule Mix.Tasks.Test.Browsers do
       |> String.split(",")
       |> Enum.map(&String.trim/1)
 
-    remaining = if IO.ANSI.enabled?(), do: ["--color" | remaining], else: ["--no-color" | remaining]
+    remaining =
+      if IO.ANSI.enabled?(), do: ["--color" | remaining], else: ["--no-color" | remaining]
 
     Enum.each(browsers, fn browser ->
       IO.puts("==> Running all tests on #{browser}")
