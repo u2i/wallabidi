@@ -88,7 +88,7 @@ defmodule Wallabidi.Integration.Chrome.StartingSessionsTest do
   test "raises a RuntimeError if chromedriver isn't ready before the startup timeout" do
     test_script_path =
       TestWorkspace.mkdir!()
-      |> write_chrome_wrapper_script!(startup_delay: :timer.seconds(12))
+      |> write_chrome_wrapper_script!(startup_delay: :timer.seconds(30))
 
     ensure_setting_is_reset(:wallabidi, :chromedriver)
     Application.put_env(:wallabidi, :chromedriver, path: test_script_path)
@@ -96,7 +96,7 @@ defmodule Wallabidi.Integration.Chrome.StartingSessionsTest do
     assert :ok = Application.start(:wallabidi)
 
     assert_raise RuntimeError, ~r/timeout waiting for chromedriver to be ready/i, fn ->
-      Wallabidi.start_session(readiness_timeout: 500)
+      Wallabidi.start_session(readiness_timeout: 2_000)
     end
   end
 
