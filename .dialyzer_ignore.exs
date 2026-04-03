@@ -9,6 +9,8 @@
   # handshake, and Mint.WebSocket.new succeeds in practice despite dialyzer's
   # type narrowing from the preceding status/headers handling
   ~r"websocket_client.ex.*(flush_queued_commands|pattern_match|can never match)",
+  # Same warning in Erlang type format on Elixir 1.19
+  ~r"ok.*_conn.*_websocket.*can never match",
 
   # LiveViewDriver narrows element types to {:lv_element, ...} which is correct
   # but narrower than the Driver behaviour's general Element.t() spec
@@ -17,6 +19,8 @@
 
   # browser.ex: Query method narrowing through compile/validate — false positive
   ~r"browser.ex.*(pattern_match|can never match)",
+  # Same warning in Erlang type format on Elixir 1.19
+  ~r"method.*text.*can never match",
 
   # Mix.Task behaviour not in PLT — safe to ignore
   ~r"callback_info_missing"
