@@ -16,9 +16,9 @@ defmodule Wallabidi.Integration.Browser.SessionIsolationTest do
 
     # Each session sees its own page
     assert_has(session_a, Query.text("Page 1"))
-    refute_has(session_a, Query.css("#index"))
+    refute_has(session_a, Query.text("Test Index"))
 
-    assert_has(session_b, Query.css("#index"))
+    assert_has(session_b, Query.css("#header", text: "Test Index"))
 
     Wallabidi.end_session(session_a)
     Wallabidi.end_session(session_b)

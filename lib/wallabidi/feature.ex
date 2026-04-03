@@ -186,13 +186,12 @@ defmodule Wallabidi.Feature do
     def checkout_sandbox(async?) do
       sandbox_mod = sandbox_case_mod()
 
-      if sandbox_mod do
+      if sandbox_mod && sandbox_mod.setup?() do
         sandbox = sandbox_mod.checkout(async?: async? || false)
         metadata = sandbox_mod.ecto_metadata(sandbox)
         {metadata, sandbox}
       else
-        metadata = maybe_checkout_repos(async?)
-        {metadata, nil}
+        {maybe_checkout_repos(async?), nil}
       end
     end
 
@@ -231,7 +230,20 @@ defmodule Wallabidi.Feature do
       defp otp_app(), do: Application.get_env(:wallabidi, :otp_app)
 
       defp ecto_repos(nil), do: []
-      defp ecto_repos(otp_app), do: Application.get_env(otp_app, :ecto_repos, [])
+
+      defp ecto_repos(otp_app) do
+        Application.get_env(otp_app, :ecto_repos, [])
+        |> Enum.filter(&repo_started?/1)
+      end
+
+      defp repo_started?(repo) do
+        case Ecto.Repo.Registry.lookup(repo) do
+          {_, _, _} -> true
+          _ -> false
+        end
+      rescue
+        _ -> false
+      end
 
       defp checkout_ecto_repos(repo, async) do
         :ok = Ecto.Adapters.SQL.Sandbox.checkout(repo)

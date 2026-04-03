@@ -1542,9 +1542,6 @@ defmodule Wallabidi.Browser do
           if text do
             Wallabidi.BiDiClient.await_selector(session, "body", text: text)
           end
-
-        _ ->
-          :ok
       end
     else
       _ -> :ok

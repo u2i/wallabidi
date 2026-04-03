@@ -14,7 +14,11 @@ defmodule Wallabidi.Integration.Chrome.StartingSessionsTest do
 
   @moduletag :capture_log
 
-  if !match?({:ok, _}, Wallabidi.Chrome.find_chromedriver_executable()) do
+  # These tests stop/restart wallabidi with custom chromedriver configs.
+  # They only make sense with a local chromedriver — skip when using
+  # a remote URL (Docker, Compose, CI with remote chrome).
+  if !match?({:ok, _}, Wallabidi.Chrome.find_chromedriver_executable()) or
+       Application.get_env(:wallabidi, :chromedriver, []) |> Keyword.has_key?(:remote_url) do
     @moduletag :skip
   end
 

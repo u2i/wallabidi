@@ -60,7 +60,7 @@ defmodule Wallabidi.Mixfile do
       {:lazy_html, "~> 0.1"},
       {:sandbox_shim, "~> 0.1"},
       # Test-only deps
-      {:sandbox_case, "~> 0.3.5", only: :test},
+      {:sandbox_case, "~> 0.3.8", only: :test},
       {:cachex, "~> 4.1", only: :test},
       {:fun_with_flags, "~> 1.11", only: :test, runtime: false},
       {:ecto_sqlite3, "~> 0.22", only: :test},

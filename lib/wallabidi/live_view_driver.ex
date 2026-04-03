@@ -175,8 +175,8 @@ defmodule Wallabidi.LiveViewDriver do
     doc = LazyHTML.from_fragment(html)
 
     selected =
-      LazyHTML.attribute(doc, "selected") != nil or
-        LazyHTML.attribute(doc, "checked") != nil
+      first_attr(doc, "selected") != nil or
+        first_attr(doc, "checked") != nil
 
     {:ok, selected}
   end
@@ -287,23 +287,34 @@ defmodule Wallabidi.LiveViewDriver do
 
   defp extract_attr(html, name) do
     doc = LazyHTML.from_fragment(html)
-    LazyHTML.attribute(doc, name)
+
+    case LazyHTML.attribute(doc, name) do
+      [value | _] -> value
+      [] -> nil
+    end
   end
 
   defp find_form_selector(page_html, child_selector) do
     doc = LazyHTML.from_fragment(page_html)
 
     LazyHTML.query(doc, "form")
-    |> Enum.filter(fn form -> LazyHTML.query(form, child_selector) != [] end)
+    |> Enum.filter(fn form -> not Enum.empty?(LazyHTML.query(form, child_selector)) end)
     |> Enum.find_value(&form_selector/1)
   end
 
   defp form_selector(form) do
     cond do
-      id = LazyHTML.attribute(form, "id") -> "##{id}"
-      phx = LazyHTML.attribute(form, "phx-submit") -> ~s(form[phx-submit="#{phx}"])
-      phx = LazyHTML.attribute(form, "phx-change") -> ~s(form[phx-change="#{phx}"])
+      id = first_attr(form, "id") -> "##{id}"
+      phx = first_attr(form, "phx-submit") -> ~s(form[phx-submit="#{phx}"])
+      phx = first_attr(form, "phx-change") -> ~s(form[phx-change="#{phx}"])
       true -> "form"
+    end
+  end
+
+  defp first_attr(doc, name) do
+    case LazyHTML.attribute(doc, name) do
+      [value | _] -> value
+      [] -> nil
     end
   end
 end

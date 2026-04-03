@@ -82,6 +82,8 @@ defmodule Wallabidi.Chrome do
   * `:window_size` - initial window size as `[width: w, height: h]`
   * `:metadata` - beam metadata to append to user-agent
   """
+  @behaviour Wallabidi.Driver
+
   @type start_session_opts ::
           {:capabilities, map}
           | {:readiness_timeout, timeout()}
@@ -550,7 +552,7 @@ defmodule Wallabidi.Chrome do
   # Chrome/chromedriver discovery and version checking
 
   @doc false
-  def find_chrome_executable do
+  def find_chrome_executable(opts \\ []) do
     default_chrome_paths =
       case :os.type() do
         {:unix, :darwin} ->
@@ -567,9 +569,11 @@ defmodule Wallabidi.Chrome do
       end
 
     chrome_path =
-      :wallabidi
-      |> Application.get_env(:chromedriver, [])
-      |> Keyword.get(:binary, [])
+      Keyword.get_lazy(opts, :binary, fn ->
+        :wallabidi
+        |> Application.get_env(:chromedriver, [])
+        |> Keyword.get(:binary, [])
+      end)
 
     [Path.expand(chrome_path) | default_chrome_paths]
     |> Enum.find_value(&System.find_executable/1)
@@ -586,11 +590,13 @@ defmodule Wallabidi.Chrome do
   end
 
   @doc false
-  def find_chromedriver_executable do
+  def find_chromedriver_executable(opts \\ []) do
     chromedriver_path =
-      :wallabidi
-      |> Application.get_env(:chromedriver, [])
-      |> Keyword.get(:path, "chromedriver")
+      Keyword.get_lazy(opts, :path, fn ->
+        :wallabidi
+        |> Application.get_env(:chromedriver, [])
+        |> Keyword.get(:path, "chromedriver")
+      end)
 
     [Path.expand(chromedriver_path), chromedriver_path]
     |> Enum.find_value(&System.find_executable/1)

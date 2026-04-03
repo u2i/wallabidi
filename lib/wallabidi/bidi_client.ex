@@ -227,7 +227,11 @@ defmodule Wallabidi.BiDiClient do
 
   defp click_with_js(element, shared_id, context) do
     {method, params} =
-      Commands.call_function(context, "(el) => el.click()", [element_arg(shared_id)])
+      Commands.call_function(
+        context,
+        "(el) => { el.focus(); el.click(); }",
+        [element_arg(shared_id)]
+      )
 
     case send_bidi(element, method, params) do
       {:ok, _} -> {:ok, nil}

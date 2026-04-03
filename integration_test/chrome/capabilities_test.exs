@@ -1,14 +1,8 @@
 defmodule Wallabidi.Integration.CapabilitiesTest do
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
   use Wallabidi.DSL
 
-  import Wallabidi.SettingsTestHelpers
-
   alias Wallabidi.Integration.SessionCase
-
-  setup do
-    ensure_setting_is_reset(:wallabidi, :chromedriver)
-  end
 
   describe "capabilities" do
     test "uses default capabilities" do
@@ -21,10 +15,8 @@ defmodule Wallabidi.Integration.CapabilitiesTest do
       assert :ok = Wallabidi.end_session(session)
     end
 
-    test "reads headless config from application config" do
-      Application.put_env(:wallabidi, :chromedriver, headless: true)
-
-      {:ok, session} = SessionCase.start_test_session()
+    test "headless option is accepted" do
+      {:ok, session} = SessionCase.start_test_session(headless: true)
 
       session
       |> visit("page_1.html")
