@@ -26,20 +26,7 @@ defmodule Wallabidi.Feature do
         if context[:test_type] == :feature do
           {metadata, sandbox} = unquote(__MODULE__).Utils.checkout_sandbox(context[:async])
 
-          driver =
-            case System.get_env("WALLABIDI_BROWSER") do
-              nil ->
-                # Normal mode: route based on @tag :browser
-                if context[:browser] do
-                  Application.get_env(:wallabidi, :browser, :chrome)
-                else
-                  Wallabidi.resolve_driver()
-                end
-
-              browser ->
-                # Multi-browser mode: force this browser for ALL tests
-                String.to_existing_atom(browser)
-            end
+          driver = unquote(__MODULE__).Utils.resolve_test_driver(context)
 
           start_session_opts = [driver: driver, metadata: metadata]
 
@@ -175,6 +162,18 @@ defmodule Wallabidi.Feature do
     @includes_ecto Code.ensure_loaded?(Ecto.Adapters.SQL.Sandbox) &&
                      Code.ensure_loaded?(Phoenix.Ecto.SQL.Sandbox)
     @moduledoc false
+
+    def resolve_test_driver(context) do
+      case System.get_env("WALLABIDI_BROWSER") do
+        nil ->
+          if context[:browser],
+            do: Application.get_env(:wallabidi, :browser, :chrome),
+            else: Wallabidi.resolve_driver()
+
+        browser ->
+          String.to_existing_atom(browser)
+      end
+    end
 
     def build_setup_return([session]) do
       [session: session]

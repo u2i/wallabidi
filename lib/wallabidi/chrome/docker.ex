@@ -44,9 +44,13 @@ defmodule Wallabidi.Chrome.Docker do
   end
 
   def available? do
-    case System.cmd("docker", ["info"], stderr_to_stdout: true) do
-      {_, 0} -> true
-      _ -> false
+    if System.get_env("WALLABIDI_NO_DOCKER") do
+      false
+    else
+      case System.cmd("docker", ["info"], stderr_to_stdout: true) do
+        {_, 0} -> true
+        _ -> false
+      end
     end
   end
 

@@ -29,21 +29,23 @@ defmodule Mix.Tasks.Test.Browsers do
     remaining =
       if IO.ANSI.enabled?(), do: ["--color" | remaining], else: ["--no-color" | remaining]
 
-    Enum.each(browsers, fn browser ->
-      IO.puts("==> Running all tests on #{browser}")
+    Enum.each(browsers, &run_browser(&1, remaining))
+  end
 
-      {_, res} =
-        System.cmd("mix", ["test" | remaining],
-          into: IO.binstream(:stdio, :line),
-          env: [
-            {"WALLABIDI_DRIVER", browser},
-            {"WALLABIDI_BROWSER", browser}
-          ]
-        )
+  defp run_browser(browser, args) do
+    IO.puts("==> Running all tests on #{browser}")
 
-      if res > 0 do
-        System.at_exit(fn _ -> exit({:shutdown, 1}) end)
-      end
-    end)
+    {_, res} =
+      System.cmd("mix", ["test" | args],
+        into: IO.binstream(:stdio, :line),
+        env: [
+          {"WALLABIDI_DRIVER", browser},
+          {"WALLABIDI_BROWSER", browser}
+        ]
+      )
+
+    if res > 0 do
+      System.at_exit(fn _ -> exit({:shutdown, 1}) end)
+    end
   end
 end

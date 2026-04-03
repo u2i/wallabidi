@@ -152,7 +152,10 @@ defmodule Wallabidi.Mixfile do
     {_, res} =
       System.cmd("mix", ["test" | args],
         into: IO.binstream(:stdio, :line),
-        env: [{"WALLABIDI_DRIVER", "chrome_lifecycle"}]
+        env: [
+          {"WALLABIDI_DRIVER", "chrome_lifecycle"},
+          {"WALLABIDI_NO_DOCKER", "1"}
+        ]
       )
 
     if res > 0 do
