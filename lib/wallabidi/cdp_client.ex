@@ -6,6 +6,30 @@ defmodule Wallabidi.CDPClient do
   alias Wallabidi.CDP.{Commands, ResponseParser}
 
   # XPath polyfill for browsers without native XPath support (e.g. Lightpanda)
+  # JS function to extract visible text, simulating innerText behavior
+  # for browsers without a rendering engine (e.g. Lightpanda)
+  @extract_text_js """
+  function() {
+    var blocks = ['DIV','P','H1','H2','H3','H4','H5','H6','LI','TR','BR',
+                  'SECTION','ARTICLE','HEADER','FOOTER','NAV','MAIN','UL','OL','DL',
+                  'BLOCKQUOTE','PRE','TABLE','THEAD','TBODY','TFOOT','FORM','FIELDSET','HR'];
+    function walk(node) {
+      if (node.nodeType === 3) return node.nodeValue.replace(/\\s+/g, ' ');
+      if (node.nodeType !== 1) return '';
+      if (node.tagName === 'BR') return '\\n';
+      var parts = [];
+      for (var i = 0; i < node.childNodes.length; i++) {
+        parts.push(walk(node.childNodes[i]));
+      }
+      var text = parts.join('');
+      if (blocks.indexOf(node.tagName) >= 0) text = '\\n' + text + '\\n';
+      return text;
+    }
+    var result = walk(this);
+    return result.split('\\n').map(function(l) { return l.trim(); }).filter(Boolean).join('\\n');
+  }
+  """
+
   @xpath_polyfill_path Path.join(:code.priv_dir(:wallabidi), "cdp/wgxpath.install.js")
   @external_resource @xpath_polyfill_path
   @xpath_polyfill if File.exists?(@xpath_polyfill_path),
@@ -187,8 +211,11 @@ defmodule Wallabidi.CDPClient do
   def text(%Element{bidi_shared_id: object_id} = element) when not is_nil(object_id) do
     session = root_session(element)
 
+    # Use innerText if available (Chrome), fall back to a DOM-walking
+    # text extractor that inserts newlines between block elements
+    # (Lightpanda has no innerText since it has no rendering engine)
     {method, params} =
-      Commands.call_function_on_value(object_id, "function() { return this.textContent || ''; }")
+      Commands.call_function_on_value(object_id, @extract_text_js)
 
     case send_cdp_session(session, method, params) do
       {:ok, result} -> ResponseParser.extract_value({:ok, result})
@@ -200,10 +227,19 @@ defmodule Wallabidi.CDPClient do
       when not is_nil(object_id) do
     session = root_session(element)
 
+    # For "value", read the DOM property (current value) not the HTML attribute
+    # (initial value). Same for "checked" and "selected".
     {method, params} =
       Commands.call_function_on_value(
         object_id,
-        "function(name) { return this.getAttribute(name); }",
+        """
+        function(name) {
+          if (name === 'value' && 'value' in this) return this.value;
+          if (name === 'checked') return this.checked ? 'true' : null;
+          if (name === 'selected') return this.selected ? 'true' : null;
+          return this.getAttribute(name);
+        }
+        """,
         [name]
       )
 
