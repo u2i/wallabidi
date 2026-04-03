@@ -5,6 +5,13 @@ defmodule Wallabidi.CDPClient do
   alias Wallabidi.BiDi.WebSocketClient
   alias Wallabidi.CDP.{Commands, ResponseParser}
 
+  # XPath polyfill for browsers without native XPath support (e.g. Lightpanda)
+  @xpath_polyfill_path Path.join(:code.priv_dir(:wallabidi), "cdp/wgxpath.install.js")
+  @external_resource @xpath_polyfill_path
+  @xpath_polyfill if File.exists?(@xpath_polyfill_path),
+                    do: File.read!(@xpath_polyfill_path) <> "\nwgxpath.install(window);",
+                    else: ""
+
   # --- Connection ---
 
   def connect(ws_url) do
@@ -33,7 +40,7 @@ defmodule Wallabidi.CDPClient do
 
   def close_session(session) do
     pid = bidi_pid(session)
-    target_id = session.id
+    target_id = get_in(session.capabilities, [:target_id]) || session.id
 
     send_cdp(pid, Commands.close_target(target_id))
     :ok
@@ -47,8 +54,18 @@ defmodule Wallabidi.CDPClient do
     {method, params} = Commands.navigate(url)
 
     case send_cdp_session(session, method, params) do
-      {:ok, result} -> ResponseParser.check_navigate({:ok, result})
-      error -> error
+      {:ok, result} ->
+        case ResponseParser.check_navigate({:ok, result}) do
+          :ok ->
+            inject_xpath_polyfill(session)
+            :ok
+
+          error ->
+            error
+        end
+
+      error ->
+        error
     end
   end
 
@@ -495,4 +512,14 @@ defmodule Wallabidi.CDPClient do
   defp key_code("ArrowRight"), do: 39
   defp key_code("Space"), do: 32
   defp key_code(_), do: 0
+
+  # Inject XPath polyfill for browsers without native XPath (e.g. Lightpanda)
+  defp inject_xpath_polyfill(session) do
+    if @xpath_polyfill != "" do
+      {method, params} = Commands.evaluate(@xpath_polyfill, return_by_value: true)
+      send_cdp_session(session, method, params)
+    end
+
+    :ok
+  end
 end

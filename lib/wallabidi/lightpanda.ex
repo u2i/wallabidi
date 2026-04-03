@@ -78,14 +78,18 @@ defmodule Wallabidi.Lightpanda do
     with {:ok, pid} <- CDPClient.connect(ws_url),
          {:ok, %{target_id: target_id, session_id: session_id}} <-
            CDPClient.create_session(pid) do
+      unique_id = "lp-#{System.unique_integer([:positive])}"
+
       session = %Session{
-        id: target_id,
-        session_url: "cdp://#{target_id}",
-        url: "cdp://#{target_id}",
+        id: unique_id,
+        session_url: "cdp://#{unique_id}",
+        url: "cdp://#{unique_id}",
         driver: __MODULE__,
         server: __MODULE__,
         bidi_pid: pid,
-        browsing_context: session_id
+        browsing_context: session_id,
+        # Store target_id in capabilities for close_session
+        capabilities: %{target_id: target_id}
       }
 
       {:ok, session}
