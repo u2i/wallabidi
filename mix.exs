@@ -103,7 +103,7 @@ defmodule Wallabidi.Mixfile do
     [
       plt_add_apps: [:inets, :phoenix_ecto, :ecto_sql],
       ignore_warnings: ".dialyzer_ignore.exs",
-      list_unused_filters: true
+      list_unused_filters: false
     ]
   end
 
