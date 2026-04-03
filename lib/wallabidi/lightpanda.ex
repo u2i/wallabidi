@@ -139,7 +139,7 @@ defmodule Wallabidi.Lightpanda do
   def set_value(element, value), do: CDPClient.set_value(element, value)
 
   @impl true
-  def clear(element), do: CDPClient.clear(element)
+  def clear(element, _opts \\ []), do: CDPClient.clear(element)
 
   @impl true
   def page_source(session), do: CDPClient.page_source(session)
