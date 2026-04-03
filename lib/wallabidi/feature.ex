@@ -27,10 +27,18 @@ defmodule Wallabidi.Feature do
           {metadata, sandbox} = unquote(__MODULE__).Utils.checkout_sandbox(context[:async])
 
           driver =
-            if context[:browser] do
-              Application.get_env(:wallabidi, :browser, :chrome)
-            else
-              Wallabidi.resolve_driver()
+            case System.get_env("WALLABIDI_BROWSER") do
+              nil ->
+                # Normal mode: route based on @tag :browser
+                if context[:browser] do
+                  Application.get_env(:wallabidi, :browser, :chrome)
+                else
+                  Wallabidi.resolve_driver()
+                end
+
+              browser ->
+                # Multi-browser mode: force this browser for ALL tests
+                String.to_existing_atom(browser)
             end
 
           start_session_opts = [driver: driver, metadata: metadata]

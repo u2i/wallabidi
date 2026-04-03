@@ -38,6 +38,9 @@ jobs:
     - name: Run Tests
       run: mix test
 
+    - name: Run Multi-Browser Tests
+      run: mix test.browsers --browsers chrome
+
     - name: Run Lifecycle Tests
       run: mix test.chrome.lifecycle
 

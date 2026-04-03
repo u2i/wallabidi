@@ -35,6 +35,7 @@ defmodule Wallabidi.Mixfile do
     [
       preferred_envs: [
         "test.all": :test,
+        "test.browsers": :test,
         "test.live_view": :test,
         "test.chrome": :test,
         "test.chrome.lifecycle": :test
