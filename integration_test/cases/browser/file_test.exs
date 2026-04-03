@@ -1,5 +1,6 @@
 defmodule Wallabidi.Integration.Browser.FileTest do
   use Wallabidi.Integration.SessionCase, async: true
+  @moduletag :browser
 
   import Wallabidi.Query, only: [css: 1, file_field: 1]
 

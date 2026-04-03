@@ -1,5 +1,6 @@
 defmodule Wallabidi.Integration.Browser.CookiesTest do
   use Wallabidi.Integration.SessionCase, async: true
+  @moduletag :browser
 
   alias Wallabidi.CookieError
 

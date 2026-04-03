@@ -1,5 +1,6 @@
 defmodule Wallabidi.Integration.Browser.ExecuteScriptTest do
   use Wallabidi.Integration.SessionCase, async: true
+  @moduletag :browser
 
   @script """
     var element = document.createElement("div")

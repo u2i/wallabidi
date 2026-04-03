@@ -58,7 +58,10 @@ defmodule Wallabidi.LiveViewDriver do
   # --- Navigation ---
 
   @impl true
-  def visit(session, path) do
+  def visit(session, url) do
+    # Browser.visit may pass a full URL (base_url + path). Extract just the path.
+    path = URI.parse(url).path || url
+
     conn =
       @conn_test.build_conn()
       |> Plug.Conn.put_private(:phoenix_endpoint, session.server)

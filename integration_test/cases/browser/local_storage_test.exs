@@ -1,5 +1,6 @@
 defmodule Wallabidi.Integration.Browser.LocalStorageTest do
   use ExUnit.Case, async: false
+  @moduletag :browser
   import Wallabidi.Integration.SessionCase, only: [start_test_session: 0]
 
   use Wallabidi.DSL

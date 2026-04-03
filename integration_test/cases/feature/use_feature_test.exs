@@ -1,6 +1,7 @@
 defmodule Wallabidi.Integration.Browser.UseFeatureTest do
   use ExUnit.Case, async: true
   use Wallabidi.Feature
+  @moduletag :browser
 
   @sessions 2
   feature "multi session", %{sessions: [session_1, session_2]} do

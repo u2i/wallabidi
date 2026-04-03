@@ -1,5 +1,6 @@
 defmodule Wallabidi.Integration.Browser.ScreenshotTest do
   use Wallabidi.Integration.SessionCase, async: false
+  @moduletag :browser
 
   import ExUnit.CaptureIO
   import Wallabidi.SettingsTestHelpers

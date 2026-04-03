@@ -1,5 +1,6 @@
 defmodule Wallabidi.Integration.JSErrorsTest do
   use Wallabidi.Integration.SessionCase, async: true
+  @moduletag :browser
 
   import ExUnit.CaptureIO
   import Wallabidi.Query, only: [button: 1]

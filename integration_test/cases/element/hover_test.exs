@@ -1,5 +1,6 @@
 defmodule Wallabidi.Integration.Element.HoverTest do
   use Wallabidi.Integration.SessionCase, async: true
+  @moduletag :browser
 
   setup %{session: session} do
     {:ok, page: visit(session, "move_mouse.html")}

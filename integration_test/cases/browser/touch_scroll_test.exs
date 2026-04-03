@@ -1,5 +1,6 @@
 defmodule Wallabidi.Integration.Browser.TouchScrollTest do
   use Wallabidi.Integration.SessionCase, async: true
+  @moduletag :browser
   alias Wallabidi.Integration.Helpers
 
   setup %{session: session} do

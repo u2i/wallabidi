@@ -1,5 +1,6 @@
 defmodule Wallabidi.Integration.Browser.FramesTest do
   use Wallabidi.Integration.SessionCase, async: true
+  @moduletag :browser
 
   test "switching between frames", %{session: session} do
     session

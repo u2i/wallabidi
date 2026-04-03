@@ -1,5 +1,6 @@
 defmodule Wallabidi.Integration.Browser.MoveMouseByTest do
   use Wallabidi.Integration.SessionCase, async: true
+  @moduletag :browser
   import Wallabidi.Browser
 
   setup %{session: session} do

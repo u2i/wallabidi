@@ -1,5 +1,6 @@
 defmodule Wallabidi.Integration.Browser.SendKeysTest do
   use Wallabidi.Integration.SessionCase, async: true
+  @moduletag :browser
 
   setup %{session: session} do
     page = visit(session, "forms.html")
