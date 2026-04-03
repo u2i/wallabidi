@@ -87,7 +87,7 @@ jobs:
       run: mix credo --strict
 
     - name: Run Dialyzer
-      run: mix dialyzer --halt-exit-status
+      run: mix dialyzer
 
   unit_tests:
     name: Unit Tests (${{matrix.elixir-otp.elixir}}/${{matrix.elixir-otp.otp}})

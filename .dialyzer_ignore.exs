@@ -17,5 +17,8 @@
 
   # browser.ex: dead catch-all after {:css,_}/{:xpath,_} and Query method
   # narrowing through compile/validate — false positives from flow analysis
-  ~r"browser.ex.*pattern_match"
+  ~r"browser.ex.*pattern_match",
+
+  # Mix.Task behaviour not in PLT — safe to ignore
+  ~r"callback_info_missing"
 ]
