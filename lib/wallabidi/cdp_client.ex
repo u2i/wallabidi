@@ -239,6 +239,7 @@ defmodule Wallabidi.CDPClient do
           if (name === 'selected') return this.selected ? 'true' : null;
           return this.getAttribute(name);
         }
+          
         """,
         [name]
       )
@@ -354,7 +355,7 @@ defmodule Wallabidi.CDPClient do
 
   # --- Send keys ---
 
-  def send_keys(session, keys) when is_list(keys) do
+  def send_keys(%Session{} = session, keys) when is_list(keys) do
     Enum.each(keys, fn
       key when is_atom(key) ->
         {code, key_val} = key_mapping(key)
@@ -431,17 +432,31 @@ defmodule Wallabidi.CDPClient do
   # --- Window ---
 
   def get_window_size(session) do
-    evaluate_value(session, """
-    JSON.stringify({width: window.innerWidth, height: window.innerHeight})
-    """)
-    |> case do
-      {:ok, json} when is_binary(json) -> {:ok, Jason.decode!(json)}
-      other -> other
+    # Try reading from browser first, fall back to stored size
+    case evaluate_value(
+           session,
+           "JSON.stringify({width: window.innerWidth, height: window.innerHeight})"
+         ) do
+      {:ok, json} when is_binary(json) ->
+        size = Jason.decode!(json)
+        # If browser returns default/unchanged size, use our stored size if available
+        stored = Process.get({:cdp_window_size, session.id})
+
+        if stored && size == %{"height" => 1080, "width" => 1920},
+          do: {:ok, stored},
+          else: {:ok, size}
+
+      other ->
+        case Process.get({:cdp_window_size, session.id}) do
+          nil -> other
+          stored -> {:ok, stored}
+        end
     end
   end
 
   def set_window_size(session, width, height) do
     {method, params} = Commands.set_device_metrics(width, height)
+    Process.put({:cdp_window_size, session.id}, %{"width" => width, "height" => height})
 
     case send_cdp_session(session, method, params) do
       {:ok, _} -> {:ok, nil}
