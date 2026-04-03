@@ -20,7 +20,11 @@ defmodule Wallabidi.Mixfile do
       docs: docs(),
 
       # Custom testing
-      aliases: ["test.all": ["test", "test.chrome"], "test.chrome": &test_chrome/1],
+      aliases: [
+        "test.all": ["test", "test.chrome", "test.chrome.lifecycle"],
+        "test.chrome": &test_chrome/1,
+        "test.chrome.lifecycle": &test_chrome_lifecycle/1
+      ],
       test_paths: test_paths(System.get_env("WALLABIDI_DRIVER")),
       dialyzer: dialyzer()
     ]
@@ -30,7 +34,8 @@ defmodule Wallabidi.Mixfile do
     [
       preferred_envs: [
         "test.all": :test,
-        "test.chrome": :test
+        "test.chrome": :test,
+        "test.chrome.lifecycle": :test
       ]
     ]
   end
@@ -100,6 +105,7 @@ defmodule Wallabidi.Mixfile do
   end
 
   defp test_paths("chrome"), do: ["integration_test/chrome"]
+  defp test_paths("chrome_lifecycle"), do: ["integration_test/lifecycle/chrome"]
   defp test_paths(_), do: ["test"]
 
   defp test_chrome(args) do
@@ -111,6 +117,22 @@ defmodule Wallabidi.Mixfile do
       System.cmd("mix", ["test" | args],
         into: IO.binstream(:stdio, :line),
         env: [{"WALLABIDI_DRIVER", "chrome"}]
+      )
+
+    if res > 0 do
+      System.at_exit(fn _ -> exit({:shutdown, 1}) end)
+    end
+  end
+
+  defp test_chrome_lifecycle(args) do
+    args = if IO.ANSI.enabled?(), do: ["--color" | args], else: ["--no-color" | args]
+
+    IO.puts("==> Running lifecycle tests for chrome (subprocess)")
+
+    {_, res} =
+      System.cmd("mix", ["test" | args],
+        into: IO.binstream(:stdio, :line),
+        env: [{"WALLABIDI_DRIVER", "chrome_lifecycle"}]
       )
 
     if res > 0 do
