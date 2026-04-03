@@ -215,6 +215,28 @@ defmodule Wallabidi.CDPClient do
           if (select) select.dispatchEvent(new Event('change', { bubbles: true }));
           return;
         }
+        // Handle form reset buttons — polyfill form.reset() for Lightpanda
+        var form = this.closest('form');
+        if (form && (this.type === 'reset' || (this.tagName === 'BUTTON' && this.type === 'reset'))) {
+          Array.from(form.elements).forEach(function(el) {
+            if (el.type === 'checkbox' || el.type === 'radio') {
+              el.checked = el.defaultChecked;
+            } else if (el.tagName === 'SELECT') {
+              Array.from(el.options).forEach(function(o) { o.selected = o.defaultSelected; });
+            } else if ('defaultValue' in el) {
+              el.value = el.defaultValue;
+            }
+          });
+          form.dispatchEvent(new Event('reset', { bubbles: true }));
+          return;
+        }
+        // Handle form submit — only explicit submit/image inputs
+        if (form && this.tagName === 'INPUT' &&
+            (this.type === 'submit' || this.type === 'image')) {
+          this.focus();
+          this.click();
+          return;
+        }
         this.focus();
         this.click();
       }
