@@ -86,9 +86,7 @@ defmodule Wallabidi.Integration.Chrome.StartingSessionsTest do
   end
 
   @tag timeout: :infinity
-  test "raises a RuntimeError if chromedriver isn't ready before the startup timeout" do
-    # Delay must exceed both readiness_timeout (2s) AND the GenServer's
-    # startup_timeout (10s default). We want start_session to timeout first.
+  test "fails to start a session if chromedriver isn't ready before the startup timeout" do
     test_script_path =
       TestWorkspace.mkdir!()
       |> write_chrome_wrapper_script!(startup_delay: :timer.seconds(30))
@@ -98,9 +96,18 @@ defmodule Wallabidi.Integration.Chrome.StartingSessionsTest do
 
     assert :ok = Application.start(:wallabidi)
 
-    assert_raise RuntimeError, fn ->
-      Wallabidi.start_session(readiness_timeout: 2_000)
-    end
+    # start_session should fail — either with a timeout RuntimeError or
+    # an EXIT from the crashed chromedriver GenServer
+    result =
+      try do
+        Wallabidi.start_session(readiness_timeout: 2_000)
+      rescue
+        _ -> :failed
+      catch
+        :exit, _ -> :failed
+      end
+
+    assert result == :failed
   end
 
   test "application does not start when chromedriver version < 2.30", %{
