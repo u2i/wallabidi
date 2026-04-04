@@ -171,9 +171,24 @@ defmodule Wallabidi.Query.Native do
     end)
   end
 
+  @head_tags ~w(title head meta link script style noscript)
+
   defp find_by_text(doc, selector) do
-    # Walk all elements and find those whose direct text contains the selector
-    LazyHTML.query(doc, "*")
+    # Query body descendants only (exclude <title>, <script>, etc.)
+    # Try body first, fall back to all elements for fragments
+    nodes =
+      case LazyHTML.query(doc, "body *") do
+        results when results != [] -> results
+        _ -> LazyHTML.query(doc, "*")
+      end
+
+    nodes
+    |> Enum.reject(fn node ->
+      case LazyHTML.tag(node) do
+        [tag | _] -> to_string(tag) in @head_tags
+        _ -> false
+      end
+    end)
     |> Enum.filter(fn node ->
       text(node) |> String.trim() |> contains?(selector)
     end)

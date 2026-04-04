@@ -183,7 +183,7 @@ defmodule Wallabidi.LiveViewDriver do
         {:text, selector}
 
       String.contains?(xpath, "./@") ->
-        case Regex.run(~r{\./@(\w+)\s*=\s*"([^"]*)"}, xpath) do
+        case Regex.run(~r{\./@([\w-]+)\s*=\s*"([^"]*)"}, xpath) do
           [_, name, value] -> {:attribute, {name, value}}
           _ -> {:xpath, xpath}
         end
@@ -630,11 +630,20 @@ defmodule Wallabidi.LiveViewDriver do
   defp element_html(%Element{bidi_shared_id: {:lv_element, _, _, html}}), do: html
 
   defp extract_attr(html, name) do
-    doc = LazyHTML.from_fragment(html)
+    doc = parse_html(html)
 
     case LazyHTML.attribute(doc, name) do
       [value | _] -> value
       [] -> nil
+    end
+  end
+
+  defp parse_html(html) do
+    if String.contains?(html, "<html") or String.contains?(html, "<!DOCTYPE") or
+         String.starts_with?(String.trim_leading(html), "<body") do
+      LazyHTML.from_document(html)
+    else
+      LazyHTML.from_fragment(html)
     end
   end
 
