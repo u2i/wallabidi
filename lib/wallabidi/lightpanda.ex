@@ -39,7 +39,7 @@ defmodule Wallabidi.Lightpanda do
       if remote_url() do
         []
       else
-        [{Lightpanda.Server, [name: Wallabidi.Lightpanda.Server]}]
+        [{Module.concat([Lightpanda, Server]), [name: Wallabidi.Lightpanda.Server]}]
       end
 
     Supervisor.init(children, strategy: :one_for_one)
@@ -72,7 +72,7 @@ defmodule Wallabidi.Lightpanda do
       if remote_url() do
         remote_url()
       else
-        Lightpanda.Server.ws_url(Wallabidi.Lightpanda.Server)
+        apply(Module.concat([Lightpanda, Server]), :ws_url, [Wallabidi.Lightpanda.Server])
       end
 
     with {:ok, pid} <- CDPClient.connect(ws_url),
@@ -249,6 +249,8 @@ defmodule Wallabidi.Lightpanda do
   @impl true
   def focus_parent_frame(_), do: {:ok, nil}
 
+  def cleanup_stale_sessions, do: :ok
+
   # --- Internal ---
 
   defp remote_url do
@@ -256,9 +258,11 @@ defmodule Wallabidi.Lightpanda do
   end
 
   defp lightpanda_available? do
-    Code.ensure_loaded?(Lightpanda) and
-      is_binary(Lightpanda.bin_path()) and
-      File.exists?(Lightpanda.bin_path())
+    mod = Module.concat([Lightpanda])
+
+    Code.ensure_loaded?(mod) and
+      is_binary(apply(mod, :bin_path, [])) and
+      File.exists?(apply(mod, :bin_path, []))
   rescue
     _ -> false
   end

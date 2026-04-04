@@ -36,7 +36,7 @@ defmodule Wallabidi do
     opts = [strategy: :one_for_one, name: Wallabidi.Supervisor]
     result = Supervisor.start_link(children, opts)
 
-    if match?({:ok, _}, result) and function_exported?(driver_mod, :cleanup_stale_sessions, 0) do
+    if match?({:ok, _}, result) do
       driver_mod.cleanup_stale_sessions()
     end
 
