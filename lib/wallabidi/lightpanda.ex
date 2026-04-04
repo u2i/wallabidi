@@ -42,7 +42,10 @@ defmodule Wallabidi.Lightpanda do
       if remote_url() do
         []
       else
-        [{@lightpanda_server, [name: Wallabidi.Lightpanda.Server]}]
+        [
+          {@lightpanda_server,
+           [name: Wallabidi.Lightpanda.Server, extra_args: ~w(--cdp-max-connections 64)]}
+        ]
       end
 
     Supervisor.init(children, strategy: :one_for_one)
