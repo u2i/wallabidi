@@ -452,24 +452,17 @@ defmodule Wallabidi.LiveViewDriver do
     e -> {:error, Exception.message(e)}
   end
 
-  defp set_value_static(session, el_html, value) do
-    page_html = get_rendered_html(session)
+  defp set_value_static(session, _el_html, value) do
+    # Store form field values in the process dictionary keyed by session + element
+    # The element_html re-read will pick up the stored value
+    state = get_state(session)
+    field_values = Map.get(state, :field_values, %{})
+    # Use the element's name or id as key
+    el_doc = LazyHTML.from_fragment(_el_html)
+    key = first_attr(el_doc, "id") || first_attr(el_doc, "name") || _el_html
 
-    # Replace the value attribute in the stored HTML
-    escaped_el = Regex.escape(String.trim(el_html))
-
-    new_html =
-      if String.contains?(el_html, "value=") do
-        # Update existing value attribute
-        updated_el = Regex.replace(~r/value="[^"]*"/, el_html, ~s(value="#{value}"))
-        String.replace(page_html, String.trim(el_html), String.trim(updated_el))
-      else
-        # Add value attribute
-        updated_el = String.replace(el_html, ">", ~s( value="#{value}">), global: false)
-        String.replace(page_html, String.trim(el_html), String.trim(updated_el))
-      end
-
-    put_state(session, nil, new_html, get_state(session)[:path])
+    field_values = Map.put(field_values, key, value)
+    put_state(session, state[:view], state[:html], state[:path], field_values)
     {:ok, nil}
   end
 
@@ -482,8 +475,22 @@ defmodule Wallabidi.LiveViewDriver do
 
   @impl true
   def attribute(%Element{} = element, attr_name) do
-    html = element_html(element)
-    {:ok, extract_attr(html, attr_name)}
+    # For "value", check stored field values first (from set_value_static)
+    if attr_name == "value" do
+      session = root_session(element)
+      field_values = get_state(session)[:field_values] || %{}
+      el_html = element_html(element)
+      el_doc = LazyHTML.from_fragment(el_html)
+      key = first_attr(el_doc, "id") || first_attr(el_doc, "name")
+
+      case Map.get(field_values, key) do
+        nil -> {:ok, extract_attr(el_html, attr_name)}
+        val -> {:ok, val}
+      end
+    else
+      html = element_html(element)
+      {:ok, extract_attr(html, attr_name)}
+    end
   end
 
   @impl true
@@ -579,8 +586,13 @@ defmodule Wallabidi.LiveViewDriver do
 
   # --- Internal state ---
 
-  defp put_state(session, view, html, path) do
-    Process.put({:lv_driver, session.id}, %{view: view, html: html, path: path})
+  defp put_state(session, view, html, path, field_values \\ %{}) do
+    Process.put({:lv_driver, session.id}, %{
+      view: view,
+      html: html,
+      path: path,
+      field_values: field_values
+    })
   end
 
   defp get_state(session) do
@@ -611,7 +623,26 @@ defmodule Wallabidi.LiveViewDriver do
   defp root_session(%Element{parent: p}), do: root_session(p)
 
   defp element_selector(%Element{bidi_shared_id: {:lv_element, sel, _, _}}), do: sel
-  defp element_html(%Element{bidi_shared_id: {:lv_element, _, _, html}}), do: html
+
+  # Re-read element HTML from current page state (values may have changed)
+  defp element_html(%Element{bidi_shared_id: {:lv_element, sel, idx, original_html}} = element) do
+    session = root_session(element)
+    page_html = get_rendered_html(session)
+
+    if page_html != "" and sel != "*" do
+      doc = LazyHTML.from_fragment(page_html)
+      results = LazyHTML.query(doc, sel)
+
+      case Enum.at(results, idx) do
+        nil -> original_html
+        node -> LazyHTML.to_html(node)
+      end
+    else
+      original_html
+    end
+  rescue
+    _ -> original_html
+  end
 
   defp extract_attr(html, name) do
     doc = LazyHTML.from_fragment(html)
