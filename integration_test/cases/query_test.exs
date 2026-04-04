@@ -175,6 +175,7 @@ defmodule Wallabidi.Integration.QueryTest do
     end
   end
 
+  @tag :headless
   test "queries can be retried", %{session: session} do
     element =
       session

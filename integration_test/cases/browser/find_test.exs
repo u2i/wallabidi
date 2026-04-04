@@ -122,6 +122,7 @@ defmodule Wallabidi.Integration.Browser.FindTest do
     end
   end
 
+  @tag :headless
   test "waits for an element to be visible", %{session: session} do
     session
     |> visit("wait.html")
@@ -129,6 +130,7 @@ defmodule Wallabidi.Integration.Browser.FindTest do
     assert find(session, css(".main"))
   end
 
+  @tag :headless
   test "waits for count elements to be visible", %{session: session} do
     session
     |> visit("wait.html")

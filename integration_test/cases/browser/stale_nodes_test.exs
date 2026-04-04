@@ -4,6 +4,7 @@ defmodule Wallabidi.Integration.Browser.StaleElementsTest do
   alias Wallabidi.StaleReferenceError
 
   describe "when a DOM element becomes stale" do
+    @tag :headless
     test "the query is retried", %{session: session} do
       element =
         session

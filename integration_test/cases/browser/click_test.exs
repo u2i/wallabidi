@@ -103,6 +103,7 @@ defmodule Wallabidi.Integration.Browser.ClickTest do
   end
 
   describe "click/2 with DOM mutation during handler" do
+    @tag :headless
     test "click works when handler hides the element's container", %{session: session} do
       session
       |> visit("js_click.html")

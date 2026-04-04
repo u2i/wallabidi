@@ -1,5 +1,6 @@
 defmodule Wallabidi.Integration.Browser.WindowSizeTest do
   use Wallabidi.Integration.SessionCase, async: true
+  @moduletag :headless
 
   test "getting the window size", %{session: session} do
     window_size =
