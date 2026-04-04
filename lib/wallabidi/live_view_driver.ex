@@ -103,7 +103,8 @@ defmodule Wallabidi.LiveViewDriver do
         :not_found
     end
   rescue
-    _ -> :not_found
+    e ->
+      :not_found
   end
 
   @impl true
@@ -319,20 +320,19 @@ defmodule Wallabidi.LiveViewDriver do
         # Collect form data
         form_data = collect_form_data(form_node)
 
-        # Dispatch the form submission
-        conn =
-          @conn_test.build_conn()
-          |> Plug.Conn.put_private(:phoenix_endpoint, session.server)
+        # For GET forms, just visit the action URL (simulates browser form submission)
+        # For POST, dispatch directly
+        if method == "post" do
+          conn =
+            @conn_test.build_conn()
+            |> Plug.Conn.put_private(:phoenix_endpoint, session.server)
+            |> @conn_test.dispatch(session.server, :post, action, form_data)
 
-        conn =
-          if method == "post" do
-            @conn_test.dispatch(conn, session.server, :post, action, form_data)
-          else
-            query = URI.encode_query(form_data)
-            @conn_test.dispatch(conn, session.server, :get, "#{action}?#{query}")
-          end
+          put_state(session, nil, conn.resp_body || "", action)
+        else
+          visit(session, action)
+        end
 
-        put_state(session, nil, conn.resp_body || "", action)
         {:ok, nil}
     end
   rescue
@@ -598,7 +598,24 @@ defmodule Wallabidi.LiveViewDriver do
 
   defp get_rendered_html(%Session{} = session) do
     view = get_view(session)
-    if view, do: @lv_test.render(view), else: get_state(session)[:html] || ""
+
+    if view do
+      # LiveView — render returns a fragment, no body extraction needed
+      @lv_test.render(view)
+    else
+      html = get_state(session)[:html] || ""
+
+      # For full HTML documents, LazyHTML.from_fragment can't find <body> children.
+      # Extract just the body content so CSS queries work.
+      if String.contains?(html, "<body") do
+        case Regex.run(~r{<body[^>]*>(.*)</body>}s, html) do
+          [_, body] -> body
+          _ -> html
+        end
+      else
+        html
+      end
+    end
   end
 
   defp get_rendered_html(%Element{} = element) do
@@ -617,25 +634,7 @@ defmodule Wallabidi.LiveViewDriver do
 
   defp element_selector(%Element{bidi_shared_id: {:lv_element, sel, _, _}}), do: sel
 
-  # Re-read element HTML from current page state (values may have changed)
-  defp element_html(%Element{bidi_shared_id: {:lv_element, sel, idx, original_html}} = element) do
-    session = root_session(element)
-    page_html = get_rendered_html(session)
-
-    if page_html != "" and sel != "*" do
-      doc = LazyHTML.from_fragment(page_html)
-      results = LazyHTML.query(doc, sel)
-
-      case Enum.at(results, idx) do
-        nil -> original_html
-        node -> LazyHTML.to_html(node)
-      end
-    else
-      original_html
-    end
-  rescue
-    _ -> original_html
-  end
+  defp element_html(%Element{bidi_shared_id: {:lv_element, _, _, html}}), do: html
 
   defp extract_attr(html, name) do
     doc = LazyHTML.from_fragment(html)
