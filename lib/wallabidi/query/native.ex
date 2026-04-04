@@ -202,9 +202,7 @@ defmodule Wallabidi.Query.Native do
   defp has_direct_text?(node, selector) do
     full_text = text(node) |> String.trim()
 
-    unless contains?(full_text, selector) do
-      false
-    else
+    if contains?(full_text, selector) do
       html = LazyHTML.to_html(node)
       # Strip the outer tag and check if remaining has child elements
       inner =
@@ -214,13 +212,15 @@ defmodule Wallabidi.Query.Native do
         end
 
       # If no child elements, it's a leaf — match on full text
-      if !Regex.match?(~r/<\w+[\s>]/, inner) do
-        true
-      else
+      if Regex.match?(~r/<\w+[\s>]/, inner) do
         # Strip child element tags and content to get direct text
         direct = Regex.replace(~r/<\w+[^>]*>.*?<\/\w+>/s, inner, " ")
         contains?(String.trim(direct), selector)
+      else
+        true
       end
+    else
+      false
     end
   end
 

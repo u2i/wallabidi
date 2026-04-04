@@ -47,7 +47,7 @@ defmodule Wallabidi.CDP.ResponseParser do
     ids =
       properties
       |> Enum.filter(fn prop ->
-        is_integer_key?(prop["name"]) and
+        integer_key?(prop["name"]) and
           get_in(prop, ["value", "type"]) == "object" and
           get_in(prop, ["value", "subtype"]) == "node"
       end)
@@ -66,12 +66,12 @@ defmodule Wallabidi.CDP.ResponseParser do
   def check_navigate({:ok, _}), do: :ok
   def check_navigate(error), do: error
 
-  defp is_integer_key?(name) when is_binary(name) do
+  defp integer_key?(name) when is_binary(name) do
     case Integer.parse(name) do
       {_, ""} -> true
       _ -> false
     end
   end
 
-  defp is_integer_key?(_), do: false
+  defp integer_key?(_), do: false
 end

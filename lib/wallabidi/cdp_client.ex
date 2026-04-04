@@ -1,9 +1,9 @@
 defmodule Wallabidi.CDPClient do
   @moduledoc false
 
-  alias Wallabidi.{Element, Session}
   alias Wallabidi.BiDi.WebSocketClient
   alias Wallabidi.CDP.{Commands, ResponseParser}
+  alias Wallabidi.{Element, Session}
 
   # XPath polyfill for browsers without native XPath support (e.g. Lightpanda)
   # JS function to extract visible text, simulating innerText behavior
@@ -49,10 +49,9 @@ defmodule Wallabidi.CDPClient do
   # --- Session bootstrap ---
 
   def create_session(pid) do
-    with {:ok, result} <- send_cdp(pid, Commands.create_target()),
-         target_id = result["targetId"],
-         {:ok, result} <- send_cdp(pid, Commands.attach_to_target(target_id)),
-         session_id = result["sessionId"] do
+    with {:ok, %{"targetId" => target_id}} <- send_cdp(pid, Commands.create_target()),
+         {:ok, %{"sessionId" => session_id}} <-
+           send_cdp(pid, Commands.attach_to_target(target_id)) do
       # Enable required domains using raw pid + sessionId
       send_cdp_with_session(pid, session_id, Commands.enable_page())
       send_cdp_with_session(pid, session_id, Commands.enable_runtime())

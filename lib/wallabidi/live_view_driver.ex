@@ -239,53 +239,47 @@ defmodule Wallabidi.LiveViewDriver do
       end
 
     cond do
-      # Click on a link — navigate to href
       tag == "a" ->
-        case first_attr(doc, "href") do
-          nil ->
-            {:ok, nil}
+        click_link(session, doc)
 
-          href ->
-            href =
-              if String.starts_with?(href, "/") || String.starts_with?(href, "http"),
-                do: href,
-                else: "/#{href}"
-
-            visit(session, href)
-            {:ok, nil}
-        end
-
-      # Click on option — toggle selected
       tag == "option" ->
         toggle_option(session, el_html)
 
-      # Click on radio button — set checked, uncheck siblings
       tag == "input" && first_attr(doc, "type") == "radio" ->
         toggle_radio(session, el_html)
 
-      # Click on checkbox — toggle checked
       tag == "input" && first_attr(doc, "type") == "checkbox" ->
         toggle_checkbox(session, el_html)
 
-      # Click on submit/image button — submit the parent form
       tag == "input" && first_attr(doc, "type") in ["submit", "image"] ->
         submit_form(session, el_html)
 
-      # Click on button — check if it's a submit button
+      tag == "button" && first_attr(doc, "type") == "reset" ->
+        reset_form(session, el_html)
+
       tag == "button" ->
-        type = first_attr(doc, "type")
+        submit_form(session, el_html)
 
-        if type == "reset" do
-          reset_form(session, el_html)
-        else
-          submit_form(session, el_html)
-        end
-
-      # Click on input[type=reset]
       tag == "input" && first_attr(doc, "type") == "reset" ->
         reset_form(session, el_html)
 
       true ->
+        {:ok, nil}
+    end
+  end
+
+  defp click_link(session, doc) do
+    case first_attr(doc, "href") do
+      nil ->
+        {:ok, nil}
+
+      href ->
+        href =
+          if String.starts_with?(href, "/") || String.starts_with?(href, "http"),
+            do: href,
+            else: "/#{href}"
+
+        visit(session, href)
         {:ok, nil}
     end
   end
@@ -299,26 +293,29 @@ defmodule Wallabidi.LiveViewDriver do
     # Uncheck all radios with the same name, then check this one
     new_html =
       if name do
-        # Remove checked from all radios with this name
         page_html
-        |> String.replace(
-          ~r/(<input[^>]*name="#{Regex.escape(name)}"[^>]*)\s+checked(="[^"]*")?/,
-          "\\1"
-        )
-        |> then(fn h ->
-          # Add checked to the clicked radio
-          if id do
-            String.replace(h, ~r/(<input[^>]*id="#{Regex.escape(id)}"[^>]*)>/, "\\1 checked>")
-          else
-            h
-          end
-        end)
+        |> uncheck_radios_by_name(name)
+        |> check_radio_by_id(id)
       else
         page_html
       end
 
     put_state(session, nil, new_html, get_state(session)[:path])
     {:ok, nil}
+  end
+
+  defp uncheck_radios_by_name(html, name) do
+    String.replace(
+      html,
+      ~r/(<input[^>]*name="#{Regex.escape(name)}"[^>]*)\s+checked(="[^"]*")?/,
+      "\\1"
+    )
+  end
+
+  defp check_radio_by_id(html, nil), do: html
+
+  defp check_radio_by_id(html, id) do
+    String.replace(html, ~r/(<input[^>]*id="#{Regex.escape(id)}"[^>]*)>/, "\\1 checked>")
   end
 
   defp toggle_checkbox(session, el_html) do
@@ -365,30 +362,29 @@ defmodule Wallabidi.LiveViewDriver do
     # For single-select, deselect all other options in the same select first
     new_html =
       if pattern do
-        # Find the parent select by looking for <select> containing this option
-        deselected =
-          if id do
-            # Remove selected from all options in the same select
-            # Simple approach: remove all 'selected' from nearby options
-            String.replace(page_html, ~r/(<option[^>]*)\s+selected/, "\\1")
-          else
-            page_html
-          end
-
-        # Then add selected to the target option
-        String.replace(deselected, pattern, fn match ->
-          if String.contains?(match, "selected") do
-            match
-          else
-            String.replace(match, ">", " selected>")
-          end
-        end)
+        page_html
+        |> deselect_all_options(id)
+        |> ensure_option_selected(pattern)
       else
         page_html
       end
 
     put_state(session, nil, new_html, get_state(session)[:path])
     {:ok, nil}
+  end
+
+  defp deselect_all_options(html, nil), do: html
+
+  defp deselect_all_options(html, _id) do
+    String.replace(html, ~r/(<option[^>]*)\s+selected/, "\\1")
+  end
+
+  defp ensure_option_selected(html, pattern) do
+    String.replace(html, pattern, fn match ->
+      if String.contains?(match, "selected"),
+        do: match,
+        else: String.replace(match, ">", " selected>")
+    end)
   end
 
   defp submit_form(session, button_html) do
@@ -448,28 +444,7 @@ defmodule Wallabidi.LiveViewDriver do
   defp collect_form_data(form_node) do
     inputs =
       LazyHTML.query(form_node, "input")
-      |> Enum.flat_map(fn input ->
-        name = first_attr(input, "name")
-        type = first_attr(input, "type") || "text"
-
-        cond do
-          name == nil ->
-            []
-
-          type in ["submit", "image", "button", "reset", "file"] ->
-            []
-
-          type in ["checkbox", "radio"] ->
-            if first_attr(input, "checked") != nil do
-              [{name, first_attr(input, "value") || "on"}]
-            else
-              []
-            end
-
-          true ->
-            [{name, first_attr(input, "value") || ""}]
-        end
-      end)
+      |> Enum.flat_map(&collect_input_value/1)
 
     textareas =
       LazyHTML.query(form_node, "textarea")
@@ -480,22 +455,41 @@ defmodule Wallabidi.LiveViewDriver do
 
     selects =
       LazyHTML.query(form_node, "select")
-      |> Enum.flat_map(fn select ->
-        name = first_attr(select, "name")
-
-        if name == nil do
-          []
-        else
-          selected =
-            LazyHTML.query(select, "option[selected]")
-            |> Enum.map(fn opt -> first_attr(opt, "value") || LazyHTML.text(opt) end)
-            |> List.first()
-
-          if selected, do: [{name, selected}], else: []
-        end
-      end)
+      |> Enum.flat_map(&collect_select_value/1)
 
     Map.new(inputs ++ textareas ++ selects)
+  end
+
+  defp collect_input_value(input) do
+    name = first_attr(input, "name")
+    type = first_attr(input, "type") || "text"
+
+    cond do
+      name == nil -> []
+      type in ["submit", "image", "button", "reset", "file"] -> []
+      type in ["checkbox", "radio"] -> collect_checked_value(input, name)
+      true -> [{name, first_attr(input, "value") || ""}]
+    end
+  end
+
+  defp collect_checked_value(input, name) do
+    if first_attr(input, "checked") != nil,
+      do: [{name, first_attr(input, "value") || "on"}],
+      else: []
+  end
+
+  defp collect_select_value(select) do
+    name = first_attr(select, "name")
+    if name == nil, do: [], else: collect_selected_option(select, name)
+  end
+
+  defp collect_selected_option(select, name) do
+    selected =
+      LazyHTML.query(select, "option[selected]")
+      |> Enum.map(fn opt -> first_attr(opt, "value") || LazyHTML.text(opt) end)
+      |> List.first()
+
+    if selected, do: [{name, selected}], else: []
   end
 
   @impl true
@@ -508,31 +502,33 @@ defmodule Wallabidi.LiveViewDriver do
 
     case get_view(session) do
       nil ->
-        # Static page — update the value in stored HTML
         set_value_static(session, el_html, value)
 
       view ->
-        name = extract_attr(el_html, "name")
-
-        if name do
-          form_selector =
-            find_form_selector(get_rendered_html(session), element_selector(element))
-
-          if form_selector do
-            form = @lv_test.form(view, form_selector, %{name => value})
-            html = @lv_test.render_change(form)
-            update_html(session, html)
-          else
-            lv_el = @lv_test.element(view, element_selector(element))
-            html = @lv_test.render_change(lv_el, %{value: value})
-            update_html(session, html)
-          end
-        end
-
+        set_value_live(session, view, element, el_html, value)
         {:ok, nil}
     end
   rescue
     e -> {:error, Exception.message(e)}
+  end
+
+  defp set_value_live(session, view, element, el_html, value) do
+    name = extract_attr(el_html, "name")
+
+    if name do
+      form_selector =
+        find_form_selector(get_rendered_html(session), element_selector(element))
+
+      if form_selector do
+        form = @lv_test.form(view, form_selector, %{name => value})
+        html = @lv_test.render_change(form)
+        update_html(session, html)
+      else
+        lv_el = @lv_test.element(view, element_selector(element))
+        html = @lv_test.render_change(lv_el, %{value: value})
+        update_html(session, html)
+      end
+    end
   end
 
   defp set_value_static(session, el_html, value) do
@@ -599,33 +595,35 @@ defmodule Wallabidi.LiveViewDriver do
     page_html = get_rendered_html(session)
 
     selected =
-      cond do
+      if id do
         # Check by id in current page HTML (handles both single and double quoted ids)
-        id ->
-          Regex.match?(~r/id=['"]#{Regex.escape(id)}['"][^>]*(?:checked|selected)/, page_html) or
-            Regex.match?(~r/(?:checked|selected)[^>]*id=['"]#{Regex.escape(id)}['"]/, page_html)
-
+        Regex.match?(~r/id=['"]#{Regex.escape(id)}['"][^>]*(?:checked|selected)/, page_html) or
+          Regex.match?(~r/(?:checked|selected)[^>]*id=['"]#{Regex.escape(id)}['"]/, page_html)
+      else
         # For options without id, check by value
-        true ->
-          el_doc = parse_html(el_html)
-          value = first_attr(el_doc, "value")
-
-          if value do
-            Regex.match?(
-              ~r/<option[^>]*value="#{Regex.escape(value)}"[^>]*selected/,
-              page_html
-            ) or
-              Regex.match?(
-                ~r/<option[^>]*selected[^>]*value="#{Regex.escape(value)}"/,
-                page_html
-              )
-          else
-            first_attr(el_doc, "selected") != nil or
-              first_attr(el_doc, "checked") != nil
-          end
+        selected_without_id?(el_html, page_html)
       end
 
     {:ok, selected}
+  end
+
+  defp selected_without_id?(el_html, page_html) do
+    el_doc = parse_html(el_html)
+    value = first_attr(el_doc, "value")
+
+    if value do
+      Regex.match?(
+        ~r/<option[^>]*value="#{Regex.escape(value)}"[^>]*selected/,
+        page_html
+      ) or
+        Regex.match?(
+          ~r/<option[^>]*selected[^>]*value="#{Regex.escape(value)}"/,
+          page_html
+        )
+    else
+      first_attr(el_doc, "selected") != nil or
+        first_attr(el_doc, "checked") != nil
+    end
   end
 
   # --- Page content ---
@@ -760,31 +758,35 @@ defmodule Wallabidi.LiveViewDriver do
     # For from_document, the root is <html> not the element itself.
     # Try attribute on root first, then on the first child element.
     case LazyHTML.attribute(doc, name) do
-      [value | _] ->
-        value
+      [value | _] -> value
+      [] -> extract_attr_from_child(doc, html, name)
+    end
+  end
 
-      [] ->
-        # Try querying the actual element (e.g. body, div)
-        tag =
-          case Regex.run(~r/^<(\w+)/, String.trim(html)) do
-            [_, t] -> t
-            _ -> nil
-          end
+  defp extract_attr_from_child(doc, html, name) do
+    tag =
+      case Regex.run(~r/^<(\w+)/, String.trim(html)) do
+        [_, t] -> t
+        _ -> nil
+      end
 
-        if tag do
-          case LazyHTML.query(doc, tag) do
-            results when results != [] ->
-              case LazyHTML.attribute(hd(Enum.to_list(results)), name) do
-                [value | _] -> value
-                _ -> nil
-              end
+    if tag do
+      query_first_attr(doc, tag, name)
+    else
+      nil
+    end
+  end
 
-            _ ->
-              nil
-          end
-        else
-          nil
+  defp query_first_attr(doc, tag, name) do
+    case LazyHTML.query(doc, tag) do
+      results when results != [] ->
+        case LazyHTML.attribute(hd(Enum.to_list(results)), name) do
+          [value | _] -> value
+          _ -> nil
         end
+
+      _ ->
+        nil
     end
   end
 
