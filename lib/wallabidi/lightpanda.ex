@@ -43,8 +43,7 @@ defmodule Wallabidi.Lightpanda do
         []
       else
         [
-          {@lightpanda_server,
-           [name: Wallabidi.Lightpanda.Server, extra_args: ~w(--cdp-max-connections 64)]}
+          {@lightpanda_server, [name: Wallabidi.Lightpanda.Server]}
         ]
       end
 
@@ -107,7 +106,9 @@ defmodule Wallabidi.Lightpanda do
 
   @impl true
   def end_session(session) do
-    CDPClient.close_session(session)
+    # Just close the WebSocket — Lightpanda automatically cleans up the
+    # target and thread when the client disconnects. Skipping closeTarget
+    # avoids hangs when Lightpanda is under load.
     CDPClient.close(session)
     :ok
   rescue
