@@ -515,18 +515,41 @@ end)
 
 ## Configuration
 
+Minimal — just tell Wallabidi about your app:
+
+```elixir
+# config/test.exs
+config :wallabidi,
+  otp_app: :your_app,
+  endpoint: YourAppWeb.Endpoint
+```
+
+The default driver is `:chrome`. To use LiveView for fast local testing:
+
 ```elixir
 config :wallabidi,
-  max_wait_time: 5_000,
-  js_errors: true,
-  js_logger: :stdio,
+  otp_app: :your_app,
+  endpoint: YourAppWeb.Endpoint,
+  driver: :live_view
+```
+
+All options with defaults:
+
+```elixir
+config :wallabidi,
+  otp_app: :your_app,              # required for Ecto sandbox
+  endpoint: YourAppWeb.Endpoint,   # required for LiveView driver
+  driver: :chrome,                 # :live_view | :lightpanda | :chrome
+  max_wait_time: 5_000,            # ms to wait for elements
+  js_errors: true,                 # re-raise JS errors in Elixir
+  js_logger: :stdio,               # IO device for console logs (nil to disable)
   screenshot_on_failure: false,
   screenshot_dir: "screenshots",
   chromedriver: [
-    headless: true,
-    path: "chromedriver",
-    binary: "/path/to/chrome",
-    remote_url: "http://chrome:4444/"
+    headless: true,                # run Chrome headless
+    path: "chromedriver",          # chromedriver binary path
+    binary: "/path/to/chrome",     # Chrome binary path
+    remote_url: "http://chrome:9515/"  # for Docker/remote Chrome
   ]
 ```
 
