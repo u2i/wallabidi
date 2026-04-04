@@ -2,9 +2,40 @@
 
 [![License](https://img.shields.io/hexpm/l/wallabidi.svg)](https://github.com/u2i/wallabidi/blob/main/LICENSE)
 
-Concurrent browser testing for Elixir, powered by [WebDriver BiDi](https://w3c.github.io/webdriver-bidi/).
+Concurrent browser testing for Elixir. Write your tests once — they run on the fastest driver that supports them.
 
-Wallabidi is a fork of [Wallaby](https://github.com/elixir-wallaby/wallaby) that replaces the legacy HTTP/JSON Wire Protocol with WebDriver BiDi over WebSocket. The public API is intentionally kept close to Wallaby's to make migration straightforward.
+Wallabidi is a fork of [Wallaby](https://github.com/elixir-wallaby/wallaby) with three test drivers, automatic LiveView-aware waiting, and a public API close to Wallaby's for easy migration.
+
+## Three drivers
+
+| Driver | Speed | What it does | When to use |
+|--------|-------|-------------|-------------|
+| **LiveView** | ~0ms/test | Renders pages in-process via Phoenix.ConnTest. No browser. | Default for local dev — instant feedback |
+| **Lightpanda** | ~50ms/test | Headless browser via CDP. No CSS rendering. | CI fast path, JS-dependent tests |
+| **Chrome** | ~200ms/test | Full browser via WebDriver BiDi. | Full fidelity, screenshots, visual testing |
+
+Tests declare their minimum requirement with tags:
+
+```elixir
+# Runs on LiveView driver (fastest)
+feature "create todo", %{session: session} do
+  session |> visit("/todos") |> fill_in(text_field("Title"), with: "Buy milk") |> ...
+end
+
+# Needs a headless browser (JS execution, cookies)
+@tag :headless
+feature "stores preference in cookie", %{session: session} do
+  session |> visit("/settings") |> execute_script("document.cookie = 'theme=dark'", [])
+end
+
+# Needs a full browser (screenshots, CSS visibility, mouse events)
+@tag :browser
+feature "uploads a file", %{session: session} do
+  session |> visit("/upload") |> attach_file(file_field("Photo"), path: "test/fixtures/photo.jpg")
+end
+```
+
+Each test runs on the **cheapest driver** that supports it. No env vars, no aliases — just `mix test`.
 
 ## Why fork?
 
@@ -33,8 +64,10 @@ All of this is installed via injected JavaScript — no changes to your `app.js`
 - `on_console/2` — Register a callback for real-time browser console output.
 - `intercept_request/3` — Mock HTTP responses directly in the browser without Bypass or a test server.
 
+**Three drivers**: LiveView (in-process, no browser), Lightpanda (headless CDP), Chrome (full BiDi). Tests declare their minimum requirement with `@tag :headless` or `@tag :browser`.
+
 **Removed**:
-- Selenium driver — Chrome only (via ChromeDriver)
+- Selenium driver — replaced with native BiDi + CDP
 - HTTPoison / Hackney dependencies — replaced with Mint
 - `create_session_fn` / `end_session_fn` options
 
@@ -506,7 +539,13 @@ Licensed under MIT, same as Wallaby.
 ## Contributing
 
 ```shell
-mix test              # unit tests
-WALLABIDI_DRIVER=chrome mix test  # integration tests
-mix test.all          # both
+mix test                    # unit tests
+mix test.live_view          # LiveView driver integration tests
+mix test.lightpanda         # Lightpanda CDP integration tests
+mix test.chrome             # Chrome BiDi integration tests
+mix test.chrome.lifecycle   # chromedriver startup tests (subprocess)
+mix test.all                # all of the above
+mix test.browsers --browsers chrome   # run ALL tests on a specific browser
 ```
+
+The LiveView and Lightpanda tests require no external dependencies — Lightpanda's binary is installed automatically via `mix lightpanda.install`. Chrome tests need Docker (auto-detected) or a local ChromeDriver.
