@@ -25,7 +25,6 @@
   # Mix.Task behaviour not in PLT — safe to ignore
   ~r"callback_info_missing",
 
-  # LiveViewDriver: first_attr returns string|nil but dialyzer narrows to string
-  ~r"live_view_driver.ex.*guard_fail",
-  ~r"live_view_driver.ex.*can never succeed"
+  # first_attr returns string|nil but dialyzer narrows to string in some paths
+  ~r"(live_view_driver|native).ex.*(guard_fail|can never succeed)"
 ]
