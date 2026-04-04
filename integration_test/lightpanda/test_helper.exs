@@ -1,4 +1,7 @@
-ExUnit.configure(exclude: [pending: true, browser: true])
+# Lightpanda's thread pool (default 16, we set 64) can still be overwhelmed
+# on constrained CI runners. Limit concurrency if CI env is detected.
+max_cases = if System.get_env("CI"), do: 8, else: System.schedulers_online()
+ExUnit.configure(exclude: [pending: true, browser: true], max_cases: max_cases)
 
 # Configure driver BEFORE starting wallabidi
 Application.put_env(:wallabidi, :driver, :lightpanda)

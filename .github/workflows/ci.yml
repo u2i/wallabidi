@@ -111,7 +111,7 @@ jobs:
       run: MIX_ENV=test mix lightpanda.install
 
     - name: Run Lightpanda Tests
-      run: mix test.lightpanda -- --max-cases 8
+      run: mix test.lightpanda
 
   chrome_tests:
     name: Chrome BiDi (${{matrix.elixir-otp.elixir}}/${{matrix.elixir-otp.otp}})
