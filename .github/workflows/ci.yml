@@ -5,12 +5,16 @@ jobs:
   unit_tests:
     name: Unit Tests (${{matrix.elixir-otp.elixir}}/${{matrix.elixir-otp.otp}})
     runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.elixir-otp.experimental || false }}
 
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true)
 
     strategy:
       matrix:
-        elixir-otp: [{otp: 27.x, elixir: 1.18.x}, {otp: 28.x, elixir: 1.19.x}]
+        elixir-otp:
+          - {otp: 27.x, elixir: 1.18.x}
+          - {otp: 28.x, elixir: 1.19.x}
+          - {otp: 28.x, elixir: 1.20.0-rc.0, version_type: strict, experimental: true}
       fail-fast: false
 
     steps:
@@ -19,6 +23,7 @@ jobs:
       with:
         otp-version: ${{matrix.elixir-otp.otp}}
         elixir-version: ${{matrix.elixir-otp.elixir}}
+        version-type: ${{matrix.elixir-otp.version_type || 'loose'}}
 
     - uses: actions/cache@v5
       id: cache
@@ -36,12 +41,16 @@ jobs:
   live_view_tests:
     name: LiveView Driver (${{matrix.elixir-otp.elixir}}/${{matrix.elixir-otp.otp}})
     runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.elixir-otp.experimental || false }}
 
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true)
 
     strategy:
       matrix:
-        elixir-otp: [{otp: 27.x, elixir: 1.18.x}, {otp: 28.x, elixir: 1.19.x}]
+        elixir-otp:
+          - {otp: 27.x, elixir: 1.18.x}
+          - {otp: 28.x, elixir: 1.19.x}
+          - {otp: 28.x, elixir: 1.20.0-rc.0, version_type: strict, experimental: true}
       fail-fast: false
 
     steps:
@@ -50,6 +59,7 @@ jobs:
       with:
         otp-version: ${{matrix.elixir-otp.otp}}
         elixir-version: ${{matrix.elixir-otp.elixir}}
+        version-type: ${{matrix.elixir-otp.version_type || 'loose'}}
 
     - uses: actions/cache@v5
       id: cache
@@ -67,12 +77,16 @@ jobs:
   lightpanda_tests:
     name: Lightpanda CDP (${{matrix.elixir-otp.elixir}}/${{matrix.elixir-otp.otp}})
     runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.elixir-otp.experimental || false }}
 
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true)
 
     strategy:
       matrix:
-        elixir-otp: [{otp: 27.x, elixir: 1.18.x}, {otp: 28.x, elixir: 1.19.x}]
+        elixir-otp:
+          - {otp: 27.x, elixir: 1.18.x}
+          - {otp: 28.x, elixir: 1.19.x}
+          - {otp: 28.x, elixir: 1.20.0-rc.0, version_type: strict, experimental: true}
       fail-fast: false
 
     steps:
@@ -81,6 +95,7 @@ jobs:
       with:
         otp-version: ${{matrix.elixir-otp.otp}}
         elixir-version: ${{matrix.elixir-otp.elixir}}
+        version-type: ${{matrix.elixir-otp.version_type || 'loose'}}
 
     - uses: actions/cache@v5
       id: cache
@@ -101,12 +116,16 @@ jobs:
   chrome_tests:
     name: Chrome BiDi (${{matrix.elixir-otp.elixir}}/${{matrix.elixir-otp.otp}})
     runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.elixir-otp.experimental || false }}
 
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true)
 
     strategy:
       matrix:
-        elixir-otp: [{otp: 27.x, elixir: 1.18.x}, {otp: 28.x, elixir: 1.19.x}]
+        elixir-otp:
+          - {otp: 27.x, elixir: 1.18.x}
+          - {otp: 28.x, elixir: 1.19.x}
+          - {otp: 28.x, elixir: 1.20.0-rc.0, version_type: strict, experimental: true}
       fail-fast: false
 
     env:
@@ -118,6 +137,7 @@ jobs:
       with:
         otp-version: ${{matrix.elixir-otp.otp}}
         elixir-version: ${{matrix.elixir-otp.elixir}}
+        version-type: ${{matrix.elixir-otp.version_type || 'loose'}}
 
     - uses: actions/cache@v5
       id: cache
