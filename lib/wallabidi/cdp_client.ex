@@ -616,11 +616,8 @@ defmodule Wallabidi.CDPClient do
 
   # Inject XPath polyfill for browsers without native XPath (e.g. Lightpanda)
   defp inject_xpath_polyfill(session) do
-    if @xpath_polyfill != "" do
-      {method, params} = Commands.evaluate(@xpath_polyfill, return_by_value: true)
-      send_cdp_session(session, method, params)
-    end
-
+    {method, params} = Commands.evaluate(@xpath_polyfill, return_by_value: true)
+    send_cdp_session(session, method, params)
     :ok
   end
 end
