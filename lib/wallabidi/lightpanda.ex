@@ -1,3 +1,4 @@
+# credo:disable-for-this-file Credo.Check.Refactor.Apply
 defmodule Wallabidi.Lightpanda do
   @moduledoc """
   The Lightpanda driver uses CDP (Chrome DevTools Protocol) to control
@@ -74,7 +75,6 @@ defmodule Wallabidi.Lightpanda do
       if remote_url() do
         remote_url()
       else
-        # credo:disable-for-next-line Credo.Check.Refactor.Apply
         apply(@lightpanda_server, :ws_url, [Wallabidi.Lightpanda.Server])
       end
 
@@ -263,9 +263,6 @@ defmodule Wallabidi.Lightpanda do
   defp lightpanda_available? do
     mod = Module.concat([Lightpanda])
 
-    # credo:disable-for-next-line Credo.Check.Warning.ApplicationConfigInModuleAttribute
-    # credo:disable-for-next-line Credo.Check.Refactor.Apply
-    # credo:disable-for-next-line Credo.Check.Refactor.Apply
     Code.ensure_loaded?(mod) and
       is_binary(apply(mod, :bin_path, [])) and
       File.exists?(apply(mod, :bin_path, []))
