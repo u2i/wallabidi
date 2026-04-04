@@ -60,17 +60,62 @@ defmodule Wallabidi.LiveViewDriver do
   @impl true
   def visit(session, url) do
     # Browser.visit may pass a full URL (base_url + path). Extract just the path.
-    path = URI.parse(url).path || url
+    uri = URI.parse(url)
+    path = uri.path || url
 
+    case visit_endpoint(session, path) do
+      {:live, view, html} ->
+        put_state(session, view, html, path)
+
+      {:static, html} ->
+        put_state(session, nil, html, path)
+
+      {:redirect, to} ->
+        visit(session, to)
+
+      :not_found ->
+        put_state(session, nil, "", path)
+    end
+
+    :ok
+  end
+
+  defp visit_endpoint(session, path) do
     conn =
       @conn_test.build_conn()
       |> Plug.Conn.put_private(:phoenix_endpoint, session.server)
 
     conn = @conn_test.dispatch(conn, session.server, :get, path)
-    {:ok, view, html} = @lv_test.__live__(conn, nil, [])
 
-    put_state(session, view, html, path)
-    :ok
+    # Try LiveView connection first
+    case @lv_test.__live__(conn, nil, []) do
+      {:ok, view, html} ->
+        {:live, view, html}
+
+      {:error, {:live_redirect, %{to: to}}} ->
+        {:redirect, to}
+
+      {:error, _} ->
+        # Not a LiveView — use the rendered static response
+        if conn.status in [200, 304] do
+          {:static, conn.resp_body || ""}
+        else
+          :not_found
+        end
+    end
+  rescue
+    # __live__ may raise for non-LiveView responses. Fall back to static.
+    _ ->
+      conn =
+        @conn_test.build_conn()
+        |> Plug.Conn.put_private(:phoenix_endpoint, session.server)
+        |> @conn_test.dispatch(session.server, :get, path)
+
+      if conn.status in [200, 304] do
+        {:static, conn.resp_body || ""}
+      else
+        :not_found
+      end
   end
 
   @impl true
@@ -82,33 +127,84 @@ defmodule Wallabidi.LiveViewDriver do
   # --- Finding elements ---
 
   @impl true
-  def find_elements(parent, {strategy, selector}) do
+  def find_elements(parent, compiled_query) do
     html = get_rendered_html(parent)
 
-    elements =
-      case strategy do
-        :css ->
-          doc = LazyHTML.from_fragment(html)
-          results = LazyHTML.query(doc, selector)
-
-          results
-          |> Enum.with_index()
-          |> Enum.map(fn {node, idx} ->
-            %Element{
-              id: "lv-#{selector}-#{idx}",
-              parent: parent,
-              driver: __MODULE__,
-              url: "",
-              session_url: "",
-              bidi_shared_id: {:lv_element, selector, idx, LazyHTML.to_html(node)}
-            }
-          end)
-
-        _ ->
-          []
+    # Decode the compiled query into a method + selector that Native can handle
+    {method, selector} =
+      case compiled_query do
+        {:css, sel} -> {:css, sel}
+        {:xpath, xpath} -> decode_xpath(xpath)
       end
 
+    results = Wallabidi.Query.Native.find(html, method, selector)
+
+    elements =
+      Enum.map(results, fn {sel, idx, el_html} ->
+        %Element{
+          id: "lv-#{sel}-#{idx}",
+          parent: parent,
+          driver: __MODULE__,
+          url: "",
+          session_url: "",
+          bidi_shared_id: {:lv_element, sel, idx, el_html}
+        }
+      end)
+
     {:ok, elements}
+  end
+
+  # When we receive an XPath string from Query.compile, reverse-engineer the
+  # original query method and selector so Native can use Elixir-based finders.
+  defp decode_xpath(xpath) do
+    selector = extract_xpath_selector(xpath)
+
+    cond do
+      String.contains?(xpath, "self::input") && String.contains?(xpath, "checkbox") ->
+        {:checkbox, selector}
+
+      String.contains?(xpath, "self::input") && String.contains?(xpath, "radio") ->
+        {:radio_button, selector}
+
+      String.contains?(xpath, "self::input") && String.contains?(xpath, "file") ->
+        {:file_field, selector}
+
+      String.contains?(xpath, "self::input | self::textarea") ->
+        {:fillable_field, selector}
+
+      String.contains?(xpath, ".//select") ->
+        {:select, selector}
+
+      String.contains?(xpath, ".//option") ->
+        {:option, selector}
+
+      String.contains?(xpath, ".//a[./@href]") ->
+        {:link, selector}
+
+      String.contains?(xpath, ".//input[") && String.contains?(xpath, "button") ->
+        {:button, selector}
+
+      String.contains?(xpath, "contains(normalize-space(text())") ->
+        {:text, selector}
+
+      String.contains?(xpath, "./@") ->
+        case Regex.run(~r{\./@(\w+)\s*=\s*"([^"]*)"}, xpath) do
+          [_, name, value] -> {:attribute, {name, value}}
+          _ -> {:xpath, xpath}
+        end
+
+      true ->
+        {:xpath, xpath}
+    end
+  end
+
+  defp extract_xpath_selector(xpath) do
+    # Extract the first quoted string that appears as a locator value
+    # XPath patterns use: ./@id = "selector" or contains(..., "selector")
+    case Regex.run(~r{(?:= "|, "|\(")\s*([^"]+)"}, xpath) do
+      [_, selector] -> selector
+      _ -> xpath
+    end
   end
 
   # --- Element interactions ---
@@ -128,7 +224,7 @@ defmodule Wallabidi.LiveViewDriver do
   end
 
   @impl true
-  def clear(%Element{} = element), do: set_value(element, "")
+  def clear(%Element{} = element, _opts \\ []), do: set_value(element, "")
 
   @impl true
   def set_value(%Element{} = element, value) do

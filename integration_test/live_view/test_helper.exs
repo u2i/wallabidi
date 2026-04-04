@@ -10,7 +10,16 @@ Ecto.Migrator.up(Wallabidi.TestApp.Repo, 1, Wallabidi.TestApp.Migration)
 # Configure LiveView driver as default
 Application.put_env(:wallabidi, :driver, :live_view)
 Application.put_env(:wallabidi, :endpoint, Wallabidi.TestApp.Endpoint)
-Application.put_env(:wallabidi, :base_url, Wallabidi.TestApp.Endpoint.url())
+
+# Start the static test server (for pages like forms.html, page_1.html)
+Code.require_file("../support/test_server.ex", __DIR__)
+Code.require_file("../support/pages/index_page.ex", __DIR__)
+Code.require_file("../support/pages/page_1.ex", __DIR__)
+Code.require_file("../support/session_case.ex", __DIR__)
+Code.require_file("../support/helpers.ex", __DIR__)
+
+{:ok, server} = Wallabidi.Integration.TestServer.start()
+Application.put_env(:wallabidi, :base_url, server.base_url)
 
 # Mox
 Mox.defmock(Wallabidi.TestApp.MockWeather, for: Wallabidi.TestApp.WeatherBehaviour)

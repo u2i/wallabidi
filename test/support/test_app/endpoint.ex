@@ -24,6 +24,10 @@ defmodule Wallabidi.TestApp.Endpoint do
     from: {:phoenix_live_view, "priv/static"}
   )
 
+  # Serve integration test static pages (forms.html, page_1.html, etc.)
+  # so the LiveView driver can access them via dispatch without HTTP
+  plug(Plug.Static, at: "/", from: "integration_test/support/pages")
+
   plug(Plug.Parsers,
     parsers: [:urlencoded, :multipart, :json],
     pass: ["*/*"],
