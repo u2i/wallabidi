@@ -200,7 +200,7 @@ defmodule Wallabidi.LiveViewDriver do
   defp extract_xpath_selector(xpath) do
     # Extract the first quoted string that appears as a locator value
     # XPath patterns use: ./@id = "selector" or contains(..., "selector")
-    case Regex.run(~r{(?:= "|, "|\(")\s*([^"]+)"}, xpath) do
+    case Regex.run(~r{(?:= "|, "|\("|\)=")\s*([^"]+)"}, xpath) do
       [_, selector] -> selector
       _ -> xpath
     end
@@ -350,24 +350,42 @@ defmodule Wallabidi.LiveViewDriver do
 
   defp toggle_option(session, option_html) do
     page_html = get_rendered_html(session)
-    doc = LazyHTML.from_fragment(option_html)
-    value = first_attr(doc, "value") || LazyHTML.text(doc) |> String.trim()
+    opt_doc = parse_html(option_html)
+    id = first_attr(opt_doc, "id")
+    value = first_attr(opt_doc, "value")
 
-    # Find the parent select and set its value
-    page_doc = LazyHTML.from_fragment(page_html)
+    # Match the option by id or value attribute in the page HTML
+    pattern =
+      cond do
+        id -> ~r/(<option[^>]*id='#{Regex.escape(id)}'[^>]*)>/
+        value -> ~r/(<option[^>]*value="#{Regex.escape(value)}"[^>]*)>/
+        true -> nil
+      end
 
+    # For single-select, deselect all other options in the same select first
     new_html =
-      String.replace(
-        page_html,
-        ~r/(<option[^>]*value="#{Regex.escape(value)}"[^>]*)>/,
-        fn match ->
+      if pattern do
+        # Find the parent select by looking for <select> containing this option
+        deselected =
+          if id do
+            # Remove selected from all options in the same select
+            # Simple approach: remove all 'selected' from nearby options
+            String.replace(page_html, ~r/(<option[^>]*)\s+selected/, "\\1")
+          else
+            page_html
+          end
+
+        # Then add selected to the target option
+        String.replace(deselected, pattern, fn match ->
           if String.contains?(match, "selected") do
-            String.replace(match, ~r/\s*selected(="[^"]*")?/, "")
+            match
           else
             String.replace(match, ">", " selected>")
           end
-        end
-      )
+        end)
+      else
+        page_html
+      end
 
     put_state(session, nil, new_html, get_state(session)[:path])
     {:ok, nil}
@@ -577,25 +595,37 @@ defmodule Wallabidi.LiveViewDriver do
     el_doc = parse_html(el_html)
     id = first_attr(el_doc, "id")
 
-    if id do
-      # Check the current page HTML for this element's checked/selected state
-      session = root_session(element)
-      page_html = get_rendered_html(session)
+    session = root_session(element)
+    page_html = get_rendered_html(session)
 
-      selected =
-        Regex.match?(~r/id="#{Regex.escape(id)}"[^>]*(?:checked|selected)/, page_html) or
-          Regex.match?(~r/(?:checked|selected)[^>]*id="#{Regex.escape(id)}"/, page_html)
+    selected =
+      cond do
+        # Check by id in current page HTML (handles both single and double quoted ids)
+        id ->
+          Regex.match?(~r/id=['"]#{Regex.escape(id)}['"][^>]*(?:checked|selected)/, page_html) or
+            Regex.match?(~r/(?:checked|selected)[^>]*id=['"]#{Regex.escape(id)}['"]/, page_html)
 
-      {:ok, selected}
-    else
-      doc = parse_html(el_html)
+        # For options without id, check by value
+        true ->
+          el_doc = parse_html(el_html)
+          value = first_attr(el_doc, "value")
 
-      selected =
-        first_attr(doc, "selected") != nil or
-          first_attr(doc, "checked") != nil
+          if value do
+            Regex.match?(
+              ~r/<option[^>]*value="#{Regex.escape(value)}"[^>]*selected/,
+              page_html
+            ) or
+              Regex.match?(
+                ~r/<option[^>]*selected[^>]*value="#{Regex.escape(value)}"/,
+                page_html
+              )
+          else
+            first_attr(el_doc, "selected") != nil or
+              first_attr(el_doc, "checked") != nil
+          end
+      end
 
-      {:ok, selected}
-    end
+    {:ok, selected}
   end
 
   # --- Page content ---
@@ -727,9 +757,34 @@ defmodule Wallabidi.LiveViewDriver do
   defp extract_attr(html, name) do
     doc = parse_html(html)
 
+    # For from_document, the root is <html> not the element itself.
+    # Try attribute on root first, then on the first child element.
     case LazyHTML.attribute(doc, name) do
-      [value | _] -> value
-      [] -> nil
+      [value | _] ->
+        value
+
+      [] ->
+        # Try querying the actual element (e.g. body, div)
+        tag =
+          case Regex.run(~r/^<(\w+)/, String.trim(html)) do
+            [_, t] -> t
+            _ -> nil
+          end
+
+        if tag do
+          case LazyHTML.query(doc, tag) do
+            results when results != [] ->
+              case LazyHTML.attribute(hd(Enum.to_list(results)), name) do
+                [value | _] -> value
+                _ -> nil
+              end
+
+            _ ->
+              nil
+          end
+        else
+          nil
+        end
     end
   end
 

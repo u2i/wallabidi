@@ -175,7 +175,6 @@ defmodule Wallabidi.Query.Native do
 
   defp find_by_text(doc, selector) do
     # Query body descendants only (exclude <title>, <script>, etc.)
-    # Try body first, fall back to all elements for fragments
     nodes =
       case LazyHTML.query(doc, "body *") do
         results when results != [] -> results
@@ -190,9 +189,39 @@ defmodule Wallabidi.Query.Native do
       end
     end)
     |> Enum.filter(fn node ->
-      text(node) |> String.trim() |> contains?(selector)
+      # Match only elements whose DIRECT text nodes contain the selector
+      # (not descendant text). This matches XPath's text() function behavior.
+      has_direct_text?(node, selector)
     end)
     |> to_results()
+  end
+
+  # Check if an element has DIRECT text nodes containing the selector.
+  # Leaf elements (no child elements) always match on full text.
+  # Parent elements only match if they have direct text with the selector.
+  defp has_direct_text?(node, selector) do
+    full_text = text(node) |> String.trim()
+
+    unless contains?(full_text, selector) do
+      false
+    else
+      html = LazyHTML.to_html(node)
+      # Strip the outer tag and check if remaining has child elements
+      inner =
+        case Regex.run(~r/^<[^>]+>(.*)<\/[^>]+>$/s, html) do
+          [_, i] -> i
+          _ -> html
+        end
+
+      # If no child elements, it's a leaf — match on full text
+      if !Regex.match?(~r/<\w+[\s>]/, inner) do
+        true
+      else
+        # Strip child element tags and content to get direct text
+        direct = Regex.replace(~r/<\w+[^>]*>.*?<\/\w+>/s, inner, " ")
+        contains?(String.trim(direct), selector)
+      end
+    end
   end
 
   defp to_results(nodes) do
