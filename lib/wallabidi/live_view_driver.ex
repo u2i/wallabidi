@@ -84,38 +84,26 @@ defmodule Wallabidi.LiveViewDriver do
     conn =
       @conn_test.build_conn()
       |> Plug.Conn.put_private(:phoenix_endpoint, session.server)
+      |> @conn_test.dispatch(session.server, :get, path)
 
-    conn = @conn_test.dispatch(conn, session.server, :get, path)
+    cond do
+      # Plug.Static served a file (conn is halted with status 200)
+      conn.halted && conn.status in [200, 304] ->
+        {:static, conn.resp_body || ""}
 
-    # Try LiveView connection first
-    case @lv_test.__live__(conn, nil, []) do
-      {:ok, view, html} ->
-        {:live, view, html}
-
-      {:error, {:live_redirect, %{to: to}}} ->
-        {:redirect, to}
-
-      {:error, _} ->
-        # Not a LiveView — use the rendered static response
-        if conn.status in [200, 304] do
-          {:static, conn.resp_body || ""}
-        else
-          :not_found
+      # Normal response — try LiveView
+      conn.status in [200, 302] ->
+        case @lv_test.__live__(conn, nil, []) do
+          {:ok, view, html} -> {:live, view, html}
+          {:error, {:live_redirect, %{to: to}}} -> {:redirect, to}
+          {:error, _} -> {:static, conn.resp_body || ""}
         end
+
+      true ->
+        :not_found
     end
   rescue
-    # __live__ may raise for non-LiveView responses. Fall back to static.
-    _ ->
-      conn =
-        @conn_test.build_conn()
-        |> Plug.Conn.put_private(:phoenix_endpoint, session.server)
-        |> @conn_test.dispatch(session.server, :get, path)
-
-      if conn.status in [200, 304] do
-        {:static, conn.resp_body || ""}
-      else
-        :not_found
-      end
+    _ -> :not_found
   end
 
   @impl true
@@ -160,17 +148,21 @@ defmodule Wallabidi.LiveViewDriver do
     selector = extract_xpath_selector(xpath)
 
     cond do
-      String.contains?(xpath, "self::input") && String.contains?(xpath, "checkbox") ->
-        {:checkbox, selector}
-
-      String.contains?(xpath, "self::input") && String.contains?(xpath, "radio") ->
-        {:radio_button, selector}
-
-      String.contains?(xpath, "self::input") && String.contains?(xpath, "file") ->
-        {:file_field, selector}
-
+      # fillable_field: contains "self::input | self::textarea" (the union selector)
       String.contains?(xpath, "self::input | self::textarea") ->
         {:fillable_field, selector}
+
+      # checkbox: starts with .//input[./@type = 'checkbox']
+      String.starts_with?(xpath, ".//input[./@type = 'checkbox']") ->
+        {:checkbox, selector}
+
+      # radio_button: starts with .//input[./@type = 'radio']
+      String.starts_with?(xpath, ".//input[./@type = 'radio']") ->
+        {:radio_button, selector}
+
+      # file_field: starts with .//input[./@type = 'file']
+      String.starts_with?(xpath, ".//input[./@type = 'file']") ->
+        {:file_field, selector}
 
       String.contains?(xpath, ".//select") ->
         {:select, selector}
@@ -253,6 +245,7 @@ defmodule Wallabidi.LiveViewDriver do
                 else: "/#{href}"
 
             visit(session, href)
+            {:ok, nil}
         end
 
       # Click on option — toggle selected

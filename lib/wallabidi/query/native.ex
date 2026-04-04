@@ -119,11 +119,13 @@ defmodule Wallabidi.Query.Native do
 
   # --- Helpers ---
 
-  # Match elements by id, text content, title, alt, name, value
+  # Match elements by id, name, value, text content, title, alt
   defp filter_by_locator(nodes, selector, _doc) do
     nodes
     |> Enum.filter(fn node ->
       attr(node, "id") == selector ||
+        attr(node, "name") == selector ||
+        attr(node, "value") == selector ||
         text(node) |> String.trim() |> contains?(selector) ||
         attr(node, "title") |> contains?(selector) ||
         attr(node, "alt") |> contains?(selector)
