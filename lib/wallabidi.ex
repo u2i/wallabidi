@@ -89,6 +89,11 @@ defmodule Wallabidi do
                :ok <- SessionStore.monitor(session),
                do: {:ok, session}
 
+        :chrome_cdp ->
+          with {:ok, session} <- Wallabidi.ChromeCDP.start_session(opts),
+               :ok <- SessionStore.monitor(session),
+               do: {:ok, session}
+
         _browser ->
           with {:ok, session} <- Wallabidi.Chrome.start_session(opts),
                :ok <- SessionStore.monitor(session),
@@ -139,6 +144,7 @@ defmodule Wallabidi do
   def driver_module do
     case resolve_driver() do
       :lightpanda -> Wallabidi.Lightpanda
+      :chrome_cdp -> Wallabidi.ChromeCDP
       :live_view -> Wallabidi.Chrome
       _ -> Wallabidi.Chrome
     end

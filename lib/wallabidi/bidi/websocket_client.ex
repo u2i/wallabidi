@@ -32,6 +32,17 @@ defmodule Wallabidi.BiDi.WebSocketClient do
     :exit, {:normal, _} -> {:error, :session_closed}
   end
 
+  @doc """
+  Like send_command but places sessionId at the top level of the JSON-RPC
+  message (required by Chrome's CDP). The sessionId is NOT included in params.
+  """
+  def send_command_flat(pid, method, params, session_id, timeout \\ @default_timeout) do
+    GenServer.call(pid, {:send_command_flat, method, params, session_id}, timeout)
+  catch
+    :exit, {:noproc, _} -> {:error, :session_closed}
+    :exit, {:normal, _} -> {:error, :session_closed}
+  end
+
   def subscribe(pid, event_method) do
     GenServer.call(pid, {:subscribe, event_method})
   catch
@@ -76,6 +87,16 @@ defmodule Wallabidi.BiDi.WebSocketClient do
 
   def handle_call({:send_command, method, params}, from, state) do
     state = do_send_command(state, from, method, params)
+    {:noreply, state}
+  end
+
+  def handle_call({:send_command_flat, method, params, session_id}, from, %{websocket: nil} = state) do
+    queued = state.queued_commands ++ [{:flat, from, method, params, session_id}]
+    {:noreply, %{state | queued_commands: queued}}
+  end
+
+  def handle_call({:send_command_flat, method, params, session_id}, from, state) do
+    state = do_send_command_flat(state, from, method, params, session_id)
     {:noreply, state}
   end
 
@@ -221,11 +242,33 @@ defmodule Wallabidi.BiDi.WebSocketClient do
     end
   end
 
+  defp do_send_command_flat(state, from, method, params, session_id) do
+    id = state.next_id
+
+    message =
+      %{id: id, method: method, params: params, sessionId: session_id}
+      |> Jason.encode!()
+
+    case send_frame(state, {:text, message}) do
+      {:ok, state} ->
+        pending = Map.put(state.pending, id, from)
+        %{state | next_id: id + 1, pending: pending}
+
+      {:error, state, reason} ->
+        GenServer.reply(from, {:error, reason})
+        state
+    end
+  end
+
   defp flush_queued_commands(%{queued_commands: []} = state), do: state
 
   defp flush_queued_commands(state) do
     Enum.reduce(state.queued_commands, %{state | queued_commands: []}, fn
-      {from, method, params}, acc -> do_send_command(acc, from, method, params)
+      {:flat, from, method, params, session_id}, acc ->
+        do_send_command_flat(acc, from, method, params, session_id)
+
+      {from, method, params}, acc ->
+        do_send_command(acc, from, method, params)
     end)
   end
 

@@ -171,7 +171,7 @@ defmodule Wallabidi.Feature do
 
         # When running inside a specific driver's test suite (e.g. WALLABIDI_DRIVER=chrome),
         # don't route to a different driver based on tags
-        System.get_env("WALLABIDI_DRIVER") in ["chrome", "lightpanda"] ->
+        System.get_env("WALLABIDI_DRIVER") in ["chrome", "chrome_cdp", "lightpanda"] ->
           Wallabidi.resolve_driver()
 
         # @tag :browser — needs full browser (Chrome)

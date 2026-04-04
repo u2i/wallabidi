@@ -1,4 +1,12 @@
 ExUnit.configure(exclude: [pending: true])
+
+# When running as chrome_cdp, we use --no-start so we can configure the driver
+# before the app starts. For plain chrome, the app auto-starts with defaults.
+if System.get_env("WALLABIDI_DRIVER") == "chrome_cdp" do
+  Application.put_env(:wallabidi, :driver, :chrome_cdp)
+  {:ok, _} = Application.ensure_all_started(:wallabidi)
+end
+
 ExUnit.start()
 
 # Load support files
@@ -24,9 +32,11 @@ Application.put_env(:wallabidi, Wallabidi.Integration.LiveApp.Endpoint,
 {:ok, _} = Wallabidi.Integration.LiveApp.Endpoint.start_link()
 
 # Chrome in Docker can't reach localhost — use host.docker.internal
+# ChromeCDP runs locally so always uses localhost
 live_host =
-  if Application.get_env(:wallabidi, :chromedriver, []) |> Keyword.get(:remote_url),
-    do: "host.docker.internal",
-    else: "localhost"
+  if System.get_env("WALLABIDI_DRIVER") != "chrome_cdp" &&
+       Application.get_env(:wallabidi, :chromedriver, []) |> Keyword.get(:remote_url),
+     do: "host.docker.internal",
+     else: "localhost"
 
 Application.put_env(:wallabidi, :live_app_url, "http://#{live_host}:4321")

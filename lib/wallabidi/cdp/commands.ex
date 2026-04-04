@@ -1,10 +1,28 @@
 defmodule Wallabidi.CDP.Commands do
   @moduledoc false
 
+  # Browser context management (incognito-like isolation)
+
+  def create_browser_context do
+    {"Target.createBrowserContext", %{disposeOnDetach: true}}
+  end
+
+  def dispose_browser_context(browser_context_id) do
+    {"Target.disposeBrowserContext", %{browserContextId: browser_context_id}}
+  end
+
   # Target management
 
-  def create_target(url \\ "about:blank") do
-    {"Target.createTarget", %{url: url}}
+  def create_target(url \\ "about:blank", opts \\ []) do
+    params = %{url: url}
+
+    params =
+      case Keyword.get(opts, :browser_context_id) do
+        nil -> params
+        id -> Map.put(params, :browserContextId, id)
+      end
+
+    {"Target.createTarget", params}
   end
 
   def attach_to_target(target_id) do
@@ -129,6 +147,15 @@ defmodule Wallabidi.CDP.Commands do
 
   def clear_device_metrics do
     {"Emulation.clearDeviceMetricsOverride", %{}}
+  end
+
+  def set_user_agent_override(user_agent, opts \\ []) do
+    params =
+      %{userAgent: user_agent}
+      |> maybe_put(:acceptLanguage, opts[:accept_language])
+      |> maybe_put(:platform, opts[:platform])
+
+    {"Emulation.setUserAgentOverride", params}
   end
 
   # Dialogs

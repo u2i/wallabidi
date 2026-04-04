@@ -48,24 +48,49 @@ defmodule Wallabidi.CDPClient do
 
   # --- Session bootstrap ---
 
-  def create_session(pid) do
-    with {:ok, %{"targetId" => target_id}} <- send_cdp(pid, Commands.create_target()),
+  def create_session(pid, opts \\ []) do
+    flat = Keyword.get(opts, :flat_session_id, false)
+    browser_context_id = Keyword.get(opts, :browser_context_id)
+
+    create_target_opts =
+      if browser_context_id,
+        do: [browser_context_id: browser_context_id],
+        else: []
+
+    with {:ok, %{"targetId" => target_id}} <-
+           send_cdp(pid, Commands.create_target("about:blank", create_target_opts)),
          {:ok, %{"sessionId" => session_id}} <-
            send_cdp(pid, Commands.attach_to_target(target_id)) do
       # Enable required domains using raw pid + sessionId
-      send_cdp_with_session(pid, session_id, Commands.enable_page())
-      send_cdp_with_session(pid, session_id, Commands.enable_runtime())
-      send_cdp_with_session(pid, session_id, Commands.enable_dom())
+      send_cdp_with_session(pid, session_id, Commands.enable_page(), flat_session_id: flat)
+      send_cdp_with_session(pid, session_id, Commands.enable_runtime(), flat_session_id: flat)
+      send_cdp_with_session(pid, session_id, Commands.enable_dom(), flat_session_id: flat)
 
       {:ok, %{target_id: target_id, session_id: session_id}}
     end
+  end
+
+  @doc "Create an isolated browser context (like incognito)."
+  def create_browser_context(pid) do
+    send_cdp(pid, Commands.create_browser_context())
+  end
+
+  @doc "Dispose of a browser context and all its targets."
+  def dispose_browser_context(pid, browser_context_id) do
+    send_cdp(pid, Commands.dispose_browser_context(browser_context_id))
   end
 
   def close_session(session) do
     pid = bidi_pid(session)
     target_id = get_in(session.capabilities, [:target_id]) || session.id
 
-    send_cdp(pid, Commands.close_target(target_id))
+    # If we have a browser context, disposing it closes the target too
+    if browser_context_id = get_in(session.capabilities, [:browser_context_id]) do
+      send_cdp(pid, Commands.dispose_browser_context(browser_context_id))
+    else
+      send_cdp(pid, Commands.close_target(target_id))
+    end
+
     :ok
   rescue
     _ -> :ok
@@ -98,28 +123,9 @@ defmodule Wallabidi.CDPClient do
 
   # --- Element finding ---
 
-  def find_elements(parent, {:css, selector}) do
-    find_elements_js(parent, """
-    Array.from(document.querySelectorAll(#{Jason.encode!(selector)}))
-    """)
-  end
-
-  def find_elements(parent, {:xpath, xpath}) do
-    find_elements_js(parent, """
-    (() => {
-      const result = document.evaluate(#{Jason.encode!(xpath)}, document, null,
-        XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-      const nodes = [];
-      for (let i = 0; i < result.snapshotLength; i++) nodes.push(result.snapshotItem(i));
-      return nodes;
-    })()
-    """)
-  end
-
+  # Element-scoped queries — find within a parent element
   def find_elements(%Element{bidi_shared_id: parent_id} = parent, {:css, selector})
       when not is_nil(parent_id) do
-    # Lightpanda's querySelectorAll on elements doesn't scope to descendants.
-    # Workaround: use :scope pseudo-class to force scoping.
     find_elements_on(
       parent,
       parent_id,
@@ -144,6 +150,25 @@ defmodule Wallabidi.CDPClient do
       """,
       [xpath]
     )
+  end
+
+  # Document-level queries — find from root (Session or Element without object ID)
+  def find_elements(parent, {:css, selector}) do
+    find_elements_js(parent, """
+    Array.from(document.querySelectorAll(#{Jason.encode!(selector)}))
+    """)
+  end
+
+  def find_elements(parent, {:xpath, xpath}) do
+    find_elements_js(parent, """
+    (() => {
+      const result = document.evaluate(#{Jason.encode!(xpath)}, document, null,
+        XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+      const nodes = [];
+      for (let i = 0; i < result.snapshotLength; i++) nodes.push(result.snapshotItem(i));
+      return nodes;
+    })()
+    """)
   end
 
   defp find_elements_js(parent, js) do
@@ -329,24 +354,48 @@ defmodule Wallabidi.CDPClient do
       when not is_nil(object_id) do
     session = root_session(element)
 
+    # File inputs can't be set via JS — use DOM.setFileInputFiles
+    case is_file_input?(session, object_id) do
+      true ->
+        files = if is_list(value), do: value, else: [value]
+
+        send_cdp_session(session, "DOM.setFileInputFiles", %{
+          files: files,
+          objectId: object_id
+        })
+
+        {:ok, nil}
+
+      false ->
+        {method, params} =
+          Commands.call_function_on_value(
+            object_id,
+            """
+            function(value) {
+              this.focus();
+              this.value = '';
+              this.value = value;
+              this.dispatchEvent(new Event('input', { bubbles: true }));
+              this.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            """,
+            [value]
+          )
+
+        case send_cdp_session(session, method, params) do
+          {:ok, _} -> {:ok, nil}
+          error -> error
+        end
+    end
+  end
+
+  defp is_file_input?(session, object_id) do
     {method, params} =
-      Commands.call_function_on_value(
-        object_id,
-        """
-        function(value) {
-          this.focus();
-          this.value = '';
-          this.value = value;
-          this.dispatchEvent(new Event('input', { bubbles: true }));
-          this.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-        """,
-        [value]
-      )
+      Commands.call_function_on_value(object_id, "function() { return this.type === 'file'; }")
 
     case send_cdp_session(session, method, params) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
+      {:ok, %{"result" => %{"value" => true}}} -> true
+      _ -> false
     end
   end
 
@@ -479,7 +528,16 @@ defmodule Wallabidi.CDPClient do
           _ -> nil
         end
 
-    {method, params} = Commands.set_cookie(name, value, domain: domain, path: path)
+    secure = Keyword.get(attributes, :secure, false)
+    http_only = Keyword.get(attributes, :httpOnly, false)
+
+    {method, params} =
+      Commands.set_cookie(name, value,
+        domain: domain,
+        path: path,
+        secure: secure,
+        http_only: http_only
+      )
 
     case send_cdp_session(session, method, params) do
       {:ok, %{"success" => true}} -> {:ok, []}
@@ -514,13 +572,31 @@ defmodule Wallabidi.CDPClient do
     {:ok, nil}
   end
 
+  # --- Public command sender (for driver-level features like dialogs) ---
+
+  def send_cdp_command(session, method, params) do
+    send_cdp_session(session, method, params)
+  end
+
+  # --- User-Agent ---
+
+  def set_user_agent(session, user_agent) do
+    {method, params} = Commands.set_user_agent_override(user_agent)
+
+    case send_cdp_session(session, method, params) do
+      {:ok, _} -> :ok
+      error -> error
+    end
+  end
+
   # --- Screenshots ---
 
-  def take_screenshot(session) do
+  def take_screenshot(session_or_element) do
+    session = root_session(session_or_element)
     {method, params} = Commands.capture_screenshot()
 
     case send_cdp_session(session, method, params) do
-      {:ok, %{"data" => data}} -> Base.decode64(data)
+      {:ok, %{"data" => data}} -> Base.decode64!(data)
       error -> error
     end
   end
@@ -542,28 +618,40 @@ defmodule Wallabidi.CDPClient do
   end
 
   # Bootstrap: send CDP command with raw pid + sessionId (before Session struct exists)
-  defp send_cdp_with_session(pid, session_id, {method, params}) when is_pid(pid) do
-    params = Map.put(params, :sessionId, session_id)
-
-    WebSocketClient.send_command(pid, method, params)
+  defp send_cdp_with_session(pid, session_id, {method, params}, opts)
+       when is_pid(pid) do
+    if Keyword.get(opts, :flat_session_id) do
+      WebSocketClient.send_command_flat(pid, method, params, session_id)
+    else
+      params = Map.put(params, :sessionId, session_id)
+      WebSocketClient.send_command(pid, method, params)
+    end
     |> ResponseParser.check_error()
   end
 
   defp send_cdp_session(%Session{} = session, method, params) do
     pid = bidi_pid(session)
     session_id = session.browsing_context
-    params = Map.put(params, :sessionId, session_id)
 
-    WebSocketClient.send_command(pid, method, params)
+    if session.capabilities[:flat_session_id] do
+      WebSocketClient.send_command_flat(pid, method, params, session_id)
+    else
+      params = Map.put(params, :sessionId, session_id)
+      WebSocketClient.send_command(pid, method, params)
+    end
     |> ResponseParser.check_error()
   end
 
   defp send_cdp_raw(%Session{} = session, {method, params}) do
     pid = bidi_pid(session)
     session_id = session.browsing_context
-    params = Map.put(params, :sessionId, session_id)
 
-    WebSocketClient.send_command(pid, method, params)
+    if session.capabilities[:flat_session_id] do
+      WebSocketClient.send_command_flat(pid, method, params, session_id)
+    else
+      params = Map.put(params, :sessionId, session_id)
+      WebSocketClient.send_command(pid, method, params)
+    end
   end
 
   defp bidi_pid(%Session{bidi_pid: pid}), do: pid

@@ -31,6 +31,7 @@ defmodule Wallabidi.Mixfile do
         "test.live_view": &test_live_view/1,
         "test.lightpanda": &test_lightpanda/1,
         "test.chrome": &test_chrome/1,
+        "test.chrome_cdp": &test_chrome_cdp/1,
         "test.chrome.lifecycle": &test_chrome_lifecycle/1
       ],
       test_paths: test_paths(System.get_env("WALLABIDI_DRIVER")),
@@ -46,6 +47,7 @@ defmodule Wallabidi.Mixfile do
         "test.live_view": :test,
         "test.lightpanda": :test,
         "test.chrome": :test,
+        "test.chrome_cdp": :test,
         "test.chrome.lifecycle": :test
       ]
     ]
@@ -119,6 +121,7 @@ defmodule Wallabidi.Mixfile do
   defp test_paths("live_view"), do: ["integration_test/live_view"]
   defp test_paths("lightpanda"), do: ["integration_test/lightpanda"]
   defp test_paths("chrome"), do: ["integration_test/chrome"]
+  defp test_paths("chrome_cdp"), do: ["integration_test/chrome"]
   defp test_paths("chrome_lifecycle"), do: ["integration_test/lifecycle/chrome"]
   defp test_paths(_), do: ["test"]
 
@@ -163,6 +166,22 @@ defmodule Wallabidi.Mixfile do
       System.cmd("mix", ["test" | args],
         into: IO.binstream(:stdio, :line),
         env: [{"WALLABIDI_DRIVER", "chrome"}]
+      )
+
+    if res > 0 do
+      System.at_exit(fn _ -> exit({:shutdown, 1}) end)
+    end
+  end
+
+  defp test_chrome_cdp(args) do
+    args = if IO.ANSI.enabled?(), do: ["--color" | args], else: ["--no-color" | args]
+
+    IO.puts("==> Running tests for WALLABIDI_DRIVER=chrome_cdp mix test")
+
+    {_, res} =
+      System.cmd("mix", ["test", "--no-start" | args],
+        into: IO.binstream(:stdio, :line),
+        env: [{"WALLABIDI_DRIVER", "chrome_cdp"}]
       )
 
     if res > 0 do
