@@ -105,7 +105,7 @@ defmodule Wallabidi.LiveViewDriver do
         :not_found
     end
   rescue
-    e ->
+    _e ->
       :not_found
   end
 
@@ -393,7 +393,7 @@ defmodule Wallabidi.LiveViewDriver do
 
   defp submit_form(session, button_html) do
     page_html = get_rendered_html(session)
-    page_doc = LazyHTML.from_fragment(page_html)
+    page_doc = parse_html(page_html)
 
     # Find the form containing this button
     form = find_parent_form(page_doc, button_html)
@@ -535,14 +535,14 @@ defmodule Wallabidi.LiveViewDriver do
     e -> {:error, Exception.message(e)}
   end
 
-  defp set_value_static(session, _el_html, value) do
+  defp set_value_static(session, el_html, value) do
     # Store form field values in the process dictionary keyed by session + element
     # The element_html re-read will pick up the stored value
     state = get_state(session)
     field_values = Map.get(state, :field_values, %{})
     # Use the element's name or id as key
-    el_doc = LazyHTML.from_fragment(_el_html)
-    key = first_attr(el_doc, "id") || first_attr(el_doc, "name") || _el_html
+    el_doc = LazyHTML.from_fragment(el_html)
+    key = first_attr(el_doc, "id") || first_attr(el_doc, "name") || el_html
 
     field_values = Map.put(field_values, key, value)
     put_state(session, state[:view], state[:html], state[:path], field_values)
