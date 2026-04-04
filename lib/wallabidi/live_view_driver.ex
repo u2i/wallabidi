@@ -212,15 +212,207 @@ defmodule Wallabidi.LiveViewDriver do
   @impl true
   def click(%Element{} = element) do
     session = root_session(element)
-    view = get_view(session)
-    selector = element_selector(element)
+    el_html = element_html(element)
 
-    lv_element = @lv_test.element(view, selector)
-    html = @lv_test.render_click(lv_element)
-    update_html(session, html)
-    {:ok, nil}
+    case get_view(session) do
+      nil ->
+        # Static/controller page — handle click via HTML inspection
+        click_static(session, element, el_html)
+
+      view ->
+        selector = element_selector(element)
+        lv_element = @lv_test.element(view, selector)
+        html = @lv_test.render_click(lv_element)
+        update_html(session, html)
+        {:ok, nil}
+    end
   rescue
     e -> {:error, Exception.message(e)}
+  end
+
+  defp click_static(session, _element, el_html) do
+    doc = LazyHTML.from_fragment(el_html)
+
+    tag =
+      case LazyHTML.tag(doc) do
+        [t | _] -> t |> to_string() |> String.downcase()
+        _ -> ""
+      end
+
+    cond do
+      # Click on a link — navigate to href
+      tag == "a" ->
+        case first_attr(doc, "href") do
+          nil ->
+            {:ok, nil}
+
+          href ->
+            href =
+              if String.starts_with?(href, "/") || String.starts_with?(href, "http"),
+                do: href,
+                else: "/#{href}"
+
+            visit(session, href)
+        end
+
+      # Click on option — toggle selected
+      tag == "option" ->
+        toggle_option(session, el_html)
+
+      # Click on submit/image button — submit the parent form
+      tag == "input" && first_attr(doc, "type") in ["submit", "image"] ->
+        submit_form(session, el_html)
+
+      # Click on button — check if it's a submit button
+      tag == "button" ->
+        type = first_attr(doc, "type")
+
+        if type == "reset" do
+          reset_form(session, el_html)
+        else
+          submit_form(session, el_html)
+        end
+
+      # Click on input[type=reset]
+      tag == "input" && first_attr(doc, "type") == "reset" ->
+        reset_form(session, el_html)
+
+      true ->
+        {:ok, nil}
+    end
+  end
+
+  defp toggle_option(session, option_html) do
+    page_html = get_rendered_html(session)
+    doc = LazyHTML.from_fragment(option_html)
+    value = first_attr(doc, "value") || LazyHTML.text(doc) |> String.trim()
+
+    # Find the parent select and set its value
+    page_doc = LazyHTML.from_fragment(page_html)
+
+    new_html =
+      String.replace(
+        page_html,
+        ~r/(<option[^>]*value="#{Regex.escape(value)}"[^>]*)>/,
+        fn match ->
+          if String.contains?(match, "selected") do
+            String.replace(match, ~r/\s*selected(="[^"]*")?/, "")
+          else
+            String.replace(match, ">", " selected>")
+          end
+        end
+      )
+
+    put_state(session, nil, new_html, get_state(session)[:path])
+    {:ok, nil}
+  end
+
+  defp submit_form(session, button_html) do
+    page_html = get_rendered_html(session)
+    page_doc = LazyHTML.from_fragment(page_html)
+
+    # Find the form containing this button
+    form = find_parent_form(page_doc, button_html)
+
+    case form do
+      nil ->
+        {:ok, nil}
+
+      form_node ->
+        raw_action = first_attr(form_node, "action") || get_state(session)[:path]
+        action = if String.starts_with?(raw_action, "/"), do: raw_action, else: "/#{raw_action}"
+        method = (first_attr(form_node, "method") || "get") |> String.downcase()
+
+        # Collect form data
+        form_data = collect_form_data(form_node)
+
+        # Dispatch the form submission
+        conn =
+          @conn_test.build_conn()
+          |> Plug.Conn.put_private(:phoenix_endpoint, session.server)
+
+        conn =
+          if method == "post" do
+            @conn_test.dispatch(conn, session.server, :post, action, form_data)
+          else
+            query = URI.encode_query(form_data)
+            @conn_test.dispatch(conn, session.server, :get, "#{action}?#{query}")
+          end
+
+        put_state(session, nil, conn.resp_body || "", action)
+        {:ok, nil}
+    end
+  rescue
+    _ -> {:ok, nil}
+  end
+
+  defp reset_form(session, _button_html) do
+    # Re-visit the current page to reset form state
+    path = get_state(session)[:path]
+    visit(session, path)
+    {:ok, nil}
+  end
+
+  defp find_parent_form(page_doc, button_html) do
+    LazyHTML.query(page_doc, "form")
+    |> Enum.find(fn form ->
+      form_html = LazyHTML.to_html(form)
+      # Check if the button HTML is contained within this form
+      String.contains?(form_html, String.trim(button_html))
+    end)
+  end
+
+  defp collect_form_data(form_node) do
+    inputs =
+      LazyHTML.query(form_node, "input")
+      |> Enum.flat_map(fn input ->
+        name = first_attr(input, "name")
+        type = first_attr(input, "type") || "text"
+
+        cond do
+          name == nil ->
+            []
+
+          type in ["submit", "image", "button", "reset", "file"] ->
+            []
+
+          type in ["checkbox", "radio"] ->
+            if first_attr(input, "checked") != nil do
+              [{name, first_attr(input, "value") || "on"}]
+            else
+              []
+            end
+
+          true ->
+            [{name, first_attr(input, "value") || ""}]
+        end
+      end)
+
+    textareas =
+      LazyHTML.query(form_node, "textarea")
+      |> Enum.flat_map(fn ta ->
+        name = first_attr(ta, "name")
+        if name, do: [{name, LazyHTML.text(ta) || ""}], else: []
+      end)
+
+    selects =
+      LazyHTML.query(form_node, "select")
+      |> Enum.flat_map(fn select ->
+        name = first_attr(select, "name")
+
+        if name == nil do
+          []
+        else
+          selected =
+            LazyHTML.query(select, "option[selected]")
+            |> Enum.map(fn opt -> first_attr(opt, "value") || LazyHTML.text(opt) end)
+            |> List.first()
+
+          if selected, do: [{name, selected}], else: []
+        end
+      end)
+
+    Map.new(inputs ++ textareas ++ selects)
   end
 
   @impl true
@@ -229,33 +421,56 @@ defmodule Wallabidi.LiveViewDriver do
   @impl true
   def set_value(%Element{} = element, value) do
     session = root_session(element)
-    view = get_view(session)
     el_html = element_html(element)
 
-    # Find the input name
-    case extract_attr(el_html, "name") do
+    case get_view(session) do
       nil ->
-        {:error, :no_input_name}
+        # Static page — update the value in stored HTML
+        set_value_static(session, el_html, value)
 
-      name ->
-        # Find the parent form selector
-        form_selector = find_form_selector(get_rendered_html(session), element_selector(element))
+      view ->
+        name = extract_attr(el_html, "name")
 
-        if form_selector do
-          form = @lv_test.form(view, form_selector, %{name => value})
-          html = @lv_test.render_change(form)
-          update_html(session, html)
-        else
-          # No form — try direct element change
-          lv_el = @lv_test.element(view, element_selector(element))
-          html = @lv_test.render_change(lv_el, %{value: value})
-          update_html(session, html)
+        if name do
+          form_selector =
+            find_form_selector(get_rendered_html(session), element_selector(element))
+
+          if form_selector do
+            form = @lv_test.form(view, form_selector, %{name => value})
+            html = @lv_test.render_change(form)
+            update_html(session, html)
+          else
+            lv_el = @lv_test.element(view, element_selector(element))
+            html = @lv_test.render_change(lv_el, %{value: value})
+            update_html(session, html)
+          end
         end
 
         {:ok, nil}
     end
   rescue
     e -> {:error, Exception.message(e)}
+  end
+
+  defp set_value_static(session, el_html, value) do
+    page_html = get_rendered_html(session)
+
+    # Replace the value attribute in the stored HTML
+    escaped_el = Regex.escape(String.trim(el_html))
+
+    new_html =
+      if String.contains?(el_html, "value=") do
+        # Update existing value attribute
+        updated_el = Regex.replace(~r/value="[^"]*"/, el_html, ~s(value="#{value}"))
+        String.replace(page_html, String.trim(el_html), String.trim(updated_el))
+      else
+        # Add value attribute
+        updated_el = String.replace(el_html, ">", ~s( value="#{value}">), global: false)
+        String.replace(page_html, String.trim(el_html), String.trim(updated_el))
+      end
+
+    put_state(session, nil, new_html, get_state(session)[:path])
+    {:ok, nil}
   end
 
   @impl true
