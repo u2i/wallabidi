@@ -164,24 +164,27 @@ defmodule Wallabidi.Feature do
     @moduledoc false
 
     def resolve_test_driver(context) do
-      case System.get_env("WALLABIDI_BROWSER") do
-        nil ->
-          cond do
-            # @tag :browser — needs full browser (Chrome)
-            context[:browser] ->
-              Application.get_env(:wallabidi, :browser, :chrome)
-
-            # @tag :headless — needs a headless browser (Lightpanda or Chrome)
-            context[:headless] ->
-              Application.get_env(:wallabidi, :headless, :lightpanda)
-
-            # Default — use the fastest available driver
-            true ->
-              Wallabidi.resolve_driver()
-          end
-
-        browser ->
+      cond do
+        # WALLABIDI_BROWSER forces all tests to a specific browser
+        browser = System.get_env("WALLABIDI_BROWSER") ->
           String.to_existing_atom(browser)
+
+        # When running inside a specific driver's test suite (e.g. WALLABIDI_DRIVER=chrome),
+        # don't route to a different driver based on tags
+        System.get_env("WALLABIDI_DRIVER") in ["chrome", "lightpanda"] ->
+          Wallabidi.resolve_driver()
+
+        # @tag :browser — needs full browser (Chrome)
+        context[:browser] ->
+          Application.get_env(:wallabidi, :browser, :chrome)
+
+        # @tag :headless — needs a headless browser (Lightpanda or Chrome)
+        context[:headless] ->
+          Application.get_env(:wallabidi, :headless, :lightpanda)
+
+        # Default — use the fastest available driver
+        true ->
+          Wallabidi.resolve_driver()
       end
     end
 
