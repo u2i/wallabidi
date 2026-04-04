@@ -72,6 +72,7 @@ defmodule Wallabidi.Integration.Browser.Actions.ClickButtonTest do
     assert current_url =~ "http://localhost:#{URI.parse(current_url).port}/index.html"
   end
 
+  @tag :headless
   test "clicking button type[button] via button text (resets input via JS)", %{page: page} do
     page
     |> fill_in(Query.text_field("name_field"), with: "Erlich Bachman")
@@ -83,6 +84,7 @@ defmodule Wallabidi.Integration.Browser.Actions.ClickButtonTest do
     assert find(page, css("#name_field")) |> has_value?("")
   end
 
+  @tag :headless
   test "clicking button type[button] via name (resets input via JS)", %{page: page} do
     page
     |> fill_in(Query.text_field("name_field"), with: "Erlich Bachman")
@@ -94,6 +96,7 @@ defmodule Wallabidi.Integration.Browser.Actions.ClickButtonTest do
     assert find(page, css("#name_field")) |> has_value?("")
   end
 
+  @tag :headless
   test "clicking button type[button] via id (resets input via JS)", %{page: page} do
     page
     |> fill_in(Query.text_field("name_field"), with: "Erlich Bachman")
@@ -168,6 +171,7 @@ defmodule Wallabidi.Integration.Browser.Actions.ClickButtonTest do
     assert current_url =~ "http://localhost:#{URI.parse(current_url).port}/index.html"
   end
 
+  @tag :headless
   test "clicking input type[button] via button text resets input via JS", %{page: page} do
     page
     |> fill_in(Query.text_field("name_field"), with: "Erlich Bachman")
@@ -179,6 +183,7 @@ defmodule Wallabidi.Integration.Browser.Actions.ClickButtonTest do
     assert find(page, css("#name_field")) |> has_value?("")
   end
 
+  @tag :headless
   test "clicking input type[button] via name resets input via JS", %{page: page} do
     page
     |> fill_in(Query.text_field("name_field"), with: "Erlich Bachman")
@@ -190,6 +195,7 @@ defmodule Wallabidi.Integration.Browser.Actions.ClickButtonTest do
     assert find(page, css("#name_field")) |> has_value?("")
   end
 
+  @tag :headless
   test "clicking input type[button] via id resets input via JS", %{page: page} do
     page
     |> fill_in(Query.text_field("name_field"), with: "Erlich Bachman")

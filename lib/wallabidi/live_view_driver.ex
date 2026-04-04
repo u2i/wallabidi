@@ -110,7 +110,11 @@ defmodule Wallabidi.LiveViewDriver do
   end
 
   @impl true
-  def current_url(session), do: {:ok, get_state(session)[:path] || ""}
+  def current_url(session) do
+    path = get_state(session)[:path] || ""
+    base = Application.get_env(:wallabidi, :base_url, "")
+    {:ok, String.trim_trailing(base, "/") <> path}
+  end
 
   @impl true
   def current_path(session), do: {:ok, get_state(session)[:path] || "/"}

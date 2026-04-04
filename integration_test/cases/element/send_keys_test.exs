@@ -1,5 +1,6 @@
 defmodule Wallabidi.Integration.Element.SendKeysTest do
   use Wallabidi.Integration.SessionCase, async: true
+  @moduletag :headless
 
   setup %{session: session} do
     {:ok, page: visit(session, "forms.html")}
