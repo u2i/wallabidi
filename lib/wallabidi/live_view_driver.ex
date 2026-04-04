@@ -63,7 +63,9 @@ defmodule Wallabidi.LiveViewDriver do
     uri = URI.parse(url)
     path = uri.path || url
 
-    case visit_endpoint(session, path) do
+    result = visit_endpoint(session, path)
+
+    case result do
       {:live, view, html} ->
         put_state(session, view, html, path)
 
@@ -605,16 +607,7 @@ defmodule Wallabidi.LiveViewDriver do
     else
       html = get_state(session)[:html] || ""
 
-      # For full HTML documents, LazyHTML.from_fragment can't find <body> children.
-      # Extract just the body content so CSS queries work.
-      if String.contains?(html, "<body") do
-        case Regex.run(~r{<body[^>]*>(.*)</body>}s, html) do
-          [_, body] -> body
-          _ -> html
-        end
-      else
-        html
-      end
+      html
     end
   end
 

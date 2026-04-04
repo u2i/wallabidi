@@ -9,7 +9,7 @@ defmodule Wallabidi.Query.Native do
   Returns a list of `{css_selector_hint, html_fragment}` tuples.
   """
   def find(html, :css, selector) do
-    doc = LazyHTML.from_fragment(html)
+    doc = parse_html(html)
 
     LazyHTML.query(doc, selector)
     |> Enum.with_index()
@@ -19,19 +19,19 @@ defmodule Wallabidi.Query.Native do
   end
 
   def find(html, :text, selector) do
-    doc = LazyHTML.from_fragment(html)
+    doc = parse_html(html)
     find_by_text(doc, selector)
   end
 
   def find(html, :link, selector) do
-    doc = LazyHTML.from_fragment(html)
+    doc = parse_html(html)
 
     LazyHTML.query(doc, "a[href]")
     |> filter_by_locator(selector, doc)
   end
 
   def find(html, :button, selector) do
-    doc = LazyHTML.from_fragment(html)
+    doc = parse_html(html)
     button_types = ["submit", "reset", "button", "image"]
 
     inputs =
@@ -53,7 +53,7 @@ defmodule Wallabidi.Query.Native do
   end
 
   def find(html, :fillable_field, selector) do
-    doc = LazyHTML.from_fragment(html)
+    doc = parse_html(html)
     excluded = ["submit", "image", "radio", "checkbox", "hidden", "file"]
 
     inputs =
@@ -67,28 +67,28 @@ defmodule Wallabidi.Query.Native do
   end
 
   def find(html, :checkbox, selector) do
-    doc = LazyHTML.from_fragment(html)
+    doc = parse_html(html)
 
     LazyHTML.query(doc, "input[type=checkbox]")
     |> filter_by_field_locator(selector, doc)
   end
 
   def find(html, :radio_button, selector) do
-    doc = LazyHTML.from_fragment(html)
+    doc = parse_html(html)
 
     LazyHTML.query(doc, "input[type=radio]")
     |> filter_by_field_locator(selector, doc)
   end
 
   def find(html, :select, selector) do
-    doc = LazyHTML.from_fragment(html)
+    doc = parse_html(html)
 
     LazyHTML.query(doc, "select")
     |> filter_by_field_locator(selector, doc)
   end
 
   def find(html, :option, selector) do
-    doc = LazyHTML.from_fragment(html)
+    doc = parse_html(html)
 
     LazyHTML.query(doc, "option")
     |> Enum.filter(fn node ->
@@ -98,14 +98,14 @@ defmodule Wallabidi.Query.Native do
   end
 
   def find(html, :file_field, selector) do
-    doc = LazyHTML.from_fragment(html)
+    doc = parse_html(html)
 
     LazyHTML.query(doc, "input[type=file]")
     |> filter_by_field_locator(selector, doc)
   end
 
   def find(html, :attribute, {name, value}) do
-    doc = LazyHTML.from_fragment(html)
+    doc = parse_html(html)
 
     LazyHTML.query(doc, "[#{name}=#{inspect(value)}]")
     |> to_results()
@@ -202,4 +202,13 @@ defmodule Wallabidi.Query.Native do
   defp contains?(nil, _), do: false
   defp contains?("", _), do: false
   defp contains?(haystack, needle), do: String.contains?(haystack, needle)
+
+  # Use from_document for full HTML pages, from_fragment for partials
+  defp parse_html(html) do
+    if String.contains?(html, "<html") or String.contains?(html, "<!DOCTYPE") do
+      LazyHTML.from_document(html)
+    else
+      LazyHTML.from_fragment(html)
+    end
+  end
 end
