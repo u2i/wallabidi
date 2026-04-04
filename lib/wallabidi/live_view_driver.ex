@@ -259,6 +259,14 @@ defmodule Wallabidi.LiveViewDriver do
       tag == "option" ->
         toggle_option(session, el_html)
 
+      # Click on radio button — set checked, uncheck siblings
+      tag == "input" && first_attr(doc, "type") == "radio" ->
+        toggle_radio(session, el_html)
+
+      # Click on checkbox — toggle checked
+      tag == "input" && first_attr(doc, "type") == "checkbox" ->
+        toggle_checkbox(session, el_html)
+
       # Click on submit/image button — submit the parent form
       tag == "input" && first_attr(doc, "type") in ["submit", "image"] ->
         submit_form(session, el_html)
@@ -280,6 +288,64 @@ defmodule Wallabidi.LiveViewDriver do
       true ->
         {:ok, nil}
     end
+  end
+
+  defp toggle_radio(session, el_html) do
+    page_html = get_rendered_html(session)
+    el_doc = parse_html(el_html)
+    name = first_attr(el_doc, "name")
+    id = first_attr(el_doc, "id")
+
+    # Uncheck all radios with the same name, then check this one
+    new_html =
+      if name do
+        # Remove checked from all radios with this name
+        page_html
+        |> String.replace(
+          ~r/(<input[^>]*name="#{Regex.escape(name)}"[^>]*)\s+checked(="[^"]*")?/,
+          "\\1"
+        )
+        |> then(fn h ->
+          # Add checked to the clicked radio
+          if id do
+            String.replace(h, ~r/(<input[^>]*id="#{Regex.escape(id)}"[^>]*)>/, "\\1 checked>")
+          else
+            h
+          end
+        end)
+      else
+        page_html
+      end
+
+    put_state(session, nil, new_html, get_state(session)[:path])
+    {:ok, nil}
+  end
+
+  defp toggle_checkbox(session, el_html) do
+    page_html = get_rendered_html(session)
+    el_doc = parse_html(el_html)
+    id = first_attr(el_doc, "id")
+
+    new_html =
+      if id do
+        # Toggle checked attribute
+        pattern = ~r/(<input[^>]*id="#{Regex.escape(id)}"[^>]*)>/
+
+        if Regex.match?(~r/id="#{Regex.escape(id)}"[^>]*checked/, page_html) do
+          String.replace(
+            page_html,
+            ~r/(<input[^>]*id="#{Regex.escape(id)}"[^>]*)\s+checked(="[^"]*")?/,
+            "\\1"
+          )
+        else
+          String.replace(page_html, pattern, "\\1 checked>")
+        end
+      else
+        page_html
+      end
+
+    put_state(session, nil, new_html, get_state(session)[:path])
+    {:ok, nil}
   end
 
   defp toggle_option(session, option_html) do
@@ -468,8 +534,17 @@ defmodule Wallabidi.LiveViewDriver do
   @impl true
   def text(%Element{} = element) do
     html = element_html(element)
-    doc = LazyHTML.from_fragment(html)
-    {:ok, LazyHTML.text(doc)}
+    doc = parse_html(html)
+    raw = LazyHTML.text(doc) || ""
+    # Normalize whitespace — collapse indentation, trim lines
+    normalized =
+      raw
+      |> String.split("\n")
+      |> Enum.map(&String.trim/1)
+      |> Enum.filter(&(&1 != ""))
+      |> Enum.join("\n")
+
+    {:ok, normalized}
   end
 
   @impl true
@@ -479,7 +554,7 @@ defmodule Wallabidi.LiveViewDriver do
       session = root_session(element)
       field_values = get_state(session)[:field_values] || %{}
       el_html = element_html(element)
-      el_doc = LazyHTML.from_fragment(el_html)
+      el_doc = parse_html(el_html)
       key = first_attr(el_doc, "id") || first_attr(el_doc, "name")
 
       case Map.get(field_values, key) do
@@ -496,15 +571,31 @@ defmodule Wallabidi.LiveViewDriver do
   def displayed(%Element{} = _element), do: {:ok, true}
 
   @impl true
-  def selected(%Element{} = element) do
-    html = element_html(element)
-    doc = LazyHTML.from_fragment(html)
+  def selected(%Element{bidi_shared_id: {:lv_element, _, _, _}} = element) do
+    # Re-read from current page state to get updated checked/selected
+    el_html = element_html(element)
+    el_doc = parse_html(el_html)
+    id = first_attr(el_doc, "id")
 
-    selected =
-      first_attr(doc, "selected") != nil or
-        first_attr(doc, "checked") != nil
+    if id do
+      # Check the current page HTML for this element's checked/selected state
+      session = root_session(element)
+      page_html = get_rendered_html(session)
 
-    {:ok, selected}
+      selected =
+        Regex.match?(~r/id="#{Regex.escape(id)}"[^>]*(?:checked|selected)/, page_html) or
+          Regex.match?(~r/(?:checked|selected)[^>]*id="#{Regex.escape(id)}"/, page_html)
+
+      {:ok, selected}
+    else
+      doc = parse_html(el_html)
+
+      selected =
+        first_attr(doc, "selected") != nil or
+          first_attr(doc, "checked") != nil
+
+      {:ok, selected}
+    end
   end
 
   # --- Page content ---
