@@ -30,6 +30,8 @@ defmodule Wallabidi.BiDi.WebSocketClient do
   catch
     :exit, {:noproc, _} -> {:error, :session_closed}
     :exit, {:normal, _} -> {:error, :session_closed}
+    :exit, {:shutdown, _} -> {:error, :session_closed}
+    :exit, :shutdown -> {:error, :session_closed}
   end
 
   @doc """
@@ -41,6 +43,8 @@ defmodule Wallabidi.BiDi.WebSocketClient do
   catch
     :exit, {:noproc, _} -> {:error, :session_closed}
     :exit, {:normal, _} -> {:error, :session_closed}
+    :exit, {:shutdown, _} -> {:error, :session_closed}
+    :exit, :shutdown -> {:error, :session_closed}
   end
 
   def subscribe(pid, event_method) do

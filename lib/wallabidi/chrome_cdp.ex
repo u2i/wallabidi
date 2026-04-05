@@ -130,11 +130,23 @@ defmodule Wallabidi.ChromeCDP do
 
   @impl true
   def end_session(session) do
-    CDPClient.close_session(session)
-    CDPClient.close(session)
+    try do
+      CDPClient.close_session(session)
+    rescue
+      _ -> :ok
+    catch
+      :exit, _ -> :ok
+    end
+
+    try do
+      CDPClient.close(session)
+    rescue
+      _ -> :ok
+    catch
+      :exit, _ -> :ok
+    end
+
     :ok
-  rescue
-    _ -> :ok
   end
 
   # --- Delegation to CDPClient (wrapped in check_logs! for JS error detection) ---
