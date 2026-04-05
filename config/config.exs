@@ -8,7 +8,6 @@ config :wallabidi,
   js_errors: true
 
 config :lightpanda,
-  version: "0.2.8",
-  default: [args: ~w(serve --host 127.0.0.1 --port 9222)]
+  version: "0.2.8"
 
 import_config "#{config_env()}.exs"

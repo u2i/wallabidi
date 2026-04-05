@@ -119,6 +119,12 @@ defmodule Wallabidi.CDPClient do
     end
   end
 
+  defp inject_xpath_polyfill(session) do
+    {method, params} = Commands.evaluate(@xpath_polyfill, return_by_value: true)
+    send_cdp_session(session, method, params)
+    :ok
+  end
+
   def current_url(session) do
     evaluate_value(session, "window.location.href")
   end
@@ -807,11 +813,4 @@ defmodule Wallabidi.CDPClient do
   defp key_code("ArrowRight"), do: 39
   defp key_code("Space"), do: 32
   defp key_code(_), do: 0
-
-  # Inject XPath polyfill for browsers without native XPath (e.g. Lightpanda)
-  defp inject_xpath_polyfill(session) do
-    {method, params} = Commands.evaluate(@xpath_polyfill, return_by_value: true)
-    send_cdp_session(session, method, params)
-    :ok
-  end
 end

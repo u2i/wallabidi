@@ -68,7 +68,7 @@ defmodule Wallabidi.Chrome do
 
   @default_readiness_timeout 10_000
 
-  alias Wallabidi.BiDi.{Commands, ResponseParser, WebSocketClient}
+  alias Wallabidi.BiDi.{ResponseParser, WebSocketClient}
   alias Wallabidi.BiDiClient
   alias Wallabidi.Chrome.Chromedriver
   alias Wallabidi.Driver.SessionLifecycle
@@ -170,11 +170,15 @@ defmodule Wallabidi.Chrome do
         url: base_url <> "session/#{id}",
         id: id,
         driver: __MODULE__,
+        protocol: Wallabidi.Protocol.BiDi,
         server: Chromedriver,
         capabilities: capabilities
       }
 
       session = connect_bidi!(session, response, base_url)
+
+      # Subscribe to console logs so they buffer from session start
+      Wallabidi.Protocol.subscribe(session, :log)
 
       if window_size = Keyword.get(opts, :window_size),
         do: {:ok, _} = set_window_size(session, window_size[:width], window_size[:height])
@@ -259,11 +263,6 @@ defmodule Wallabidi.Chrome do
       WebSocketClient.send_command(bidi_pid, "browsingContext.getTree", %{})
 
     {:ok, context_id} = ResponseParser.extract_context(result)
-
-    # Subscribe to log events so they buffer from session start
-    {method, params} = Commands.subscribe(["log.entryAdded"])
-    WebSocketClient.send_command(bidi_pid, method, params)
-    WebSocketClient.subscribe(bidi_pid, "log.entryAdded")
 
     %{session | bidi_pid: bidi_pid, browsing_context: context_id}
   end

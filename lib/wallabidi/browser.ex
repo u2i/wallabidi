@@ -183,14 +183,14 @@ defmodule Wallabidi.Browser do
   """
   @spec fill_in(parent, Query.t(), with: String.t()) :: parent
   def fill_in(%Session{} = parent, query, with: value) do
-    if bidi_session?(parent) and classify_interaction(parent, query, :change) != :none do
+    if live_view_aware?(parent) and classify_interaction(parent, query, :change) != :none do
       # Type the value (silent clear + keystrokes), then drain all pending
       # phx-change patches so the server has processed the final value.
       result =
         parent
         |> find(query, &Element.fill_in(&1, with: value))
 
-      Wallabidi.BiDiClient.drain_patches(parent)
+      Wallabidi.LiveViewAware.drain_patches(parent)
       result
     else
       parent
@@ -1678,11 +1678,11 @@ defmodule Wallabidi.Browser do
   """
   @spec await_patch(session, keyword()) :: session
   def await_patch(%Session{} = session, opts \\ []) do
-    if bidi_session?(session) do
+    if live_view_aware?(session) do
       timeout = Keyword.get(opts, :timeout, 5_000)
 
-      case Wallabidi.BiDiClient.prepare_patch(session) do
-        :prepared -> Wallabidi.BiDiClient.await_patch(session, timeout)
+      case Wallabidi.LiveViewAware.prepare_patch(session) do
+        :prepared -> Wallabidi.LiveViewAware.await_patch(session, timeout)
         :no_liveview -> :ok
       end
     end
@@ -1753,15 +1753,19 @@ defmodule Wallabidi.Browser do
     end
   end
 
-  defp bidi_session?(%Session{bidi_pid: pid}) when not is_nil(pid), do: true
+  defp bidi_session?(%Session{protocol: Wallabidi.Protocol.BiDi}), do: true
   defp bidi_session?(_), do: false
+
+  # Any session that has a protocol adapter can run JS → LiveView-aware.
+  defp live_view_aware?(%Session{protocol: mod}) when not is_nil(mod), do: true
+  defp live_view_aware?(_), do: false
 
   # Wraps an interaction with prepare_patch/await_patch.
   # Sets up the promise before the action, awaits after.
   # Skips if: not BiDi, no LiveView, or the element is a JS-only click
   # (phx-click without a push command, e.g. JS.toggle).
   defp with_patch_await(%Session{} = session, query, interaction, fun) do
-    if bidi_session?(session) do
+    if live_view_aware?(session) do
       case classify_interaction(session, query, interaction) do
         :patch ->
           do_patch_await(session, fun)
@@ -1770,11 +1774,18 @@ defmodule Wallabidi.Browser do
           do_navigate_await(session, fun)
 
         :full_page ->
-          Wallabidi.BiDiClient.prepare_page_load(session)
-          result = fun.()
-          Wallabidi.BiDiClient.await_page_load(session)
-          Wallabidi.BiDiClient.await_liveview_connected(session)
-          result
+          if bidi_session?(session) do
+            Wallabidi.BiDiClient.prepare_page_load(session)
+            result = fun.()
+            Wallabidi.BiDiClient.await_page_load(session)
+            Wallabidi.BiDiClient.await_liveview_connected(session)
+            result
+          else
+            # CDP drivers — poll for LiveView connection after the action.
+            result = fun.()
+            Wallabidi.LiveViewAware.await_liveview_connected(session)
+            result
+          end
 
         :none ->
           fun.()
@@ -1788,19 +1799,16 @@ defmodule Wallabidi.Browser do
 
   # Classify the interaction: :patch, :navigate, :full_page, or :none.
   defp do_patch_await(session, fun) do
-    case Wallabidi.BiDiClient.prepare_patch(session) do
+    case Wallabidi.LiveViewAware.prepare_patch(session) do
       :prepared ->
-        # Also prepare for possible full page redirect (server may redirect)
-        Wallabidi.BiDiClient.prepare_page_load(session)
         result = fun.()
 
-        case Wallabidi.BiDiClient.await_patch(session) do
+        case Wallabidi.LiveViewAware.await_patch(session) do
           :ok ->
             result
 
           :page_navigated ->
-            Wallabidi.BiDiClient.await_page_load(session)
-            Wallabidi.BiDiClient.await_liveview_connected(session)
+            Wallabidi.LiveViewAware.await_liveview_connected(session)
             result
         end
 
@@ -1810,12 +1818,12 @@ defmodule Wallabidi.Browser do
   end
 
   defp do_navigate_await(session, fun) do
-    case Wallabidi.BiDiClient.prepare_patch(session) do
+    case Wallabidi.LiveViewAware.prepare_patch(session) do
       :prepared ->
-        {:ok, pre_url} = Wallabidi.BiDiClient.current_url(session)
+        {:ok, pre_url} = Wallabidi.Protocol.current_url(session)
         result = fun.()
-        Wallabidi.BiDiClient.await_patch(session)
-        Wallabidi.BiDiClient.await_liveview_connected(session, pre_url: pre_url)
+        Wallabidi.LiveViewAware.await_patch(session)
+        Wallabidi.LiveViewAware.await_liveview_connected(session, pre_url: pre_url)
         result
 
       :no_liveview ->
@@ -1885,12 +1893,12 @@ defmodule Wallabidi.Browser do
 
   defp check_phx_binding(session, selector, interaction) do
     js =
-      @classify_el_js <>
-        """
-        return classifyEl(document.querySelector(arguments[0]), arguments[1]);
-        """
+      "(() => {" <>
+        @classify_el_js <>
+        "return classifyEl(document.querySelector(#{Jason.encode!(selector)}), #{Jason.encode!(to_string(interaction))});" <>
+        "})()"
 
-    case Wallabidi.BiDiClient.execute_script(session, js, [selector, to_string(interaction)]) do
+    case Wallabidi.Protocol.eval(session, js) do
       {:ok, result} -> parse_classification(result)
       _ -> :none
     end
@@ -1900,13 +1908,15 @@ defmodule Wallabidi.Browser do
 
   defp check_phx_binding_xpath(session, xpath, interaction) do
     js =
-      @classify_el_js <>
+      "(() => {" <>
+        @classify_el_js <>
         """
-        var result = document.evaluate(arguments[0], document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-        return classifyEl(result.singleNodeValue, arguments[1]);
+        var result = document.evaluate(#{Jason.encode!(xpath)}, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+        return classifyEl(result.singleNodeValue, #{Jason.encode!(to_string(interaction))});
+        })()
         """
 
-    case Wallabidi.BiDiClient.execute_script(session, js, [xpath, to_string(interaction)]) do
+    case Wallabidi.Protocol.eval(session, js) do
       {:ok, result} -> parse_classification(result)
       _ -> :none
     end

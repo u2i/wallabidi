@@ -15,6 +15,7 @@ Code.require_file("../support/pages/index_page.ex", __DIR__)
 Code.require_file("../support/pages/page_1.ex", __DIR__)
 Code.require_file("../support/session_case.ex", __DIR__)
 Code.require_file("../support/helpers.ex", __DIR__)
+Code.require_file("../support/load_test_case.ex", __DIR__)
 
 {:ok, server} = Wallabidi.Integration.TestServer.start()
 Application.put_env(:wallabidi, :base_url, server.base_url)

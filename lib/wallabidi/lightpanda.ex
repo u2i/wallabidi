@@ -43,12 +43,15 @@ defmodule Wallabidi.Lightpanda do
       if remote_url() do
         []
       else
-        [
-          {@lightpanda_server, [name: Wallabidi.Lightpanda.Server]}
-        ]
+        server_opts = [name: Wallabidi.Lightpanda.Server, extra_args: extra_args()]
+        [{@lightpanda_server, server_opts}]
       end
 
     Supervisor.init(children, strategy: :one_for_one)
+  end
+
+  defp extra_args do
+    Application.get_env(:wallabidi, :lightpanda, []) |> Keyword.get(:extra_args, [])
   end
 
   # --- Validation ---
@@ -91,6 +94,7 @@ defmodule Wallabidi.Lightpanda do
         session_url: "cdp://#{unique_id}",
         url: "cdp://#{unique_id}",
         driver: __MODULE__,
+        protocol: Wallabidi.Protocol.CDP,
         server: __MODULE__,
         bidi_pid: pid,
         browsing_context: session_id,

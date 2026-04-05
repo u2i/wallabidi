@@ -1,4 +1,4 @@
-ExUnit.configure(exclude: [pending: true, browser: true])
+ExUnit.configure(exclude: [pending: true, browser: true, lightpanda_ni: true])
 
 # Configure driver BEFORE starting wallabidi
 Application.put_env(:wallabidi, :driver, :lightpanda)

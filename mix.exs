@@ -24,8 +24,8 @@ defmodule Wallabidi.Mixfile do
         "test.all": [
           "test",
           "test.live_view",
-          "test.lightpanda",
           "test.chrome",
+          "test.chrome_cdp",
           "test.chrome.lifecycle"
         ],
         "test.live_view": &test_live_view/1,

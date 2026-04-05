@@ -10,6 +10,7 @@ defmodule Wallabidi.Session do
           server: pid | :none,
           screenshots: list,
           driver: module,
+          protocol: module | nil,
           capabilities: map(),
           bidi_pid: pid() | nil,
           browsing_context: String.t() | nil
@@ -20,6 +21,7 @@ defmodule Wallabidi.Session do
     :url,
     :session_url,
     :driver,
+    :protocol,
     :capabilities,
     :bidi_pid,
     :browsing_context,

@@ -178,9 +178,11 @@ defmodule Wallabidi.Feature do
         context[:browser] ->
           Application.get_env(:wallabidi, :browser, :chrome)
 
-        # @tag :headless — needs a headless browser (Lightpanda or Chrome)
+        # @tag :headless — needs a headless browser
+        # Defaults to chrome_cdp since Lightpanda is experimental and
+        # doesn't yet support WebSocket-based features like LiveView.
         context[:headless] ->
-          Application.get_env(:wallabidi, :headless, :lightpanda)
+          Application.get_env(:wallabidi, :headless, :chrome_cdp)
 
         # Default — use the fastest available driver
         true ->

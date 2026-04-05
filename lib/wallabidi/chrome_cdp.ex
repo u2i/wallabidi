@@ -101,6 +101,7 @@ defmodule Wallabidi.ChromeCDP do
         session_url: "cdp://#{unique_id}",
         url: "cdp://#{unique_id}",
         driver: __MODULE__,
+        protocol: Wallabidi.Protocol.CDP,
         server: __MODULE__,
         bidi_pid: cdp_pid,
         browsing_context: session_id,
@@ -112,10 +113,10 @@ defmodule Wallabidi.ChromeCDP do
           })
       }
 
-      # Subscribe to console/error events and forward as log.entryAdded
-      # so LogChecker can drain them
-      WebSocketClient.subscribe(cdp_pid, "Runtime.consoleAPICalled")
-      WebSocketClient.subscribe(cdp_pid, "Runtime.exceptionThrown")
+      # Subscribe to console/error events so LogChecker can drain them,
+      # and to page load events so CDPClient.visit can wait for DOMContentLoaded.
+      Wallabidi.Protocol.subscribe(session, :log)
+      Wallabidi.Protocol.subscribe(session, :page_load)
 
       if metadata = Keyword.get(opts, :metadata) do
         CDPClient.set_user_agent(session, Metadata.append(@base_user_agent, metadata))
@@ -144,7 +145,11 @@ defmodule Wallabidi.ChromeCDP do
   end
 
   @impl true
-  def visit(session, url), do: delegate(:visit, session, [url])
+  def visit(session, url) do
+    result = delegate(:visit, session, [url])
+    Wallabidi.LiveViewAware.await_liveview_connected(session)
+    result
+  end
 
   @impl true
   def current_url(session), do: delegate(:current_url, session)
@@ -460,14 +465,13 @@ defmodule Wallabidi.ChromeCDP do
   def dismiss_prompt(session, fun), do: handle_dialog(session, fun, false)
 
   defp handle_dialog(session, fun, accept, prompt_text \\ nil) do
-    pid = session.bidi_pid
     caller = self()
 
     # Spawn a handler that listens for the dialog and handles it.
     # This avoids deadlocking: fun.(session) blocks until dialog is handled.
     handler =
       spawn_link(fn ->
-        WebSocketClient.subscribe(pid, "Page.javascriptDialogOpening")
+        Wallabidi.Protocol.subscribe(session, :dialog)
 
         {message, default_value} =
           receive do
@@ -585,7 +589,7 @@ defmodule Wallabidi.ChromeCDP do
   end
 
   defp flat_send(cdp_pid, method, params, session_id) do
-    Wallabidi.BiDi.WebSocketClient.send_command_flat(cdp_pid, method, params, session_id)
+    WebSocketClient.send_command_flat(cdp_pid, method, params, session_id)
   end
 
   @impl true
