@@ -77,6 +77,13 @@ defmodule Wallabidi.Lightpanda do
 
   @impl true
   def start_session(opts \\ []) do
+    Wallabidi.SessionProcess.start_link(
+      init_fun: fn -> do_start_session(opts) end,
+      teardown_fun: &SessionLifecycle.teardown/1
+    )
+  end
+
+  defp do_start_session(opts) do
     ws_url =
       if remote_url() do
         remote_url()
@@ -112,9 +119,9 @@ defmodule Wallabidi.Lightpanda do
   @impl true
   def end_session(session) do
     # Just close the WebSocket — Lightpanda automatically cleans up the
-    # target and thread when the client disconnects. Skipping closeTarget
-    # avoids hangs when Lightpanda is under load.
-    SessionLifecycle.teardown(session)
+    # target and thread when the client disconnects.
+    Wallabidi.SessionProcess.stop(session)
+    :ok
   end
 
   # --- Delegation to CDPClient ---

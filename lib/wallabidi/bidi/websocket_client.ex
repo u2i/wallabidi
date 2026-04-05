@@ -47,8 +47,8 @@ defmodule Wallabidi.BiDi.WebSocketClient do
     :exit, :shutdown -> {:error, :session_closed}
   end
 
-  def subscribe(pid, event_method) do
-    GenServer.call(pid, {:subscribe, event_method})
+  def subscribe(pid, event_method, subscriber \\ nil) do
+    GenServer.call(pid, {:subscribe, event_method, subscriber})
   catch
     :exit, _ -> :ok
   end
@@ -104,8 +104,9 @@ defmodule Wallabidi.BiDi.WebSocketClient do
     {:noreply, state}
   end
 
-  def handle_call({:subscribe, event_method}, {pid, _}, state) do
-    subs = Map.update(state.subscribers, event_method, [pid], &[pid | &1])
+  def handle_call({:subscribe, event_method, subscriber}, {caller, _}, state) do
+    target = subscriber || caller
+    subs = Map.update(state.subscribers, event_method, [target], &[target | &1])
     {:reply, :ok, %{state | subscribers: subs}}
   end
 

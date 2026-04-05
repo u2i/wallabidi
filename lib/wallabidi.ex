@@ -17,7 +17,6 @@ defmodule Wallabidi do
   use Application
 
   alias Wallabidi.Session
-  alias Wallabidi.SessionStore
 
   @doc false
   def start(_type, _args) do
@@ -79,47 +78,14 @@ defmodule Wallabidi do
   """
   @spec start_session([start_session_opts]) :: {:ok, Session.t()} | {:error, reason}
   def start_session(opts \\ []) do
-    result =
-      case resolve_driver(opts) do
-        :live_view ->
-          Wallabidi.LiveViewDriver.start_session(opts)
-
-        :lightpanda ->
-          with {:ok, session} <- Wallabidi.Lightpanda.start_session(opts),
-               :ok <- SessionStore.monitor(session),
-               do: {:ok, session}
-
-        :chrome_cdp ->
-          with {:ok, session} <- Wallabidi.ChromeCDP.start_session(opts),
-               :ok <- SessionStore.monitor(session),
-               do: {:ok, session}
-
-        _browser ->
-          with {:ok, session} <- Wallabidi.Chrome.start_session(opts),
-               :ok <- SessionStore.monitor(session),
-               do: {:ok, session}
-      end
-
-    # Auto-register cleanup so sessions are always closed when the
-    # test process exits, even if the test doesn't call end_session
-    case result do
-      {:ok, session} ->
-        try do
-          ExUnit.Callbacks.on_exit({__MODULE__, session.id}, fn ->
-            try do
-              end_session(session)
-            rescue
-              _ -> :ok
-            end
-          end)
-        rescue
-          _ -> :ok
-        end
-
-        {:ok, session}
-
-      error ->
-        error
+    # SessionProcess monitors the caller and runs cleanup in terminate/2
+    # when the caller dies, so we don't need on_exit hooks or SessionStore
+    # monitoring for crashed-test cleanup.
+    case resolve_driver(opts) do
+      :live_view -> Wallabidi.LiveViewDriver.start_session(opts)
+      :lightpanda -> Wallabidi.Lightpanda.start_session(opts)
+      :chrome_cdp -> Wallabidi.ChromeCDP.start_session(opts)
+      _browser -> Wallabidi.Chrome.start_session(opts)
     end
   end
 
@@ -128,9 +94,7 @@ defmodule Wallabidi do
   """
   @spec end_session(Session.t()) :: :ok | {:error, reason}
   def end_session(%Session{driver: driver} = session) do
-    with :ok <- SessionStore.demonitor(session) do
-      driver.end_session(session)
-    end
+    driver.end_session(session)
   end
 
   @doc false

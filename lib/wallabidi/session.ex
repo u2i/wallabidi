@@ -5,6 +5,7 @@ defmodule Wallabidi.Session do
 
   @type t :: %__MODULE__{
           id: String.t(),
+          pid: pid() | nil,
           session_url: String.t(),
           url: String.t(),
           server: pid | :none,
@@ -18,6 +19,7 @@ defmodule Wallabidi.Session do
 
   defstruct [
     :id,
+    :pid,
     :url,
     :session_url,
     :driver,

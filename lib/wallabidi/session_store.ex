@@ -1,28 +1,57 @@
 defmodule Wallabidi.SessionStore do
   @moduledoc false
+
+  # Lightweight registry mapping test-process pids to their active
+  # Wallabidi sessions. Populated by SessionProcess on startup and
+  # cleaned up in SessionProcess.terminate/2.
+  #
+  # Used by `Wallabidi.Feature.Utils.end_all_sessions/1` during sandbox
+  # checkin to find and close all sessions owned by a test before the
+  # sandbox is released.
+  #
+  # Unlike the old SessionStore, this one does NOT monitor or drive
+  # cleanup — SessionProcess handles its own lifecycle via Process.monitor
+  # on the owner. This module is purely a lookup table.
+
   use GenServer
   use EventEmitter, :emitter
 
   def start_link(opts \\ []) do
     {opts, args} = Keyword.split(opts, [:name])
-
     GenServer.start_link(__MODULE__, args, opts)
   end
 
-  def monitor(store \\ __MODULE__, session) do
-    GenServer.call(store, {:monitor, session}, 10_000)
+  @doc """
+  Registers a session as owned by a specific process. Called by
+  SessionProcess.init/1.
+  """
+  def register(store \\ __MODULE__, session, owner_pid) do
+    GenServer.call(store, {:register, session, owner_pid})
   end
 
-  def demonitor(store \\ __MODULE__, session) do
-    GenServer.call(store, {:demonitor, session})
+  @doc """
+  Unregisters a session. Called by SessionProcess.terminate/2.
+  """
+  def unregister(store \\ __MODULE__, session) do
+    GenServer.call(store, {:unregister, session})
+  catch
+    :exit, _ -> :ok
   end
 
+  @doc """
+  Returns sessions owned by a specific pid (defaults to self()).
+  """
   def list_sessions_for(opts \\ []) do
     name = Keyword.get(opts, :name, :session_store)
     owner_pid = Keyword.get(opts, :owner_pid, self())
 
-    :ets.select(name, [{{{:_, :_, :"$1"}, :"$2"}, [{:==, :"$1", owner_pid}], [:"$2"]}])
+    :ets.select(name, [{{{:_, :"$1"}, :"$2"}, [{:==, :"$1", owner_pid}], [:"$2"]}])
   end
+
+  # Kept for backward compat with existing call sites; now a no-op
+  # since SessionProcess handles lifecycle itself.
+  def monitor(_store \\ __MODULE__, _session), do: :ok
+  def demonitor(_store \\ __MODULE__, _session), do: :ok
 
   def init(args) do
     name = Keyword.get(args, :ets_name, :session_store)
@@ -31,92 +60,24 @@ defmodule Wallabidi.SessionStore do
       if(name == :session_store, do: [:named_table], else: []) ++
         [:set, :public, read_concurrency: true]
 
-    Process.flag(:trap_exit, true)
     tid = :ets.new(name, opts)
-
-    Application.ensure_all_started(:ex_unit)
-
-    ExUnit.after_suite(fn _ ->
-      try do
-        :ets.tab2list(tid)
-        |> Enum.each(&cleanup_session/1)
-      rescue
-        _ -> nil
-      end
-    end)
-
     {:ok, %{ets_table: tid}}
   end
 
-  def handle_call({:monitor, session}, {pid, _ref}, state) do
-    ref = Process.monitor(pid)
-
-    :ets.insert(state.ets_table, {{ref, session.id, pid}, session})
-
+  def handle_call({:register, session, owner_pid}, _from, state) do
+    :ets.insert(state.ets_table, {{session.id, owner_pid}, session})
     emit(%{module: __MODULE__, name: :monitor, metadata: %{monitored_session: session}})
-
     {:reply, :ok, state}
   end
 
-  def handle_call({:demonitor, session}, _from, state) do
-    result =
-      :ets.select(state.ets_table, [
-        {{{:"$1", :"$2", :"$3"}, :_}, [{:==, :"$2", session.id}], [{{:"$1", :"$3"}}]}
-      ])
-
-    case result do
-      [{ref, pid}] ->
-        true = Process.demonitor(ref, [:flush])
-        :ets.delete(state.ets_table, {ref, session.id, pid})
-
-      [] ->
-        :ok
-    end
-
-    {:reply, :ok, state}
-  end
-
-  def handle_info({:DOWN, ref, :process, pid, _reason}, state) do
-    [session] =
-      :ets.select(state.ets_table, [
-        {{{:"$1", :_, :_}, :"$4"}, [{:==, :"$1", ref}], [:"$4"]}
-      ])
-
-    # Spawn cleanup to avoid blocking the GenServer —
-    # end_session uses mint_request which does `receive` and would
-    # intercept GenServer messages if run inline.
-    # Use Task.async + yield to ensure the session is actually closed
-    # before we move on, preventing resource leaks between tests.
-    task = Task.async(fn -> session.driver.end_session(session) end)
-
-    unless Task.yield(task, 5_000) do
-      Task.shutdown(task)
-
-      require Logger
-
-      Logger.warning(
-        "Wallabidi: session #{session.id} cleanup timed out after 5s — " <>
-          "force-killed. This may leave a Chrome process running."
-      )
-    end
-
-    :ets.delete(state.ets_table, {ref, session.id, pid})
+  def handle_call({:unregister, session}, _from, state) do
+    :ets.select_delete(state.ets_table, [
+      {{{:"$1", :_}, :_}, [{:==, :"$1", session.id}], [true]}
+    ])
 
     emit(%{module: __MODULE__, name: :DOWN, metadata: %{monitored_session: session}})
-
-    {:noreply, state}
+    {:reply, :ok, state}
   end
 
-  def handle_info(_msg, state) do
-    # Ignore stray TCP/Mint messages that may arrive after session cleanup
-    {:noreply, state}
-  end
-
-  defp cleanup_session({_, session}) do
-    # Run in a Task so mint_request's `receive` doesn't interfere
-    task = Task.async(fn -> session.driver.end_session(session) end)
-    Task.yield(task, 5_000) || Task.shutdown(task)
-  rescue
-    _ -> :ok
-  end
+  def handle_info(_msg, state), do: {:noreply, state}
 end

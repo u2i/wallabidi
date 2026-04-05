@@ -147,6 +147,13 @@ defmodule Wallabidi.Chrome do
 
   @doc false
   def start_session(opts \\ []) do
+    Wallabidi.SessionProcess.start_link(
+      init_fun: fn -> do_start_session(opts) end,
+      teardown_fun: &do_end_session/1
+    )
+  end
+
+  defp do_start_session(opts) do
     timeout = Keyword.get(opts, :readiness_timeout, @default_readiness_timeout)
     base_url = chromedriver_base_url()
 
@@ -269,6 +276,13 @@ defmodule Wallabidi.Chrome do
 
   @doc false
   def end_session(%Wallabidi.Session{} = session, _opts \\ []) do
+    Wallabidi.SessionProcess.stop(session)
+    :ok
+  end
+
+  # Runs inside SessionProcess.terminate/2. Must not raise — wrapped in
+  # SessionLifecycle.teardown for idempotent, exit-safe cleanup.
+  defp do_end_session(session) do
     SessionLifecycle.teardown(session)
   end
 
@@ -502,7 +516,7 @@ defmodule Wallabidi.Chrome do
     end
   end
 
-  defp receive_response(conn, ref, acc) do
+  defp receive_response(conn, ref, acc, deferred \\ []) do
     receive do
       message ->
         case Mint.HTTP.stream(conn, message) do
@@ -516,20 +530,29 @@ defmodule Wallabidi.Chrome do
 
             if done? do
               Mint.HTTP.close(conn)
+              # Put non-Mint messages back in the mailbox in original order
+              Enum.each(Enum.reverse(deferred), &send(self(), &1))
 
               case Jason.decode(acc) do
                 {:ok, decoded} -> check_for_errors(decoded)
                 {:error, _} -> {:ok, %{}}
               end
             else
-              receive_response(conn, ref, acc)
+              receive_response(conn, ref, acc, deferred)
             end
 
           {:error, _, reason, _} ->
+            Enum.each(Enum.reverse(deferred), &send(self(), &1))
             {:error, reason}
+
+          :unknown ->
+            # Not our message — defer it and keep looking for our response.
+            receive_response(conn, ref, acc, [message | deferred])
         end
     after
-      10_000 -> {:error, :timeout}
+      10_000 ->
+        Enum.each(Enum.reverse(deferred), &send(self(), &1))
+        {:error, :timeout}
     end
   end
 

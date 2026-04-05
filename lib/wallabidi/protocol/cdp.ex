@@ -34,6 +34,8 @@ defmodule Wallabidi.Protocol.CDP do
 
   @impl true
   def subscribe(%Session{bidi_pid: pid} = session, semantic) do
+    subscriber = Process.get(:wallabidi_session_owner, self())
+
     # Page and Runtime are always enabled at session bootstrap; only
     # enable additional domains (Network, Fetch) lazily.
     case domain_for(semantic) do
@@ -43,7 +45,7 @@ defmodule Wallabidi.Protocol.CDP do
       domain -> send_cdp(session, "#{domain}.enable", %{}, 10_000)
     end
 
-    Enum.each(wire_methods(semantic), &WebSocketClient.subscribe(pid, &1))
+    Enum.each(wire_methods(semantic), &WebSocketClient.subscribe(pid, &1, subscriber))
     :ok
   end
 

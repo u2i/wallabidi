@@ -42,11 +42,12 @@ defmodule Wallabidi.Protocol.BiDi do
   @impl true
   def subscribe(%Session{bidi_pid: pid}, semantic) do
     methods = wire_methods(semantic)
+    subscriber = Process.get(:wallabidi_session_owner, self())
 
     {cmd, params} = Commands.subscribe(methods)
     WebSocketClient.send_command(pid, cmd, params)
 
-    Enum.each(methods, &WebSocketClient.subscribe(pid, &1))
+    Enum.each(methods, &WebSocketClient.subscribe(pid, &1, subscriber))
     :ok
   end
 

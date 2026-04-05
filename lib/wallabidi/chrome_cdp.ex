@@ -81,6 +81,13 @@ defmodule Wallabidi.ChromeCDP do
 
   @impl true
   def start_session(opts \\ []) do
+    Wallabidi.SessionProcess.start_link(
+      init_fun: fn -> do_start_session(opts) end,
+      teardown_fun: &SessionLifecycle.teardown/1
+    )
+  end
+
+  defp do_start_session(opts) do
     ws_url = get_ws_url()
 
     with {:ok, cdp_pid} <- CDPClient.connect(ws_url),
@@ -131,7 +138,10 @@ defmodule Wallabidi.ChromeCDP do
   end
 
   @impl true
-  def end_session(session), do: SessionLifecycle.teardown(session)
+  def end_session(session) do
+    Wallabidi.SessionProcess.stop(session)
+    :ok
+  end
 
   @impl true
   def release_server_session(session), do: CDPClient.close_session(session)
