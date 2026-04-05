@@ -185,6 +185,7 @@ defmodule Wallabidi.CDPClient do
       elements =
         Enum.map(ids, fn object_id ->
           %Element{
+            id: object_id,
             bidi_shared_id: object_id,
             parent: parent,
             driver: session.driver,
@@ -209,6 +210,7 @@ defmodule Wallabidi.CDPClient do
       elements =
         Enum.map(ids, fn object_id ->
           %Element{
+            id: object_id,
             bidi_shared_id: object_id,
             parent: parent,
             driver: session.driver,
@@ -292,18 +294,19 @@ defmodule Wallabidi.CDPClient do
     session = root_session(element)
 
     # For "value", read the DOM property (current value) not the HTML attribute
-    # (initial value). Same for "checked" and "selected".
+    # (initial value). Same for "checked" and "selected". Throw for stale refs.
     {method, params} =
       Commands.call_function_on_value(
         object_id,
         """
         function(name) {
+          var doc = this.ownerDocument;
+          if (!doc || !doc.body || !doc.body.contains(this)) throw new Error('stale element reference');
           if (name === 'value' && 'value' in this) return this.value;
           if (name === 'checked') return this.checked ? 'true' : null;
           if (name === 'selected') return this.selected ? 'true' : null;
           return this.getAttribute(name);
         }
-          
         """,
         [name]
       )
@@ -322,9 +325,18 @@ defmodule Wallabidi.CDPClient do
       function() {
         var never = ['TITLE','HEAD','META','LINK','SCRIPT','STYLE','NOSCRIPT'];
         if (never.indexOf(this.tagName) >= 0) return false;
-        if (!document.body || !document.body.contains(this)) return false;
-        var style = window.getComputedStyle(this);
+        var doc = this.ownerDocument;
+        if (!doc || !doc.body || !doc.body.contains(this)) return false;
+        var view = doc.defaultView || window;
+        var style = view.getComputedStyle(this);
         if (style.display === 'none' || style.visibility === 'hidden') return false;
+        if (parseFloat(style.opacity) === 0) return false;
+        // OPTION elements have zero-size rects when select is closed, but
+        // they are still considered "visible" per WebDriver semantics.
+        if (this.tagName === 'OPTION') return true;
+        var rect = this.getBoundingClientRect();
+        // Element is positioned entirely off-page (negative coordinates)
+        if (rect.bottom <= 0 || rect.right <= 0) return false;
         return true;
       }
       """)
@@ -357,7 +369,9 @@ defmodule Wallabidi.CDPClient do
     # File inputs can't be set via JS — use DOM.setFileInputFiles
     case is_file_input?(session, object_id) do
       true ->
-        files = if is_list(value), do: value, else: [value]
+        files =
+          (if is_list(value), do: value, else: [value])
+          |> Enum.filter(&File.exists?/1)
 
         send_cdp_session(session, "DOM.setFileInputFiles", %{
           files: files,
@@ -431,8 +445,44 @@ defmodule Wallabidi.CDPClient do
   # --- JavaScript execution ---
 
   def execute_script(session, script, args) do
-    wrapped = wrap_script(script, args)
-    evaluate_value(session, wrapped)
+    session = root_session(session)
+
+    # If args contain element references, use callFunctionOn so we can pass
+    # them as objectId arguments. Otherwise, use evaluate.
+    case encode_script_args(args) do
+      {:no_elements, _} ->
+        wrapped = wrap_script(script, args)
+        evaluate_value(session, wrapped)
+
+      {:ok, cdp_args} ->
+        wrapped = """
+        function() {
+          #{script}
+        }
+        """
+
+        # callFunctionOn needs an objectId — use globalThis
+        {:ok, %{"result" => %{"objectId" => global_id}}} =
+          send_cdp_session(session, "Runtime.evaluate", %{
+            expression: "globalThis",
+            returnByValue: false
+          })
+
+        result =
+          send_cdp_session(session, "Runtime.callFunctionOn", %{
+            objectId: global_id,
+            functionDeclaration: wrapped,
+            arguments: cdp_args,
+            returnByValue: true
+          })
+
+        send_cdp_session(session, "Runtime.releaseObject", %{objectId: global_id})
+
+        case result do
+          {:ok, res} -> ResponseParser.extract_value({:ok, res})
+          error -> error
+        end
+    end
   end
 
   def execute_script_async(session, script, args) do
@@ -442,6 +492,32 @@ defmodule Wallabidi.CDPClient do
     case send_cdp_session(session, method, params) do
       {:ok, result} -> ResponseParser.extract_value({:ok, result})
       error -> error
+    end
+  end
+
+  @web_element_identifier "element-6066-11e4-a52e-4f735466cecf"
+
+  defp encode_script_args(args) do
+    has_element? =
+      Enum.any?(args, fn
+        %{@web_element_identifier => _} -> true
+        _ -> false
+      end)
+
+    if has_element? do
+      cdp_args =
+        Enum.map(args, fn
+          %{@web_element_identifier => id} -> %{objectId: id}
+          v when is_binary(v) -> %{value: v}
+          v when is_number(v) -> %{value: v}
+          v when is_boolean(v) -> %{value: v}
+          nil -> %{value: nil}
+          v -> %{value: v}
+        end)
+
+      {:ok, cdp_args}
+    else
+      {:no_elements, args}
     end
   end
 
@@ -467,26 +543,34 @@ defmodule Wallabidi.CDPClient do
       when not is_nil(object_id) and is_list(keys) do
     session = root_session(element)
 
-    # Lightpanda's Input.dispatchKeyEvent doesn't insert text into inputs.
-    # Use a JS-based approach: focus, then set value char by char with events.
-    text = keys |> Enum.filter(&is_binary/1) |> Enum.join()
+    # Chrome CDP: focus element then dispatch real key events (supports :tab, :enter, etc.)
+    # Lightpanda: Input.dispatchKeyEvent is broken, fall back to JS value setting.
+    if session.capabilities[:flat_session_id] do
+      {method, params} =
+        Commands.call_function_on_value(object_id, "function() { this.focus(); }")
 
-    {method, params} =
-      Commands.call_function_on_value(
-        object_id,
-        """
-        function(text) {
-          this.focus();
-          this.value = (this.value || '') + text;
-          this.dispatchEvent(new Event('input', { bubbles: true }));
-          this.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-        """,
-        [text]
-      )
+      send_cdp_session(session, method, params)
+      send_keys(session, keys)
+    else
+      text = keys |> Enum.filter(&is_binary/1) |> Enum.join()
 
-    send_cdp_session(session, method, params)
-    {:ok, nil}
+      {method, params} =
+        Commands.call_function_on_value(
+          object_id,
+          """
+          function(text) {
+            this.focus();
+            this.value = (this.value || '') + text;
+            this.dispatchEvent(new Event('input', { bubbles: true }));
+            this.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+          """,
+          [text]
+        )
+
+      send_cdp_session(session, method, params)
+      {:ok, nil}
+    end
   end
 
   defp send_key_event(session, code, key_val) do
@@ -511,9 +595,18 @@ defmodule Wallabidi.CDPClient do
     {method, params} = Commands.get_cookies()
 
     case send_cdp_session(session, method, params) do
-      {:ok, %{"cookies" => cookies}} -> {:ok, cookies}
+      {:ok, %{"cookies" => cookies}} -> {:ok, Enum.map(cookies, &normalize_cookie/1)}
       {:ok, _} -> {:ok, []}
       error -> error
+    end
+  end
+
+  defp normalize_cookie(cookie) do
+    # CDP uses `expires`, WebDriver uses `expiry`
+    case Map.pop(cookie, "expires") do
+      {nil, c} -> c
+      {-1, c} -> c
+      {expires, c} -> Map.put(c, "expiry", trunc(expires))
     end
   end
 
@@ -530,13 +623,15 @@ defmodule Wallabidi.CDPClient do
 
     secure = Keyword.get(attributes, :secure, false)
     http_only = Keyword.get(attributes, :httpOnly, false)
+    expiry = Keyword.get(attributes, :expiry)
 
     {method, params} =
       Commands.set_cookie(name, value,
         domain: domain,
         path: path,
         secure: secure,
-        http_only: http_only
+        http_only: http_only,
+        expiry: expiry
       )
 
     case send_cdp_session(session, method, params) do
@@ -631,7 +726,7 @@ defmodule Wallabidi.CDPClient do
 
   defp send_cdp_session(%Session{} = session, method, params) do
     pid = bidi_pid(session)
-    session_id = session.browsing_context
+    session_id = effective_session_id(session)
 
     if session.capabilities[:flat_session_id] do
       WebSocketClient.send_command_flat(pid, method, params, session_id)
@@ -642,9 +737,18 @@ defmodule Wallabidi.CDPClient do
     |> ResponseParser.check_error()
   end
 
+  # Allow drivers to override the active CDP session_id via process dict
+  # (used e.g. for window/tab switching in ChromeCDP)
+  defp effective_session_id(%Session{} = session) do
+    case Process.get({:cdp_current_target, session.id}) do
+      {_target_id, sess_id} -> sess_id
+      _ -> session.browsing_context
+    end
+  end
+
   defp send_cdp_raw(%Session{} = session, {method, params}) do
     pid = bidi_pid(session)
-    session_id = session.browsing_context
+    session_id = effective_session_id(session)
 
     if session.capabilities[:flat_session_id] do
       WebSocketClient.send_command_flat(pid, method, params, session_id)

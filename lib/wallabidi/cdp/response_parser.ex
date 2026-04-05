@@ -2,9 +2,39 @@ defmodule Wallabidi.CDP.ResponseParser do
   @moduledoc false
 
   def check_error({:ok, result}), do: {:ok, result}
+
+  def check_error({:error, {code, msg}}) when is_binary(msg) do
+    cond do
+      String.contains?(msg, "No node with given id") -> {:error, :stale_reference}
+      String.contains?(msg, "Cannot find context with specified id") -> {:error, :stale_reference}
+      String.contains?(msg, "not a valid selector") -> {:error, :invalid_selector}
+      true -> {:error, {code, msg}}
+    end
+  end
+
   def check_error({:error, _} = error), do: error
 
   # Extract a plain value from Runtime.evaluate with returnByValue: true
+  # Check exceptionDetails FIRST so we don't return the exception object as a value.
+  def extract_value({:ok, %{"exceptionDetails" => %{"exception" => %{"description" => desc}}}}) do
+    cond do
+      String.contains?(desc, "No node with given id") ->
+        {:error, :stale_reference}
+
+      String.contains?(desc, "Cannot find context with specified id") ->
+        {:error, :stale_reference}
+
+      String.contains?(desc, "stale element reference") ->
+        {:error, :stale_reference}
+
+      true ->
+        {:error, {:js_error, desc}}
+    end
+  end
+
+  def extract_value({:ok, %{"exceptionDetails" => details}}),
+    do: {:error, {:js_error, inspect(details)}}
+
   def extract_value({:ok, %{"result" => %{"type" => "undefined"}}}), do: {:ok, nil}
 
   def extract_value({:ok, %{"result" => %{"value" => value}}}), do: {:ok, value}
@@ -14,17 +44,33 @@ defmodule Wallabidi.CDP.ResponseParser do
 
   def extract_value({:ok, %{"result" => %{"unserializableValue" => val}}}), do: {:ok, val}
 
-  # Exception during evaluation
-  def extract_value({:ok, %{"exceptionDetails" => %{"exception" => %{"description" => desc}}}}),
-    do: {:error, {:js_error, desc}}
-
-  def extract_value({:ok, %{"exceptionDetails" => details}}),
-    do: {:error, {:js_error, inspect(details)}}
-
   def extract_value({:ok, other}), do: {:ok, other}
   def extract_value(error), do: error
 
   # Extract objectId from Runtime.evaluate with returnByValue: false
+  # Check exceptionDetails FIRST — otherwise a thrown exception's objectId
+  # (pointing to the error object) would be returned as a valid result.
+  def extract_object_id(
+        {:ok, %{"exceptionDetails" => %{"exception" => %{"description" => desc}}}}
+      ) do
+    cond do
+      String.contains?(desc, "is not a valid selector") ->
+        {:error, :invalid_selector}
+
+      String.contains?(desc, "Failed to execute 'querySelectorAll'") ->
+        {:error, :invalid_selector}
+
+      String.contains?(desc, "SyntaxError") and String.contains?(desc, "XPath") ->
+        {:error, :invalid_selector}
+
+      String.contains?(desc, "is not a valid XPath expression") ->
+        {:error, :invalid_selector}
+
+      true ->
+        {:error, {:js_error, desc}}
+    end
+  end
+
   def extract_object_id({:ok, %{"result" => %{"objectId" => object_id}}}),
     do: {:ok, object_id}
 
@@ -33,11 +79,6 @@ defmodule Wallabidi.CDP.ResponseParser do
 
   def extract_object_id({:ok, %{"result" => %{"type" => "object", "subtype" => "null"}}}),
     do: {:ok, nil}
-
-  def extract_object_id(
-        {:ok, %{"exceptionDetails" => %{"exception" => %{"description" => desc}}}}
-      ),
-      do: {:error, {:js_error, desc}}
 
   def extract_object_id(other), do: other
 

@@ -80,11 +80,10 @@ defmodule Wallabidi.ChromeCDP do
 
   @impl true
   def start_session(opts \\ []) do
-    cdp_pid = ensure_cdp_connection()
+    ws_url = get_ws_url()
 
-    # Create an isolated browser context (incognito-like) per test,
-    # then a target within it. Disposal cleans up everything.
-    with {:ok, %{"browserContextId" => ctx_id}} <-
+    with {:ok, cdp_pid} <- CDPClient.connect(ws_url),
+         {:ok, %{"browserContextId" => ctx_id}} <-
            CDPClient.create_browser_context(cdp_pid),
          {:ok, %{target_id: target_id, session_id: session_id}} <-
            CDPClient.create_session(cdp_pid,
@@ -92,6 +91,9 @@ defmodule Wallabidi.ChromeCDP do
              browser_context_id: ctx_id
            ) do
       unique_id = "chrome-cdp-#{System.unique_integer([:positive])}"
+
+      # Merge user-provided capabilities with internal ones for discoverability
+      user_caps = Keyword.get(opts, :capabilities, %{})
 
       session = %Session{
         id: unique_id,
@@ -101,11 +103,12 @@ defmodule Wallabidi.ChromeCDP do
         server: __MODULE__,
         bidi_pid: cdp_pid,
         browsing_context: session_id,
-        capabilities: %{
-          target_id: target_id,
-          browser_context_id: ctx_id,
-          flat_session_id: true
-        }
+        capabilities:
+          Map.merge(user_caps, %{
+            target_id: target_id,
+            browser_context_id: ctx_id,
+            flat_session_id: true
+          })
       }
 
       # Subscribe to console/error events and forward as log.entryAdded
@@ -128,6 +131,7 @@ defmodule Wallabidi.ChromeCDP do
   @impl true
   def end_session(session) do
     CDPClient.close_session(session)
+    CDPClient.close(session)
     :ok
   rescue
     _ -> :ok
@@ -156,7 +160,88 @@ defmodule Wallabidi.ChromeCDP do
   end
 
   @impl true
-  def find_elements(parent, query), do: delegate(:find_elements, parent, [query])
+  def find_elements(parent, query) do
+    session = root_session(parent)
+
+    case frame_stack(session) do
+      [frame_object_id | _] ->
+        find_elements_in_frame(parent, frame_object_id, query)
+
+      [] ->
+        delegate(:find_elements, parent, [query])
+    end
+  end
+
+  defp find_elements_in_frame(parent, frame_object_id, {:css, selector}) do
+    session = root_session(parent)
+
+    {:ok, %{"result" => %{"objectId" => array_id}}} =
+      CDPClient.send_cdp_command(session, "Runtime.callFunctionOn", %{
+        objectId: frame_object_id,
+        functionDeclaration: """
+        function(sel) {
+          return Array.from(this.contentDocument.querySelectorAll(sel));
+        }
+        """,
+        arguments: [%{value: selector}],
+        returnByValue: false
+      })
+
+    extract_elements_from_array(session, parent, array_id)
+  end
+
+  defp find_elements_in_frame(parent, frame_object_id, {:xpath, xpath}) do
+    session = root_session(parent)
+
+    {:ok, %{"result" => %{"objectId" => array_id}}} =
+      CDPClient.send_cdp_command(session, "Runtime.callFunctionOn", %{
+        objectId: frame_object_id,
+        functionDeclaration: """
+        function(expr) {
+          var doc = this.contentDocument;
+          var result = doc.evaluate(expr, doc, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+          var nodes = [];
+          for (var i = 0; i < result.snapshotLength; i++) nodes.push(result.snapshotItem(i));
+          return nodes;
+        }
+        """,
+        arguments: [%{value: xpath}],
+        returnByValue: false
+      })
+
+    extract_elements_from_array(session, parent, array_id)
+  end
+
+  defp extract_elements_from_array(session, parent, array_id) do
+    {:ok, props} =
+      CDPClient.send_cdp_command(session, "Runtime.getProperties", %{
+        objectId: array_id,
+        ownProperties: true
+      })
+
+    ids =
+      props["result"]
+      |> Enum.filter(fn p ->
+        match?({_, ""}, Integer.parse(p["name"] || "")) and
+          get_in(p, ["value", "subtype"]) == "node"
+      end)
+      |> Enum.map(fn p -> get_in(p, ["value", "objectId"]) end)
+
+    CDPClient.send_cdp_command(session, "Runtime.releaseObject", %{objectId: array_id})
+
+    elements =
+      Enum.map(ids, fn object_id ->
+        %Wallabidi.Element{
+          id: object_id,
+          bidi_shared_id: object_id,
+          parent: parent,
+          driver: __MODULE__,
+          url: session.session_url
+        }
+      end)
+
+    {:ok, elements}
+  end
 
   @impl true
   def click(element), do: delegate(:click, element)
@@ -298,13 +383,17 @@ defmodule Wallabidi.ChromeCDP do
   def touch_scroll(element, x_offset, y_offset) do
     session = root_session(element)
 
+    # Use Input.synthesizeScrollGesture which handles viewport resizing/clamping.
     case get_element_center(element) do
       {:ok, {x, y}} ->
-        sx = trunc(x)
-        sy = trunc(y)
-        dispatch_touch(session, "touchStart", sx, sy)
-        dispatch_touch(session, "touchMove", sx + x_offset, sy + y_offset)
-        dispatch_touch(session, "touchEnd", sx + x_offset, sy + y_offset)
+        CDPClient.send_cdp_command(session, "Input.synthesizeScrollGesture", %{
+          x: trunc(x),
+          y: trunc(y),
+          xDistance: -x_offset,
+          yDistance: -y_offset
+        })
+
+        {:ok, nil}
 
       error ->
         error
@@ -316,23 +405,33 @@ defmodule Wallabidi.ChromeCDP do
   def element_size(element) do
     session = root_session(element)
 
-    CDPClient.send_cdp_command(session, "Runtime.callFunctionOn", %{
-      objectId: element.bidi_shared_id,
-      functionDeclaration: "function() { var r = this.getBoundingClientRect(); return JSON.stringify({width: Math.round(r.width), height: Math.round(r.height)}); }",
-      returnByValue: true
-    })
-    |> extract_json_result()
+    result =
+      CDPClient.send_cdp_command(session, "Runtime.callFunctionOn", %{
+        objectId: element.bidi_shared_id,
+        functionDeclaration: "function() { var r = this.getBoundingClientRect(); return JSON.stringify([Math.round(r.width), Math.round(r.height)]); }",
+        returnByValue: true
+      })
+
+    case extract_json_result(result) do
+      {:ok, [w, h]} -> {:ok, {w, h}}
+      other -> other
+    end
   end
 
   def element_location(element) do
     session = root_session(element)
 
-    CDPClient.send_cdp_command(session, "Runtime.callFunctionOn", %{
-      objectId: element.bidi_shared_id,
-      functionDeclaration: "function() { var r = this.getBoundingClientRect(); return JSON.stringify({x: Math.round(r.x), y: Math.round(r.y)}); }",
-      returnByValue: true
-    })
-    |> extract_json_result()
+    result =
+      CDPClient.send_cdp_command(session, "Runtime.callFunctionOn", %{
+        objectId: element.bidi_shared_id,
+        functionDeclaration: "function() { var r = this.getBoundingClientRect(); return JSON.stringify([Math.round(r.x), Math.round(r.y)]); }",
+        returnByValue: true
+      })
+
+    case extract_json_result(result) do
+      {:ok, [x, y]} -> {:ok, {x, y}}
+      other -> other
+    end
   end
 
   defdelegate parse_log(log), to: Wallabidi.Chrome.Logger
@@ -404,16 +503,92 @@ defmodule Wallabidi.ChromeCDP do
   end
 
   @impl true
-  def window_handle(_), do: {:ok, "main"}
+  def window_handle(session) do
+    current = current_target_id(session)
+    {:ok, current}
+  end
 
   @impl true
-  def window_handles(_), do: {:ok, ["main"]}
+  def window_handles(session) do
+    case CDPClient.send_cdp_command(session, "Target.getTargets", %{}) do
+      {:ok, %{"targetInfos" => targets}} ->
+        ctx_id = session.capabilities[:browser_context_id]
+
+        handles =
+          targets
+          |> Enum.filter(fn t ->
+            t["type"] == "page" && t["browserContextId"] == ctx_id
+          end)
+          |> Enum.map(fn t -> t["targetId"] end)
+
+        {:ok, handles}
+
+      _ ->
+        {:ok, [current_target_id(session)]}
+    end
+  rescue
+    _ -> {:ok, [current_target_id(session)]}
+  end
 
   @impl true
-  def focus_window(_, _), do: {:ok, nil}
+  def focus_window(session, target_id) do
+    # Attach to the target and update the session's browsing_context
+    cdp_pid = session.bidi_pid
+
+    case CDPClient.send_cdp_command(session, "Target.attachToTarget", %{
+           targetId: target_id,
+           flatten: true
+         }) do
+      {:ok, %{"sessionId" => new_session_id}} ->
+        # Enable required domains on the new target
+        flat_send(cdp_pid, "Page.enable", %{}, new_session_id)
+        flat_send(cdp_pid, "Runtime.enable", %{}, new_session_id)
+        flat_send(cdp_pid, "DOM.enable", %{}, new_session_id)
+
+        # Store current target info in process dict
+        Process.put({:cdp_current_target, session.id}, {target_id, new_session_id})
+        {:ok, nil}
+
+      error ->
+        error
+    end
+  rescue
+    _ -> {:ok, nil}
+  end
 
   @impl true
-  def close_window(_), do: {:ok, nil}
+  def close_window(session) do
+    {target_id, _} = current_target(session)
+
+    CDPClient.send_cdp_command(session, "Target.closeTarget", %{targetId: target_id})
+
+    # Reset to default target
+    Process.delete({:cdp_current_target, session.id})
+    {:ok, nil}
+  rescue
+    _ -> {:ok, nil}
+  end
+
+  defp current_target_id(session) do
+    case Process.get({:cdp_current_target, session.id}) do
+      {target_id, _} -> target_id
+      nil -> session.capabilities[:target_id]
+    end
+  end
+
+  defp current_target(session) do
+    case Process.get({:cdp_current_target, session.id}) do
+      {target_id, sess_id} ->
+        {target_id, sess_id}
+
+      nil ->
+        {session.capabilities[:target_id], session.browsing_context}
+    end
+  end
+
+  defp flat_send(cdp_pid, method, params, session_id) do
+    Wallabidi.BiDi.WebSocketClient.send_command_flat(cdp_pid, method, params, session_id)
+  end
 
   @impl true
   def maximize_window(_), do: {:ok, nil}
@@ -425,10 +600,64 @@ defmodule Wallabidi.ChromeCDP do
   def set_window_position(_, _, _), do: {:ok, nil}
 
   @impl true
-  def focus_frame(_, _), do: {:ok, nil}
+  def focus_frame(session_or_element, %Wallabidi.Element{bidi_shared_id: object_id}) do
+    session = root_session(session_or_element)
+
+    # Get the frame's contentDocument and store the element's objectId as
+    # the "frame root" in the process dictionary. Subsequent find_elements
+    # will scope to this frame via JS.
+    case CDPClient.send_cdp_command(session, "Runtime.callFunctionOn", %{
+           objectId: object_id,
+           functionDeclaration: "function() { return this.contentDocument ? true : false; }",
+           returnByValue: true
+         }) do
+      {:ok, %{"result" => %{"value" => true}}} ->
+        # Get the frame's executionContextId via DOM.describeNode + Page.getFrameTree
+        push_frame_context(session, object_id)
+        {:ok, nil}
+
+      _ ->
+        {:error, :no_such_frame}
+    end
+  end
+
+  def focus_frame(session_or_element, nil) do
+    session = root_session(session_or_element)
+    clear_frame_context(session)
+    {:ok, nil}
+  end
 
   @impl true
-  def focus_parent_frame(_), do: {:ok, nil}
+  def focus_parent_frame(session_or_element) do
+    session = root_session(session_or_element)
+    pop_frame_context(session)
+    {:ok, nil}
+  end
+
+  def focus_default_frame(session_or_element) do
+    session = root_session(session_or_element)
+    clear_frame_context(session)
+    {:ok, nil}
+  end
+
+  defp push_frame_context(session, frame_element_object_id) do
+    stack = Process.get({:cdp_frame_stack, session.id}, [])
+    Process.put({:cdp_frame_stack, session.id}, [frame_element_object_id | stack])
+  end
+
+  defp pop_frame_context(session) do
+    stack = Process.get({:cdp_frame_stack, session.id}, [])
+    Process.put({:cdp_frame_stack, session.id}, tl(stack))
+  rescue
+    _ -> :ok
+  end
+
+  defp clear_frame_context(session) do
+    Process.put({:cdp_frame_stack, session.id}, [])
+  end
+
+  @doc false
+  def frame_stack(session), do: Process.get({:cdp_frame_stack, session.id}, [])
 
   def cleanup_stale_sessions, do: :ok
 
@@ -517,27 +746,12 @@ defmodule Wallabidi.ChromeCDP do
 
   # --- Internal ---
 
-  defp ensure_cdp_connection do
-    case :persistent_term.get({__MODULE__, :cdp_pid}, nil) do
-      pid when is_pid(pid) ->
-        if Process.alive?(pid), do: pid, else: create_cdp_connection()
-
-      nil ->
-        create_cdp_connection()
+  defp get_ws_url do
+    if url = remote_url() do
+      url
+    else
+      ChromeServer.ws_url(Wallabidi.ChromeCDP.Server)
     end
-  end
-
-  defp create_cdp_connection do
-    ws_url =
-      if url = remote_url() do
-        url
-      else
-        ChromeServer.ws_url(Wallabidi.ChromeCDP.Server)
-      end
-
-    {:ok, pid} = CDPClient.connect(ws_url)
-    :persistent_term.put({__MODULE__, :cdp_pid}, pid)
-    pid
   end
 
   defp remote_url do

@@ -119,6 +119,7 @@ defmodule Wallabidi.CDP.Commands do
       |> maybe_put(:path, opts[:path])
       |> maybe_put(:secure, opts[:secure])
       |> maybe_put(:httpOnly, opts[:http_only])
+      |> maybe_put(:expires, opts[:expiry])
 
     {"Network.setCookie", params}
   end
