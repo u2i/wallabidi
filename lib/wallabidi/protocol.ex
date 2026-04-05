@@ -104,7 +104,9 @@ defmodule Wallabidi.Protocol do
   @spec subscribe(Session.t(), semantic_event) :: :ok
   def subscribe(%Session{protocol: mod} = session, event)
       when not is_nil(mod) and is_atom(event) do
-    if function_exported?(mod, :subscribe, 2) do
+    # Code.ensure_loaded?/1 is required here — function_exported?/3 returns
+    # false for not-yet-loaded modules, giving a false negative.
+    if Code.ensure_loaded?(mod) and function_exported?(mod, :subscribe, 2) do
       mod.subscribe(session, event)
     else
       :ok
@@ -114,7 +116,7 @@ defmodule Wallabidi.Protocol do
   @spec unsubscribe(Session.t(), semantic_event) :: :ok
   def unsubscribe(%Session{protocol: mod} = session, event)
       when not is_nil(mod) and is_atom(event) do
-    if function_exported?(mod, :unsubscribe, 2) do
+    if Code.ensure_loaded?(mod) and function_exported?(mod, :unsubscribe, 2) do
       mod.unsubscribe(session, event)
     else
       :ok
@@ -124,7 +126,7 @@ defmodule Wallabidi.Protocol do
   @spec wire_methods(Session.t(), semantic_event) :: [String.t()]
   def wire_methods(%Session{protocol: mod}, event)
       when not is_nil(mod) and is_atom(event) do
-    if function_exported?(mod, :wire_methods, 1) do
+    if Code.ensure_loaded?(mod) and function_exported?(mod, :wire_methods, 1) do
       mod.wire_methods(event)
     else
       []

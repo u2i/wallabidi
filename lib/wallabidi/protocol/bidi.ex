@@ -42,7 +42,18 @@ defmodule Wallabidi.Protocol.BiDi do
   @impl true
   def subscribe(%Session{bidi_pid: pid}, semantic) do
     methods = wire_methods(semantic)
-    subscriber = Process.get(:wallabidi_session_owner, self())
+
+    # Session-scoped events go to the SessionProcess router; owner-scoped
+    # events (log, dialog, ...) stay with the test process. See the
+    # matching comment in Wallabidi.Protocol.CDP.subscribe/2.
+    subscriber =
+      case semantic do
+        :page_load ->
+          Process.get(:wallabidi_session_process, self())
+
+        _ ->
+          Process.get(:wallabidi_session_owner, self())
+      end
 
     {cmd, params} = Commands.subscribe(methods)
     WebSocketClient.send_command(pid, cmd, params)
@@ -58,7 +69,10 @@ defmodule Wallabidi.Protocol.BiDi do
   def wire_methods(:log), do: ["log.entryAdded"]
   def wire_methods(:dialog), do: ["browsingContext.userPromptOpened"]
   def wire_methods(:network_request), do: ["network.beforeRequestSent"]
-  def wire_methods(:page_load), do: ["browsingContext.load"]
+  # Both milestones share a `navigation` id that matches the id returned
+  # synchronously from browsingContext.navigate, letting the SessionProcess
+  # router correlate events to the navigation that triggered them.
+  def wire_methods(:page_load), do: ["browsingContext.load", "browsingContext.domContentLoaded"]
 
   defp send_command(%Session{bidi_pid: pid}, method, params, timeout \\ 10_000) do
     WebSocketClient.send_command(pid, method, params, timeout)

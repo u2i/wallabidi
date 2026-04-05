@@ -45,4 +45,11 @@ defmodule Wallabidi.Integration.Chrome.LoadTest do
       form_scenario(url)
     end
   end
+
+  test "counter scenario — 3 consecutive parallel batches (variance check)", %{live_app_url: url} do
+    for i <- 1..3 do
+      IO.write("batch #{i}: ")
+      run_parallel(fn -> counter_scenario(url) end, @sessions_per_test)
+    end
+  end
 end

@@ -74,29 +74,72 @@ defmodule Wallabidi.Integration.LoadTestCase do
 
   @doc """
   Runs N scenarios concurrently via Task.async_stream. Fails if any
-  scenario raises or times out.
+  scenario raises or times out. Reports per-session timing stats so
+  variance under load is visible in test output.
   """
   def run_parallel(scenario_fun, count, timeout \\ 60_000) when is_function(scenario_fun, 0) do
     results =
       1..count
       |> Task.async_stream(
-        fn _i -> scenario_fun.() end,
+        fn _i ->
+          start = System.monotonic_time(:millisecond)
+
+          try do
+            scenario_fun.()
+            {:ok, System.monotonic_time(:millisecond) - start}
+          rescue
+            e -> {:error, e, System.monotonic_time(:millisecond) - start}
+          end
+        end,
         max_concurrency: count,
         timeout: timeout,
-        on_timeout: :kill_task
+        on_timeout: :kill_task,
+        ordered: false
       )
       |> Enum.to_list()
 
+    durations =
+      for {:ok, {:ok, ms}} <- results, do: ms
+
     failures =
-      Enum.reject(results, fn
-        {:ok, _} -> true
-        _ -> false
-      end)
+      for r <- results, not match?({:ok, {:ok, _}}, r), do: r
+
+    report_timing(durations, count)
 
     if failures != [] do
-      raise "#{length(failures)} of #{count} parallel sessions failed: #{inspect(failures)}"
+      raise "#{length(failures)} of #{count} parallel sessions failed:\n#{format_failures(failures)}"
     end
 
     :ok
+  end
+
+  defp report_timing([], _count) do
+    IO.puts("  (no successful sessions to time)")
+  end
+
+  defp report_timing(durations, count) do
+    sorted = Enum.sort(durations)
+    min = List.first(sorted)
+    max = List.last(sorted)
+    sum = Enum.sum(sorted)
+    avg = div(sum, length(sorted))
+    median = Enum.at(sorted, div(length(sorted), 2))
+    n = length(sorted)
+
+    IO.puts(
+      "  #{n}/#{count} sessions " <>
+        "min=#{min}ms median=#{median}ms avg=#{avg}ms max=#{max}ms " <>
+        "spread=#{max - min}ms"
+    )
+  end
+
+  defp format_failures(failures) do
+    failures
+    |> Enum.take(5)
+    |> Enum.map_join("\n", fn
+      {:ok, {:error, e, ms}} -> "  - #{ms}ms: #{Exception.message(e)}"
+      {:exit, reason} -> "  - task exit: #{inspect(reason)}"
+      other -> "  - #{inspect(other)}"
+    end)
   end
 end

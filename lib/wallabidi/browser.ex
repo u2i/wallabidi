@@ -1520,18 +1520,20 @@ defmodule Wallabidi.Browser do
     end)
   end
 
-  # For BiDi sessions, wait for the element to appear in the DOM via
-  # onPatchEnd + MutationObserver before polling. Handles both CSS and
-  # XPath queries (XPath falls back to text-based body check).
+  # For sessions with a JS-evaluating protocol (BiDi or CDP), wait for the
+  # element to appear in the DOM via onPatchEnd + MutationObserver before
+  # polling. Handles both CSS and XPath queries (XPath falls back to
+  # text-based body check). The LiveView driver has no `:protocol` and
+  # falls through to the polling retry loop.
   defp maybe_await_selector(parent, query) do
-    with %Session{} = session <- get_session(parent),
-         true <- bidi_session?(session),
+    with %Session{protocol: protocol} = session when not is_nil(protocol) <-
+           get_session(parent),
          {:ok, validated} <- Query.validate(query) do
       case Query.compile(validated) do
         {:css, selector} ->
           text = Query.inner_text(validated)
           opts = if text, do: [text: text], else: []
-          Wallabidi.BiDiClient.await_selector(session, selector, opts)
+          Wallabidi.LiveViewAware.await_selector(session, selector, opts)
 
         {:xpath, _} ->
           # XPath can't be used with querySelector. For text-based queries
@@ -1540,7 +1542,7 @@ defmodule Wallabidi.Browser do
           text = extract_await_text(validated)
 
           if text do
-            Wallabidi.BiDiClient.await_selector(session, "body", text: text)
+            Wallabidi.LiveViewAware.await_selector(session, "body", text: text)
           end
       end
     else
@@ -1778,11 +1780,14 @@ defmodule Wallabidi.Browser do
             Wallabidi.BiDiClient.prepare_page_load(session)
             result = fun.()
             Wallabidi.BiDiClient.await_page_load(session)
-            Wallabidi.BiDiClient.await_liveview_connected(session)
+            Wallabidi.LiveViewAware.await_liveview_connected(session)
             result
           else
-            # CDP drivers — poll for LiveView connection after the action.
+            # CDP: wait for the click-triggered navigation to land, THEN
+            # check for LiveView connection. Without this the JS evaluation
+            # hits the old (or transitioning) document and silently fails.
             result = fun.()
+            Wallabidi.SessionProcess.await_next_page_load(session)
             Wallabidi.LiveViewAware.await_liveview_connected(session)
             result
           end

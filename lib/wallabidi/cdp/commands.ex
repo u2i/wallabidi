@@ -13,7 +13,7 @@ defmodule Wallabidi.CDP.Commands do
 
   # Target management
 
-  def create_target(url \\ "about:blank", opts \\ []) do
+  def create_target(url \\ "", opts \\ []) do
     params = %{url: url}
 
     params =
@@ -39,6 +39,10 @@ defmodule Wallabidi.CDP.Commands do
   def enable_runtime, do: {"Runtime.enable", %{}}
   def enable_network, do: {"Network.enable", %{}}
   def enable_dom, do: {"DOM.enable", %{}}
+
+  def set_lifecycle_events_enabled(enabled) do
+    {"Page.setLifecycleEventsEnabled", %{enabled: enabled}}
+  end
 
   # Navigation
 

@@ -62,13 +62,22 @@ defmodule Wallabidi.CDPClient do
         else: []
 
     with {:ok, %{"targetId" => target_id}} <-
-           send_cdp(pid, Commands.create_target("about:blank", create_target_opts)),
+           send_cdp(pid, Commands.create_target("", create_target_opts)),
          {:ok, %{"sessionId" => session_id}} <-
            send_cdp(pid, Commands.attach_to_target(target_id)) do
-      # Enable required domains using raw pid + sessionId
+      # Enable required domains using raw pid + sessionId. Lifecycle events
+      # give us loaderId-correlated load state so `visit/2` can deterministically
+      # wait for exactly the navigation it just triggered.
       send_cdp_with_session(pid, session_id, Commands.enable_page(), flat_session_id: flat)
       send_cdp_with_session(pid, session_id, Commands.enable_runtime(), flat_session_id: flat)
       send_cdp_with_session(pid, session_id, Commands.enable_dom(), flat_session_id: flat)
+
+      send_cdp_with_session(
+        pid,
+        session_id,
+        Commands.set_lifecycle_events_enabled(true),
+        flat_session_id: flat
+      )
 
       {:ok, %{target_id: target_id, session_id: session_id}}
     end
@@ -104,12 +113,24 @@ defmodule Wallabidi.CDPClient do
     {method, params} = Commands.navigate(url)
 
     case send_cdp_session(session, method, params) do
-      {:ok, result} ->
+      {:ok, %{"loaderId" => loader_id} = result} ->
+        with :ok <- ResponseParser.check_navigate({:ok, result}),
+             :ok <- Wallabidi.SessionProcess.await_page_load(session, loader_id, "load") do
+          # Only inject the xpath polyfill on browsers that lack native
+          # document.evaluate support. Chrome has it natively; Lightpanda
+          # (flagged via :needs_xpath_polyfill) doesn't.
+          if session.capabilities[:needs_xpath_polyfill] do
+            inject_xpath_polyfill(session)
+          end
+
+          :ok
+        end
+
+      {:ok, %{} = result} ->
+        # Page.navigate without a loaderId — same-document navigations and
+        # some cached redirects. There's no new load cycle to wait for.
         case ResponseParser.check_navigate({:ok, result}) do
           :ok ->
-            # Only inject the xpath polyfill on browsers that lack native
-            # document.evaluate support. Chrome has it natively; Lightpanda
-            # (flagged via :needs_xpath_polyfill) doesn't.
             if session.capabilities[:needs_xpath_polyfill] do
               inject_xpath_polyfill(session)
             end
@@ -334,30 +355,58 @@ defmodule Wallabidi.CDPClient do
   def displayed(%Element{bidi_shared_id: object_id} = element) when not is_nil(object_id) do
     session = root_session(element)
 
+    # Visibility check. We deliberately avoid `Element.checkVisibility`
+    # (W3C CSS4) because it returns false negatives under parallel load
+    # in headless Chrome when layout hasn't been computed yet — we saw
+    # hundreds of spurious `displayed: false` verdicts for plain <div>s
+    # that were perfectly visible. Stick to the older, layout-forcing APIs
+    # (`getComputedStyle` + `getBoundingClientRect`) which are stable.
+    #
+    # Wallaby's contract is "visible to the user":
+    # - `isConnected` — still in the document tree
+    # - own `display`/`visibility` — not explicitly hidden
+    # - non-empty rect OR `offsetParent` — actually laid out (catches
+    #   ancestor `display:none`, which is what makes the rect collapse)
+    # - not scrolled off-top/off-left of the viewport
     {method, params} =
       Commands.call_function_on_value(object_id, """
       function() {
-        var never = ['TITLE','HEAD','META','LINK','SCRIPT','STYLE','NOSCRIPT'];
-        if (never.indexOf(this.tagName) >= 0) return false;
-        var doc = this.ownerDocument;
-        if (!doc || !doc.body || !doc.body.contains(this)) return false;
-        var view = doc.defaultView || window;
-        var style = view.getComputedStyle(this);
-        if (style.display === 'none' || style.visibility === 'hidden') return false;
-        if (parseFloat(style.opacity) === 0) return false;
-        // OPTION elements have zero-size rects when select is closed, but
-        // they are still considered "visible" per WebDriver semantics.
-        if (this.tagName === 'OPTION') return true;
+        if (!this.isConnected) return false;
+        // OPTION elements inside a (closed) SELECT have no layout, but
+        // WebDriver considers them visible so they can be clicked. Check
+        // only that an ancestor SELECT isn't hidden.
+        if (this.tagName === 'OPTION') {
+          var select = this.closest('select');
+          if (!select) return true;
+          var ss = window.getComputedStyle(select);
+          return ss.display !== 'none' && ss.visibility !== 'hidden';
+        }
+        var style = window.getComputedStyle(this);
+        if (style.display === 'none') return false;
+        if (style.visibility === 'hidden') return false;
         var rect = this.getBoundingClientRect();
-        // Element is positioned entirely off-page (negative coordinates)
-        if (rect.bottom <= 0 || rect.right <= 0) return false;
+        // Truly unrendered (no layout at all — ancestor display:none
+        // collapses everything to 0x0 with no offsetParent).
+        if (rect.width === 0 && rect.height === 0 && this.offsetParent === null && style.position !== 'fixed') {
+          return false;
+        }
+        // Scrolled off the top or left of the viewport.
+        if (rect.bottom < 0) return false;
+        if (rect.right < 0) return false;
         return true;
       }
       """)
 
     case send_cdp_session(session, method, params) do
-      {:ok, result} -> ResponseParser.extract_value({:ok, result})
-      error -> error
+      {:ok, result} ->
+        case ResponseParser.extract_value({:ok, result}) do
+          {:ok, true} -> {:ok, true}
+          {:ok, false} -> {:ok, false}
+          other -> other
+        end
+
+      error ->
+        error
     end
   end
 

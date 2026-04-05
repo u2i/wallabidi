@@ -112,7 +112,7 @@ defmodule Wallabidi.Driver.SessionLifecycle do
   """
   @spec teardown(Session.t()) :: :ok
   def teardown(%Session{driver: driver} = session) do
-    if function_exported?(driver, :release_server_session, 1) do
+    if Code.ensure_loaded?(driver) and function_exported?(driver, :release_server_session, 1) do
       safe(fn -> driver.release_server_session(session) end)
     end
 

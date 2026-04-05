@@ -34,7 +34,19 @@ defmodule Wallabidi.Protocol.CDP do
 
   @impl true
   def subscribe(%Session{bidi_pid: pid} = session, semantic) do
-    subscriber = Process.get(:wallabidi_session_owner, self())
+    # Session-scoped events (`:page_load`) are routed to the SessionProcess
+    # so it can demultiplex them and drop noise without touching the test
+    # process mailbox. Owner-scoped events (`:log`, `:dialog`, ...) go to
+    # the calling process (typically the test process via the owner pid
+    # stashed in the process dictionary by SessionProcess.init).
+    subscriber =
+      case semantic do
+        :page_load ->
+          Process.get(:wallabidi_session_process, self())
+
+        _ ->
+          Process.get(:wallabidi_session_owner, self())
+      end
 
     # Page and Runtime are always enabled at session bootstrap; only
     # enable additional domains (Network, Fetch) lazily.
@@ -58,7 +70,10 @@ defmodule Wallabidi.Protocol.CDP do
 
   def wire_methods(:dialog), do: ["Page.javascriptDialogOpening"]
   def wire_methods(:network_request), do: ["Network.requestWillBeSent"]
-  def wire_methods(:page_load), do: ["Page.loadEventFired"]
+  # Page.lifecycleEvent carries a loaderId that matches the loaderId returned
+  # synchronously from Page.navigate, letting `visit/2` correlate events to
+  # the specific navigation it triggered.
+  def wire_methods(:page_load), do: ["Page.lifecycleEvent"]
 
   defp domain_for(:log), do: "Runtime"
   defp domain_for(:dialog), do: "Page"
