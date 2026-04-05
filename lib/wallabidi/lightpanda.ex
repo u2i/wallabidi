@@ -27,6 +27,7 @@ defmodule Wallabidi.Lightpanda do
 
   alias Wallabidi.{CDPClient, Session}
   alias Wallabidi.DependencyError
+  alias Wallabidi.Driver.SessionLifecycle
 
   # --- Supervisor ---
 
@@ -109,10 +110,7 @@ defmodule Wallabidi.Lightpanda do
     # Just close the WebSocket — Lightpanda automatically cleans up the
     # target and thread when the client disconnects. Skipping closeTarget
     # avoids hangs when Lightpanda is under load.
-    CDPClient.close(session)
-    :ok
-  rescue
-    _ -> :ok
+    SessionLifecycle.teardown(session)
   end
 
   # --- Delegation to CDPClient ---

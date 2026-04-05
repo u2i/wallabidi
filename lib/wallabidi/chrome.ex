@@ -71,6 +71,7 @@ defmodule Wallabidi.Chrome do
   alias Wallabidi.BiDi.{Commands, ResponseParser, WebSocketClient}
   alias Wallabidi.BiDiClient
   alias Wallabidi.Chrome.Chromedriver
+  alias Wallabidi.Driver.SessionLifecycle
   alias Wallabidi.{DependencyError, Metadata}
   import Wallabidi.Driver.LogChecker
 
@@ -251,6 +252,8 @@ defmodule Wallabidi.Chrome do
     ws_url = rewrite_ws_host(ws_url, base_url)
 
     {:ok, bidi_pid} = WebSocketClient.start_link(ws_url)
+    # Detach from test process so WebSocket survives into on_exit cleanup
+    SessionLifecycle.detach(bidi_pid)
 
     {:ok, result} =
       WebSocketClient.send_command(bidi_pid, "browsingContext.getTree", %{})
@@ -267,21 +270,15 @@ defmodule Wallabidi.Chrome do
 
   @doc false
   def end_session(%Wallabidi.Session{} = session, _opts \\ []) do
-    # DELETE first — tells ChromeDriver to kill the Chrome process.
-    # Then close the WebSocket. Reversing this order causes ChromeDriver
-    # to lose its handle, leaving zombie Chrome processes.
-    delete_session(session)
-
-    if session.bidi_pid do
-      try do
-        WebSocketClient.close(session.bidi_pid)
-      catch
-        :exit, _ -> :ok
-      end
-    end
-
-    :ok
+    SessionLifecycle.teardown(session)
   end
+
+  @doc false
+  # HTTP DELETE tells chromedriver to kill Chrome and remove the session
+  # record. Must run before the WebSocket close (which SessionLifecycle
+  # handles next) — reversing the order leaves chromedriver without a
+  # handle, orphaning the Chrome process.
+  def release_server_session(session), do: delete_session(session)
 
   defp delete_session(session) do
     mint_request(:delete, session.session_url, "")

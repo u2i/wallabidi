@@ -22,6 +22,21 @@ defmodule Wallabidi.Driver do
   @callback end_session(Session.t()) :: :ok | {:error, reason}
 
   @doc """
+  Invoked by `SessionLifecycle.teardown/1` to release server-side
+  session state before the transport is closed.
+
+  Drivers implement this to tell their server (chromedriver, Chrome,
+  Lightpanda, etc.) to drop the session. The transport close itself
+  is handled by `SessionLifecycle.teardown/1` and must not be done here.
+
+  Drivers that don't need server-side cleanup (e.g. where disconnecting
+  the transport IS the cleanup) can return `:ok` without doing anything.
+  """
+  @callback release_server_session(Session.t()) :: any
+
+  @optional_callbacks release_server_session: 1
+
+  @doc """
   Invoked to accept one alert triggered within `open_dialog_fn` and return the alert message.
   """
   @callback accept_alert(Session.t(), open_dialog_fn) :: {:ok, [String.t()]} | {:error, reason}

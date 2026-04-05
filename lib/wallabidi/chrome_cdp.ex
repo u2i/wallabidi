@@ -34,6 +34,7 @@ defmodule Wallabidi.ChromeCDP do
   alias Wallabidi.BiDi.WebSocketClient
   alias Wallabidi.{CDPClient, DependencyError, Metadata, Session}
   alias Wallabidi.Chrome.Server, as: ChromeServer
+  alias Wallabidi.Driver.SessionLifecycle
   import Wallabidi.Driver.LogChecker
 
   @base_user_agent "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 " <>
@@ -129,25 +130,10 @@ defmodule Wallabidi.ChromeCDP do
   end
 
   @impl true
-  def end_session(session) do
-    try do
-      CDPClient.close_session(session)
-    rescue
-      _ -> :ok
-    catch
-      :exit, _ -> :ok
-    end
+  def end_session(session), do: SessionLifecycle.teardown(session)
 
-    try do
-      CDPClient.close(session)
-    rescue
-      _ -> :ok
-    catch
-      :exit, _ -> :ok
-    end
-
-    :ok
-  end
+  @impl true
+  def release_server_session(session), do: CDPClient.close_session(session)
 
   # --- Delegation to CDPClient (wrapped in check_logs! for JS error detection) ---
 

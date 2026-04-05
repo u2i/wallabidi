@@ -39,21 +39,15 @@ defmodule Wallabidi.CDPClient do
   # --- Connection ---
 
   def connect(ws_url) do
-    # Unlink after start so the WebSocket survives the test process exiting.
-    # end_session runs in on_exit (a separate process) and needs the
-    # connection to still be alive for cleanup.
+    # Detach from test process so the WebSocket survives into on_exit cleanup.
     case WebSocketClient.start_link(ws_url) do
       {:ok, pid} = result ->
-        Process.unlink(pid)
+        Wallabidi.Driver.SessionLifecycle.detach(pid)
         result
 
       error ->
         error
     end
-  end
-
-  def close(session) do
-    WebSocketClient.close(bidi_pid(session))
   end
 
   # --- Session bootstrap ---
@@ -102,10 +96,6 @@ defmodule Wallabidi.CDPClient do
     end
 
     :ok
-  rescue
-    _ -> :ok
-  catch
-    :exit, _ -> :ok
   end
 
   # --- Navigation ---
