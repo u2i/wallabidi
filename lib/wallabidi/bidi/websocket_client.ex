@@ -47,8 +47,24 @@ defmodule Wallabidi.BiDi.WebSocketClient do
     :exit, :shutdown -> {:error, :session_closed}
   end
 
-  def subscribe(pid, event_method, subscriber \\ nil) do
-    GenServer.call(pid, {:subscribe, event_method, subscriber})
+  @doc """
+  Subscribe `subscriber` (default: caller) to events matching `event_method`.
+
+  When a shared WebSocket carries events for multiple CDP sessions, pass
+  `session_id` to scope delivery: only events whose top-level `"sessionId"`
+  matches will be forwarded. Omit `session_id` (or pass `:global`) to
+  receive events regardless of session — this is the default for BiDi and
+  for per-connection CDP setups.
+  """
+  def subscribe(pid, event_method, subscriber \\ nil, session_id \\ :global) do
+    GenServer.call(pid, {:subscribe, event_method, subscriber, session_id})
+  catch
+    :exit, _ -> :ok
+  end
+
+  @doc "Remove a subscriber registered via `subscribe/4`."
+  def unsubscribe(pid, event_method, subscriber, session_id \\ :global) do
+    GenServer.call(pid, {:unsubscribe, event_method, subscriber, session_id})
   catch
     :exit, _ -> :ok
   end
@@ -104,9 +120,16 @@ defmodule Wallabidi.BiDi.WebSocketClient do
     {:noreply, state}
   end
 
-  def handle_call({:subscribe, event_method, subscriber}, {caller, _}, state) do
+  def handle_call({:subscribe, event_method, subscriber, session_id}, {caller, _}, state) do
     target = subscriber || caller
-    subs = Map.update(state.subscribers, event_method, [target], &[target | &1])
+    key = {event_method, session_id}
+    subs = Map.update(state.subscribers, key, [target], &[target | &1])
+    {:reply, :ok, %{state | subscribers: subs}}
+  end
+
+  def handle_call({:unsubscribe, event_method, subscriber, session_id}, _from, state) do
+    key = {event_method, session_id}
+    subs = Map.update(state.subscribers, key, [], &List.delete(&1, subscriber))
     {:reply, :ok, %{state | subscribers: subs}}
   end
 
@@ -213,9 +236,18 @@ defmodule Wallabidi.BiDi.WebSocketClient do
   defp process_frame(_frame, state), do: state
 
   defp broadcast_event(state, method, event) do
-    pids = Map.get(state.subscribers, method, [])
+    # Session-scoped subscribers receive only events for their session.
+    # Global subscribers (:global) receive all events regardless of session.
+    session_id = event["sessionId"]
 
-    Enum.each(pids, fn pid ->
+    session_pids =
+      if is_binary(session_id),
+        do: Map.get(state.subscribers, {method, session_id}, []),
+        else: []
+
+    global_pids = Map.get(state.subscribers, {method, :global}, [])
+
+    Enum.each(session_pids ++ global_pids, fn pid ->
       send(pid, {:bidi_event, method, event})
     end)
   end

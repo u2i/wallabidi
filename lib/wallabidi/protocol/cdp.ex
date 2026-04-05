@@ -57,12 +57,35 @@ defmodule Wallabidi.Protocol.CDP do
       domain -> send_cdp(session, "#{domain}.enable", %{}, 10_000)
     end
 
-    Enum.each(wire_methods(semantic), &WebSocketClient.subscribe(pid, &1, subscriber))
+    # For flat-session CDP, scope subscriptions to this session's sessionId
+    # so a shared WebSocket only delivers events for our target.
+    session_id =
+      if session.capabilities[:flat_session_id],
+        do: session.browsing_context,
+        else: :global
+
+    Enum.each(wire_methods(semantic), fn method ->
+      WebSocketClient.subscribe(pid, method, subscriber, session_id)
+    end)
+
     :ok
   end
 
   @impl true
-  def unsubscribe(%Session{}, _semantic), do: :ok
+  def unsubscribe(%Session{bidi_pid: pid} = session, semantic) do
+    subscriber = Process.get(:wallabidi_session_owner, self())
+
+    session_id =
+      if session.capabilities[:flat_session_id],
+        do: session.browsing_context,
+        else: :global
+
+    Enum.each(wire_methods(semantic), fn method ->
+      WebSocketClient.unsubscribe(pid, method, subscriber, session_id)
+    end)
+
+    :ok
+  end
 
   @impl true
   def wire_methods(:log),

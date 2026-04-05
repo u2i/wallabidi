@@ -116,7 +116,13 @@ defmodule Wallabidi.Driver.SessionLifecycle do
       safe(fn -> driver.release_server_session(session) end)
     end
 
-    safe(session.bidi_pid, &WebSocketClient.close/1)
+    # Only close the WebSocket if this session owns it (not shared).
+    # ChromeCDP sessions share one WebSocket via SharedConnection, so
+    # closing it here would kill every other session's transport.
+    unless session.capabilities[:shared_connection] do
+      safe(session.bidi_pid, &WebSocketClient.close/1)
+    end
+
     :ok
   end
 end

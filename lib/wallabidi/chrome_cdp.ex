@@ -55,7 +55,8 @@ defmodule Wallabidi.ChromeCDP do
         [{ChromeServer, [name: Wallabidi.ChromeCDP.Server]}]
       end
 
-    Supervisor.init(server, strategy: :one_for_one)
+    children = server ++ [{Wallabidi.ChromeCDP.SharedConnection, []}]
+    Supervisor.init(children, strategy: :one_for_one)
   end
 
   # --- Validation ---
@@ -88,10 +89,9 @@ defmodule Wallabidi.ChromeCDP do
   end
 
   defp do_start_session(opts) do
-    ws_url = get_ws_url()
+    cdp_pid = Wallabidi.ChromeCDP.SharedConnection.get()
 
-    with {:ok, cdp_pid} <- CDPClient.connect(ws_url),
-         {:ok, %{"browserContextId" => ctx_id}} <-
+    with {:ok, %{"browserContextId" => ctx_id}} <-
            CDPClient.create_browser_context(cdp_pid),
          {:ok, %{target_id: target_id, session_id: session_id}} <-
            CDPClient.create_session(cdp_pid,
@@ -116,7 +116,8 @@ defmodule Wallabidi.ChromeCDP do
           Map.merge(user_caps, %{
             target_id: target_id,
             browser_context_id: ctx_id,
-            flat_session_id: true
+            flat_session_id: true,
+            shared_connection: true
           })
       }
 
@@ -757,14 +758,6 @@ defmodule Wallabidi.ChromeCDP do
   defp extract_json_result(error), do: error
 
   # --- Internal ---
-
-  defp get_ws_url do
-    if url = remote_url() do
-      url
-    else
-      ChromeServer.ws_url(Wallabidi.ChromeCDP.Server)
-    end
-  end
 
   defp remote_url do
     config(:remote_url)
