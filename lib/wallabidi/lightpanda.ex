@@ -105,7 +105,7 @@ defmodule Wallabidi.Lightpanda do
         server: __MODULE__,
         bidi_pid: pid,
         browsing_context: session_id,
-        capabilities: %{target_id: target_id}
+        capabilities: %{target_id: target_id, needs_xpath_polyfill: true}
       }
 
       if window_size = Keyword.get(opts, :window_size) do

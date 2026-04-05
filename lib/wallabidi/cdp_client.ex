@@ -107,7 +107,13 @@ defmodule Wallabidi.CDPClient do
       {:ok, result} ->
         case ResponseParser.check_navigate({:ok, result}) do
           :ok ->
-            inject_xpath_polyfill(session)
+            # Only inject the xpath polyfill on browsers that lack native
+            # document.evaluate support. Chrome has it natively; Lightpanda
+            # (flagged via :needs_xpath_polyfill) doesn't.
+            if session.capabilities[:needs_xpath_polyfill] do
+              inject_xpath_polyfill(session)
+            end
+
             :ok
 
           error ->
