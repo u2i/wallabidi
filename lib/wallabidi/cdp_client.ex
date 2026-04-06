@@ -252,6 +252,24 @@ defmodule Wallabidi.CDPClient do
     end
   end
 
+  @doc """
+  Execute a Pipeline — compiles to JS, runs via evaluate or callFunctionOn,
+  extracts element objectIds via getProperties. 2 RPCs total regardless of
+  how many filter steps the pipeline has.
+  """
+  def find_elements_pipeline(parent, %Wallabidi.CDP.Pipeline{} = pipeline) do
+    {js, _parent_id} = Wallabidi.CDP.Pipeline.to_js(pipeline)
+
+    # For scoped queries (parent_id set), the pipeline JS is already a
+    # function() { ... } that uses `this` as root. For document-level
+    # queries, it's an IIFE.
+    if pipeline.parent_id do
+      find_elements_on(parent, pipeline.parent_id, js, [])
+    else
+      find_elements_js(parent, js)
+    end
+  end
+
   # --- Element interaction ---
 
   def click(%Element{bidi_shared_id: object_id} = element) when not is_nil(object_id) do
@@ -774,6 +792,19 @@ defmodule Wallabidi.CDPClient do
   defp cast_cdp_with_session(pid, session_id, {method, params}, opts)
        when is_pid(pid) do
     if Keyword.get(opts, :flat_session_id) do
+      WebSocketClient.cast_command_flat(pid, method, params, session_id)
+    else
+      params = Map.put(params, :sessionId, session_id)
+      WebSocketClient.cast_command_flat(pid, method, params, session_id)
+    end
+  end
+
+  @doc false
+  def cast_cdp_command(%Session{} = session, method, params) do
+    pid = bidi_pid(session)
+    session_id = effective_session_id(session)
+
+    if session.capabilities[:flat_session_id] do
       WebSocketClient.cast_command_flat(pid, method, params, session_id)
     else
       params = Map.put(params, :sessionId, session_id)

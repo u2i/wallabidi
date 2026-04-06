@@ -1501,6 +1501,68 @@ defmodule Wallabidi.Browser do
     # For BiDi sessions, try event-driven wait before polling
     maybe_await_selector(parent, query)
 
+    session = get_session(parent)
+
+    if session && session.protocol == Wallabidi.Protocol.CDP &&
+         match?(%Session{}, parent) &&
+         not in_frame?(session) do
+      # Pipeline for document-level queries in the main frame. Element-scoped
+      # and frame-switched queries use the legacy path.
+      execute_query_pipeline(parent, driver, query)
+    else
+      execute_query_legacy(parent, driver, query)
+    end
+  end
+
+  # CDP path: compile find + visibility/text/selected filters into one JS
+  # function, execute via evaluate + getProperties (2 RPCs). Eliminates
+  # per-element displayed/text RPCs.
+  defp execute_query_pipeline(parent, _driver, query) do
+    alias Wallabidi.CDP.Pipeline
+
+    retry(fn ->
+      try do
+        with {:ok, query} <- Query.validate(query),
+             compiled_query <- Query.compile(query) do
+          {type, selector} = compiled_query
+
+          pipeline = Pipeline.new(parent)
+          pipeline = Pipeline.query_all(pipeline, type, selector)
+
+          pipeline =
+            case Query.visible?(query) do
+              true -> Pipeline.filter_visible(pipeline)
+              false -> Pipeline.filter_not_visible(pipeline)
+              _ -> pipeline
+            end
+
+          pipeline =
+            case Query.inner_text(query) do
+              nil -> pipeline
+              text -> Pipeline.filter_text(pipeline, text)
+            end
+
+          pipeline =
+            case Query.selected?(query) do
+              true -> Pipeline.filter_selected(pipeline, true)
+              false -> Pipeline.filter_selected(pipeline, false)
+              _ -> pipeline
+            end
+
+          with {:ok, elements} <- Wallabidi.CDPClient.find_elements_pipeline(parent, pipeline),
+               {:ok, elements} <- validate_count(query, elements),
+               {:ok, elements} <- do_at(query, elements) do
+            {:ok, %{query | result: elements}}
+          end
+        end
+      rescue
+        StaleReferenceError ->
+          {:error, :stale_reference}
+      end
+    end)
+  end
+
+  defp execute_query_legacy(parent, driver, query) do
     retry(fn ->
       try do
         with {:ok, query} <- Query.validate(query),
@@ -1559,6 +1621,10 @@ defmodule Wallabidi.Browser do
   defp get_session(%Session{} = s), do: s
   defp get_session(%Element{parent: p}), do: get_session(p)
   defp get_session(_), do: nil
+
+  defp in_frame?(%Session{} = session) do
+    Process.get({:cdp_frame_stack, session.id}, []) != []
+  end
 
   defp max_time_exceeded?(start_time) do
     current_time() - start_time > max_wait_time()
