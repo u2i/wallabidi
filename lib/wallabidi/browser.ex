@@ -1846,9 +1846,6 @@ defmodule Wallabidi.Browser do
             Wallabidi.LiveViewAware.await_liveview_connected(session)
             result
           else
-            # CDP: wait for the click-triggered navigation to land, THEN
-            # check for LiveView connection. Without this the JS evaluation
-            # hits the old (or transitioning) document and silently fails.
             result = fun.()
             Wallabidi.SessionProcess.await_next_page_load(session)
             Wallabidi.LiveViewAware.await_liveview_connected(session)

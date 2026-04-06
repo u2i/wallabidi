@@ -54,6 +54,15 @@ defmodule Wallabidi.CDP.Pipeline do
   end
 
   @doc """
+  Append classification metadata to the result array. The classification
+  string is set as `els.__classify` so `getProperties` returns it alongside
+  the element objectIds. The caller can extract it without an extra RPC.
+  """
+  def classify(%__MODULE__{} = p, interaction) do
+    %{p | ops: p.ops ++ [{:classify, interaction}]}
+  end
+
+  @doc """
   Compiles the pipeline to a JS expression string. Returns `{js, parent_id}`
   where `parent_id` is nil for document-level queries or an objectId for
   element-scoped queries (to be executed via `callFunctionOn`).
@@ -134,6 +143,16 @@ defmodule Wallabidi.CDP.Pipeline do
     "els = els.filter(function(el) { return !(el.selected || el.checked); });"
   end
 
+  defp compile_op({:classify, interaction}, _root) do
+    """
+    if (els.length > 0) {
+      els.__classify = (#{classify_fn()})(els[0], #{Jason.encode!(to_string(interaction))});
+    } else {
+      els.__classify = "none";
+    }
+    """
+  end
+
   # Inline visibility function — same logic as CDPClient.displayed/1
   defp visibility_fn do
     """
@@ -153,6 +172,39 @@ defmodule Wallabidi.CDP.Pipeline do
       if (rect.bottom < 0) return false;
       if (rect.right < 0) return false;
       return true;
+    }
+    """
+  end
+
+  defp classify_fn do
+    """
+    function(el, type) {
+      if (!el) return "none";
+      if (type === 'click') {
+        var link = el.closest('[data-phx-link]');
+        if (link) return link.getAttribute('data-phx-link') === 'redirect' ? 'navigate' : 'patch';
+        var phxClick = el.getAttribute('phx-click');
+        if (phxClick) return (phxClick.includes('push') || !phxClick.startsWith('[')) ? 'patch' : 'none';
+        if (el.type === 'submit' || el.tagName === 'BUTTON') {
+          var form = el.closest('form');
+          if (form && form.getAttribute('phx-submit')) return 'patch';
+          if (form) return 'full_page';
+        }
+        var anchor = el.closest('a[href]');
+        if (anchor && anchor.getAttribute('href') && !anchor.getAttribute('href').startsWith('#')) return 'full_page';
+        return 'none';
+      }
+      if (type === 'change') {
+        var phxChange = el.getAttribute('phx-change') || (el.form && el.form.getAttribute('phx-change'));
+        return phxChange ? 'patch' : 'none';
+      }
+      if (type === 'submit') {
+        var f = el.closest('form');
+        if (f && f.getAttribute('phx-submit')) return 'patch';
+        if (f) return 'full_page';
+        return 'none';
+      }
+      return 'none';
     }
     """
   end

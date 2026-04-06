@@ -257,18 +257,71 @@ defmodule Wallabidi.CDPClient do
   extracts element objectIds via getProperties. 2 RPCs total regardless of
   how many filter steps the pipeline has.
   """
+  @doc """
+  Execute a Pipeline — compiles to JS, runs via evaluate or callFunctionOn,
+  extracts element objectIds via getProperties. 2 RPCs total.
+
+  If the pipeline includes a `classify` step, the classification string
+  is extracted from the array's `__classify` property and returned as
+  `{:ok, elements, classification}`. Otherwise returns `{:ok, elements}`.
+  """
   def find_elements_pipeline(parent, %Wallabidi.CDP.Pipeline{} = pipeline) do
     {js, _parent_id} = Wallabidi.CDP.Pipeline.to_js(pipeline)
+    has_classify = Enum.any?(pipeline.ops, &match?({:classify, _}, &1))
 
-    # For scoped queries (parent_id set), the pipeline JS is already a
-    # function() { ... } that uses `this` as root. For document-level
-    # queries, it's an IIFE.
-    if pipeline.parent_id do
-      find_elements_on(parent, pipeline.parent_id, js, [])
-    else
-      find_elements_js(parent, js)
+    session = root_session(parent)
+
+    result =
+      if pipeline.parent_id do
+        {method, params} = Commands.call_function_on(pipeline.parent_id, js, [])
+
+        with {:ok, result} <- send_cdp_session(session, method, params),
+             {:ok, array_id} <- ResponseParser.extract_object_id({:ok, result}),
+             {:ok, result} <- send_cdp_raw(session, Commands.get_properties(array_id)) do
+          if array_id, do: cast_release(session, array_id)
+          {:ok, result, array_id}
+        end
+      else
+        {method, params} = Commands.evaluate(js, return_by_value: false)
+
+        with {:ok, result} <- send_cdp_session(session, method, params),
+             {:ok, array_id} <- ResponseParser.extract_object_id({:ok, result}),
+             {:ok, result} <- send_cdp_raw(session, Commands.get_properties(array_id)) do
+          if array_id, do: cast_release(session, array_id)
+          {:ok, result, array_id}
+        end
+      end
+
+    with {:ok, props_result, _} <- result,
+         {:ok, ids} <- ResponseParser.extract_element_ids({:ok, props_result}) do
+      elements =
+        Enum.map(ids, fn object_id ->
+          %Element{
+            id: object_id,
+            bidi_shared_id: object_id,
+            parent: parent,
+            driver: session.driver,
+            url: session.session_url
+          }
+        end)
+
+      if has_classify do
+        classification = extract_classify(props_result)
+        {:ok, elements, classification}
+      else
+        {:ok, elements}
+      end
     end
   end
+
+  defp extract_classify(%{"result" => properties}) when is_list(properties) do
+    case Enum.find(properties, &(&1["name"] == "__classify")) do
+      %{"value" => %{"value" => val}} when is_binary(val) -> val
+      _ -> "none"
+    end
+  end
+
+  defp extract_classify(_), do: "none"
 
   # --- Element interaction ---
 
