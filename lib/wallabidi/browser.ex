@@ -1823,17 +1823,15 @@ defmodule Wallabidi.Browser do
   end
 
   defp do_navigate_await(session, fun) do
-    case Wallabidi.LiveViewAware.prepare_patch(session) do
-      :prepared ->
-        {:ok, pre_url} = Wallabidi.Protocol.current_url(session)
-        result = fun.()
-        Wallabidi.LiveViewAware.await_patch(session)
-        Wallabidi.LiveViewAware.await_liveview_connected(session, pre_url: pre_url)
-        result
-
-      :no_liveview ->
-        fun.()
-    end
+    # We already know this is a navigation (push_navigate / redirect), not
+    # a patch. Don't await_patch — its fixed 5s timeout fires before the
+    # slow navigation completes under load, adding pure dead time. Instead
+    # go straight to waiting for the new LiveView to connect (which waits
+    # for the URL to change first via the pre_url check).
+    {:ok, pre_url} = Wallabidi.Protocol.current_url(session)
+    result = fun.()
+    Wallabidi.LiveViewAware.await_liveview_connected(session, pre_url: pre_url)
+    result
   end
 
   # :patch     — phx-click, phx-submit, phx-change, <.link patch=...>
@@ -1933,7 +1931,10 @@ defmodule Wallabidi.Browser do
   defp parse_classification("full_page"), do: :full_page
   defp parse_classification("patch"), do: :patch
   defp parse_classification("none"), do: :none
-  defp parse_classification(_), do: :patch
+  # If classification JS failed or returned something unexpected, don't
+  # default to :patch — that adds a 5s await_patch timeout for no reason.
+  # Safer to skip the wait and let the normal retry loop handle it.
+  defp parse_classification(_), do: :none
 
   @doc false
   def build_file_url(path) do
