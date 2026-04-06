@@ -1813,6 +1813,7 @@ defmodule Wallabidi.Browser do
             result
 
           :page_navigated ->
+            Wallabidi.SessionProcess.await_next_page_load(session)
             Wallabidi.LiveViewAware.await_liveview_connected(session)
             result
         end

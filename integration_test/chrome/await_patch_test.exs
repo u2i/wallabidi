@@ -303,7 +303,7 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
 
       elapsed = System.monotonic_time(:millisecond) - start
       # beforeunload resolves immediately — should be well under 2s
-      assert elapsed < 3_000
+      assert elapsed < 3000
     end
   end
 

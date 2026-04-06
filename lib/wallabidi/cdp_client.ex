@@ -202,14 +202,15 @@ defmodule Wallabidi.CDPClient do
 
   defp find_elements_js(parent, js) do
     session = root_session(parent)
+    # Wrap the JS to return elements as an array, then use getProperties
+    # to extract individual objectIds. TODO: collapse into single RPC.
     {method, params} = Commands.evaluate(js, return_by_value: false)
 
     with {:ok, result} <- send_cdp_session(session, method, params),
          {:ok, array_id} <- ResponseParser.extract_object_id({:ok, result}),
          {:ok, result} <- send_cdp_raw(session, Commands.get_properties(array_id)),
          {:ok, ids} <- ResponseParser.extract_element_ids({:ok, result}) do
-      # Release the array object
-      if array_id, do: send_cdp_raw(session, Commands.release_object(array_id))
+      if array_id, do: cast_release(session, array_id)
 
       elements =
         Enum.map(ids, fn object_id ->
@@ -234,7 +235,7 @@ defmodule Wallabidi.CDPClient do
          {:ok, array_id} <- ResponseParser.extract_object_id({:ok, result}),
          {:ok, result} <- send_cdp_raw(session, Commands.get_properties(array_id)),
          {:ok, ids} <- ResponseParser.extract_element_ids({:ok, result}) do
-      if array_id, do: send_cdp_raw(session, Commands.release_object(array_id))
+      if array_id, do: cast_release(session, array_id)
 
       elements =
         Enum.map(ids, fn object_id ->
@@ -533,7 +534,7 @@ defmodule Wallabidi.CDPClient do
             returnByValue: true
           })
 
-        send_cdp_session(session, "Runtime.releaseObject", %{objectId: global_id})
+        cast_release(session, global_id)
 
         case result do
           {:ok, res} -> ResponseParser.extract_value({:ok, res})
@@ -777,6 +778,18 @@ defmodule Wallabidi.CDPClient do
     else
       params = Map.put(params, :sessionId, session_id)
       WebSocketClient.cast_command_flat(pid, method, params, session_id)
+    end
+  end
+
+  # Fire-and-forget releaseObject — frees remote references without blocking.
+  defp cast_release(%Session{} = session, object_id) do
+    pid = bidi_pid(session)
+    session_id = effective_session_id(session)
+
+    if session.capabilities[:flat_session_id] do
+      WebSocketClient.cast_command_flat(pid, "Runtime.releaseObject", %{objectId: object_id}, session_id)
+    else
+      WebSocketClient.cast_command_flat(pid, "Runtime.releaseObject", %{objectId: object_id, sessionId: session_id}, session_id)
     end
   end
 

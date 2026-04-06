@@ -362,7 +362,7 @@ defmodule Wallabidi.BiDi.WebSocketClient do
       {{from, sent_at, method}, pending} ->
         chrome_us = System.monotonic_time(:microsecond) - sent_at
 
-        if chrome_us > 50_000 do
+        if chrome_us > 0 do
           Logger.warning("[ws] chrome response #{div(chrome_us, 1000)}ms method=#{method}")
         end
 
