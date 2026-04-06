@@ -1532,6 +1532,9 @@ defmodule Wallabidi.Browser do
 
     if session && session.protocol == Wallabidi.Protocol.CDP &&
          not in_frame?(session) && not in_switched_window?(session) do
+      # Both CDP and BiDi use the ops pipeline for find+filter in one eval.
+      # CDP additionally uses push-based find (Runtime.addBinding); BiDi
+      # uses a simple eval with retry.
       execute_query_pipeline(parent, driver, query)
     else
       maybe_await_selector(parent, query)
@@ -1539,27 +1542,115 @@ defmodule Wallabidi.Browser do
     end
   end
 
-  # CDP path: await (MutationObserver) + find + filter in one async JS eval.
-  # Replaces the separate maybe_await_selector + sync pipeline with a single
-  # eval_async that resolves when elements match, then getProperties to
-  # extract objectIds. 2 RPCs total.
+  # Ops pipeline: compile find + visibility/text/selected filters into one
+  # JS function, evaluate via the session's protocol. For CDP, uses the
+  # push-based find (binding callback). For BiDi, uses eval with retry.
   defp execute_query_pipeline(parent, _driver, query) do
     alias Wallabidi.CDP.Ops
 
-    with {:ok, ops, validated} <- Ops.from_wallaby(parent, query) do
-      case Wallabidi.CDPClient.execute_ops(parent, ops,
-             timeout: max_wait_time(),
-             count: Query.count(validated),
-             needs_elements: true) do
-        {:ok, elements} ->
-          with {:ok, elements} <- validate_count(validated, elements),
-               {:ok, elements} <- do_at(validated, elements) do
-            {:ok, %{validated | result: elements}}
-          end
+    session = get_session(parent)
 
-        error ->
-          error
+    with {:ok, ops, validated} <- Ops.from_wallaby(parent, query) do
+      if session.protocol == Wallabidi.Protocol.CDP do
+        # CDP: push-based find via Runtime.addBinding
+        case Wallabidi.CDPClient.execute_ops(parent, ops,
+               timeout: max_wait_time(),
+               count: Query.count(validated),
+               needs_elements: true) do
+          {:ok, elements} ->
+            with {:ok, elements} <- validate_count(validated, elements),
+                 {:ok, elements} <- do_at(validated, elements) do
+              {:ok, %{validated | result: elements}}
+            end
+
+          error ->
+            error
+        end
+      else
+        # BiDi: eval the ops JS directly with retry
+        execute_ops_bidi(parent, session, ops, validated)
       end
+    end
+  end
+
+  # BiDi path: compile ops to JS, eval via Protocol.eval, parse the
+  # array result to extract sharedIds. Retry until count matches.
+  defp execute_ops_bidi(parent, session, _ops, validated) do
+    alias Wallabidi.CDP.Pipeline
+
+    {type, selector} = Wallabidi.Query.compile(validated)
+
+    # Build pipeline JS (reuse the Pipeline compiler for the JS string)
+    pipeline =
+      Pipeline.new(parent)
+      |> Pipeline.query_all(type, selector)
+
+    pipeline = case Wallabidi.Query.visible?(validated) do
+      true -> Pipeline.filter_visible(pipeline)
+      false -> Pipeline.filter_not_visible(pipeline)
+      _ -> pipeline
+    end
+
+    pipeline = case Wallabidi.Query.inner_text(validated) do
+      nil -> pipeline
+      text -> Pipeline.filter_text(pipeline, text)
+    end
+
+    pipeline = case Wallabidi.Query.selected?(validated) do
+      true -> Pipeline.filter_selected(pipeline, true)
+      false -> Pipeline.filter_selected(pipeline, false)
+      _ -> pipeline
+    end
+
+    {js, _parent_id, _mode} = Pipeline.to_js(pipeline)
+
+    # For scoped queries (Element parent), use script.callFunction
+    # with the parent as `this`. For document-level, use script.evaluate.
+    retry(fn ->
+      try do
+        with {:ok, elements} <- eval_pipeline_bidi(parent, session, js, pipeline),
+             {:ok, elements} <- validate_count(validated, elements),
+             {:ok, elements} <- do_at(validated, elements) do
+          {:ok, %{validated | result: elements}}
+        end
+      rescue
+        Wallabidi.StaleReferenceError -> {:error, :stale_reference}
+      end
+    end)
+  end
+
+  defp eval_pipeline_bidi(parent, session, js, _pipeline) do
+    context = session.browsing_context
+
+    # Document-level only (scoped queries fall through to legacy via
+    # the match?(%Session{}, parent) guard in execute_query).
+    {method, params} = Wallabidi.BiDi.Commands.evaluate(context, js)
+    result = Wallabidi.BiDi.WebSocketClient.send_command(session.bidi_pid, method, params)
+
+    case result do
+      {:ok, %{"result" => %{"type" => "array", "value" => items}}} ->
+        elements =
+          items
+          |> Enum.filter(fn item -> item["type"] == "node" end)
+          |> Enum.map(fn node ->
+            shared_id = node["sharedId"]
+
+            %Wallabidi.Element{
+              id: shared_id,
+              bidi_shared_id: shared_id,
+              parent: parent,
+              driver: session.driver,
+              url: session.session_url
+            }
+          end)
+
+        {:ok, elements}
+
+      {:ok, _} ->
+        {:ok, []}
+
+      {:error, _} = error ->
+        error
     end
   end
 
