@@ -1066,6 +1066,7 @@ defmodule Wallabidi.CDPClient do
     visible = Keyword.get(opts, :visible, :any)
     text = Keyword.get(opts, :text)
     count = Keyword.get(opts, :count)
+    selected = Keyword.get(opts, :selected, :any)
     needs_elements = Keyword.get(opts, :needs_elements, true)
 
     # Build the root reference for scoped queries
@@ -1090,30 +1091,67 @@ defmodule Wallabidi.CDPClient do
     text_js = if text, do: Jason.encode!(text), else: "null"
     count_js = if is_integer(count), do: Integer.to_string(count), else: "null"
 
+    selected_js =
+      case selected do
+        true -> "true"
+        false -> "false"
+        _ -> "null"
+      end
+
     register_js = """
+    if (!window.__wallabidi_queries) window.__wallabidi_queries = {};
     window.__wallabidi_queries[#{Jason.encode!(query_id)}] = {
       type: #{Jason.encode!(to_string(type))},
       selector: #{Jason.encode!(selector)},
       visible: #{visible_js},
       text: #{text_js},
       count: #{count_js},
+      selected: #{selected_js},
       root: #{root_js || "this"},
       resolved: false,
       elements: []
     };
-    window.__wallabidi_check();
+    if (window.__wallabidi_check) {
+      window.__wallabidi_check();
+    } else {
+      // Bootstrap not installed yet (e.g. about:blank). Run inline.
+      try {
+        var _q = window.__wallabidi_queries[#{Jason.encode!(query_id)}];
+        var _els;
+        try {
+          _els = _q.type === 'css'
+            ? Array.from(document.querySelectorAll(_q.selector))
+            : [];
+        } catch(_e) {
+          _q.error = _e.message;
+          _els = [];
+        }
+        if (_q.error) {
+          _q.resolved = true;
+          __wallabidi(JSON.stringify({id: #{Jason.encode!(query_id)}, count: 0, error: _q.error}));
+        } else if (_q.count === null ? _els.length > 0 : _els.length === _q.count) {
+          _q.resolved = true;
+          _q.elements = _els;
+          __wallabidi(JSON.stringify({id: #{Jason.encode!(query_id)}, count: _els.length}));
+        }
+      } catch(_e2) {}
+    }
     """
 
-    # Fire-and-forget: register the query. The observer will call
-    # __wallabidi when it matches.
+    # Register the waiter BEFORE sending the JS, so the binding event
+    # can't arrive before SessionProcess has a matching waiter.
+    Wallabidi.SessionProcess.register_find(session, query_id, timeout)
+
+    # Register the query. Chrome evaluates the JS synchronously,
+    # which may call __wallabidi immediately (if elements already match
+    # or selector is invalid). The binding event arrives at SessionProcess
+    # which now has the waiter ready.
     if root_js do
-      # Document-level
       cast_cdp_command(session, "Runtime.evaluate", %{
         expression: register_js,
         returnByValue: true
       })
     else
-      # Scoped: callFunctionOn sets `this` to the parent element
       parent_id = parent.bidi_shared_id
 
       cast_cdp_command(session, "Runtime.callFunctionOn", %{
@@ -1123,8 +1161,12 @@ defmodule Wallabidi.CDPClient do
       })
     end
 
-    # Wait for the binding callback
-    case Wallabidi.SessionProcess.await_find(session, query_id, timeout) do
+    # Block until the binding fires or timeout
+    case Wallabidi.SessionProcess.await_find_result(session, query_id, timeout) do
+      {:error, :invalid_selector} ->
+        cleanup_query(session, query_id)
+        {:error, :invalid_selector}
+
       {:ok, found_count} ->
         if needs_elements and found_count > 0 do
           # Grab element refs
@@ -1167,7 +1209,7 @@ defmodule Wallabidi.CDPClient do
         cleanup_query(session, query_id)
         final_check_js = """
         (function() {
-          var q = #{Jason.encode!(%{type: to_string(type), selector: selector, visible: visible, text: text})};
+          var q = #{Jason.encode!(%{type: to_string(type), selector: selector, visible: visible, text: text, selected: selected})};
           #{final_check_body_js()}
         })()
         """
@@ -1211,6 +1253,8 @@ defmodule Wallabidi.CDPClient do
       var t = (el.innerText || el.textContent || '').replace(/[\\s\\u00a0]+/g, ' ').trim();
       return t.indexOf(q.text) !== -1;
     });
+    if (q.selected === true) els = els.filter(function(el) { return el.selected || el.checked || false; });
+    if (q.selected === false) els = els.filter(function(el) { return !(el.selected || el.checked); });
     return els.length;
     """
   end
@@ -1229,6 +1273,7 @@ defmodule Wallabidi.CDPClient do
 
       function runQuery(q) {
         var els;
+        q.error = null;
         try {
           if (q.type === 'css') {
             if (q.root && q.root.nodeType) {
@@ -1243,7 +1288,10 @@ defmodule Wallabidi.CDPClient do
             els = [];
             for (var i = 0; i < r.snapshotLength; i++) els.push(r.snapshotItem(i));
           }
-        } catch(e) { els = []; }
+        } catch(e) {
+          q.error = e.message || String(e);
+          els = [];
+        }
 
         if (q.visible === true) els = els.filter(__wallabidi_isVisible);
         if (q.visible === false) els = els.filter(function(el) { return !__wallabidi_isVisible(el); });
@@ -1251,6 +1299,8 @@ defmodule Wallabidi.CDPClient do
           var t = (el.innerText || el.textContent || '').replace(/[\\s\\u00a0]+/g, ' ').trim();
           return t.indexOf(q.text) !== -1;
         });
+        if (q.selected === true) els = els.filter(function(el) { return el.selected || el.checked || false; });
+        if (q.selected === false) els = els.filter(function(el) { return !(el.selected || el.checked); });
 
         return els;
       }
@@ -1261,10 +1311,17 @@ defmodule Wallabidi.CDPClient do
           var q = queries[id];
           if (q.resolved) continue;
           var els = runQuery(q);
+
+          // If the selector itself is invalid, report immediately
+          if (q.error) {
+            q.resolved = true;
+            try { __wallabidi(JSON.stringify({id: id, count: 0, error: q.error})); } catch(e) {}
+            continue;
+          }
+
           var match = q.count === null ? els.length > 0 : els.length === q.count;
           if (match) {
             q.resolved = true;
-            // Stash the elements for retrieval
             q.elements = els;
             try { __wallabidi(JSON.stringify({id: id, count: els.length})); } catch(e) {}
           }

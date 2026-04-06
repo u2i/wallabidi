@@ -263,6 +263,10 @@ defmodule Wallabidi.BiDi.WebSocketClient do
   defp process_frame(_frame, state), do: state
 
   defp broadcast_event(state, method, event) do
+    if method == "Runtime.bindingCalled" do
+      Logger.warning("[ws] broadcast_event: #{method} subs=#{inspect(Map.keys(state.subscribers))}")
+    end
+
     # Session-scoped subscribers receive only events for their session.
     # Global subscribers (:global) receive all events regardless of session.
     session_id = event["sessionId"]

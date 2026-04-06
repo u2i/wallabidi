@@ -159,15 +159,28 @@ defmodule Wallabidi.SessionProcess do
   end
 
   @doc """
-  Register a pending find query. When the JS binding calls back with
-  a matching query id, this call resolves with `{:ok, count}`.
-  Returns `{:timeout, count}` if the timeout elapses (count from the
-  last check, may be 0).
+  Register a find waiter (non-blocking). Must be called BEFORE the
+  JS that triggers the binding, to avoid the race where the binding
+  event arrives before the waiter is registered.
   """
-  @spec await_find(Session.t(), String.t(), timeout()) :: {:ok, non_neg_integer()} | {:timeout, non_neg_integer()}
-  def await_find(%Session{pid: pid}, query_id, timeout_ms \\ 5_000)
+  @spec register_find(Session.t(), String.t(), timeout()) :: :ok
+  def register_find(%Session{pid: pid}, query_id, timeout_ms)
       when is_pid(pid) and is_binary(query_id) do
-    GenServer.call(pid, {:await_find, query_id, timeout_ms}, timeout_ms + 2_000)
+    GenServer.call(pid, {:register_find, query_id, timeout_ms})
+  catch
+    :exit, _ -> :ok
+  end
+
+  @doc """
+  Block until the find waiter registered by `register_find/3` resolves.
+  Returns `{:ok, count}` or `{:error, :invalid_selector}` when the
+  binding fires, or `{:timeout, 0}` on timeout.
+  """
+  @spec await_find_result(Session.t(), String.t(), timeout()) ::
+          {:ok, non_neg_integer()} | {:error, :invalid_selector} | {:timeout, non_neg_integer()}
+  def await_find_result(%Session{pid: pid}, query_id, timeout_ms)
+      when is_pid(pid) and is_binary(query_id) do
+    GenServer.call(pid, {:await_find_result, query_id}, timeout_ms + 2_000)
   catch
     :exit, _ -> {:timeout, 0}
   end
@@ -300,10 +313,30 @@ defmodule Wallabidi.SessionProcess do
     {:noreply, %{state | loads: %{}, load_waiters: waiters}}
   end
 
-  def handle_call({:await_find, query_id, timeout_ms}, from, state) do
+  def handle_call({:register_find, query_id, timeout_ms}, _from, state) do
+    # Register the waiter with a timeout, but don't block — the caller
+    # will call await_find_result separately.
     timeout_ref = Process.send_after(self(), {:find_timeout, query_id}, timeout_ms)
-    waiters = Map.put(state.find_waiters, query_id, {from, timeout_ref})
-    {:noreply, %{state | find_waiters: waiters}}
+    waiters = Map.put(state.find_waiters, query_id, {:pending, timeout_ref, nil})
+    {:reply, :ok, %{state | find_waiters: waiters}}
+  end
+
+  def handle_call({:await_find_result, query_id}, from, state) do
+    case Map.get(state.find_waiters, query_id) do
+      {:resolved, result} ->
+        # Already resolved before we got here
+        waiters = Map.delete(state.find_waiters, query_id)
+        {:reply, result, %{state | find_waiters: waiters}}
+
+      {:pending, timeout_ref, nil} ->
+        # Not yet resolved — stash the caller's `from` so we can reply later
+        waiters = Map.put(state.find_waiters, query_id, {:pending, timeout_ref, from})
+        {:noreply, %{state | find_waiters: waiters}}
+
+      nil ->
+        # Already timed out and cleaned up
+        {:reply, {:timeout, 0}, state}
+    end
   end
 
   @impl true
@@ -369,19 +402,16 @@ defmodule Wallabidi.SessionProcess do
   # payload is JSON: {"id": "query_id", "count": N}
   def handle_info({:bidi_event, "Runtime.bindingCalled", event}, state) do
     params = Map.get(event, "params", %{})
+    require Logger
+    Logger.warning("[session_process] bindingCalled: name=#{params["name"]} payload=#{params["payload"]}")
 
     if params["name"] == "__wallabidi" do
       case Jason.decode(params["payload"] || "") do
-        {:ok, %{"id" => query_id, "count" => count}} ->
-          case Map.pop(state.find_waiters, query_id) do
-            {{from, timeout_ref}, waiters} ->
-              Process.cancel_timer(timeout_ref)
-              GenServer.reply(from, {:ok, count})
-              {:noreply, %{state | find_waiters: waiters}}
+        {:ok, %{"id" => query_id, "error" => error}} when is_binary(error) ->
+          {:noreply, resolve_find(state, query_id, {:error, :invalid_selector})}
 
-            {nil, _} ->
-              {:noreply, state}
-          end
+        {:ok, %{"id" => query_id, "count" => count}} ->
+          {:noreply, resolve_find(state, query_id, {:ok, count})}
 
         _ ->
           {:noreply, state}
@@ -392,17 +422,30 @@ defmodule Wallabidi.SessionProcess do
   end
 
   def handle_info({:find_timeout, query_id}, state) do
-    case Map.pop(state.find_waiters, query_id) do
-      {{from, _timeout_ref}, waiters} ->
-        GenServer.reply(from, {:timeout, 0})
-        {:noreply, %{state | find_waiters: waiters}}
-
-      {nil, _} ->
-        {:noreply, state}
-    end
+    {:noreply, resolve_find(state, query_id, {:timeout, 0})}
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
+
+  # Resolve a find waiter. If the caller is already blocking in
+  # await_find_result, reply immediately. If not (caller hasn't called
+  # await_find_result yet), stash the result for them to pick up.
+  defp resolve_find(state, query_id, result) do
+    case Map.get(state.find_waiters, query_id) do
+      {:pending, timeout_ref, from} when not is_nil(from) ->
+        Process.cancel_timer(timeout_ref)
+        GenServer.reply(from, result)
+        %{state | find_waiters: Map.delete(state.find_waiters, query_id)}
+
+      {:pending, timeout_ref, nil} ->
+        # Caller hasn't called await_find_result yet — stash the result
+        Process.cancel_timer(timeout_ref)
+        %{state | find_waiters: Map.put(state.find_waiters, query_id, {:resolved, result})}
+
+      _ ->
+        state
+    end
+  end
 
   # --- Page-load router helpers ---
 

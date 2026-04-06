@@ -755,10 +755,7 @@ defmodule Wallabidi.Browser do
     session = get_session(parent)
 
     if session && session.protocol == Wallabidi.Protocol.CDP &&
-         not in_frame?(session) do
-      # CDP pipeline: classify + prepare_patch + find + filter + click
-      # all in one JS eval. Post-action await uses the classification
-      # returned from the same call.
+         not in_frame?(session) && not in_switched_window?(session) do
       click_via_pipeline(parent, session, query)
     else
       with_patch_await(parent, query, :click, fn ->
@@ -1618,8 +1615,7 @@ defmodule Wallabidi.Browser do
     session = get_session(parent)
 
     if session && session.protocol == Wallabidi.Protocol.CDP &&
-         not in_frame?(session) do
-      # CDP: await + find + filter in one async eval (no separate maybe_await_selector)
+         not in_frame?(session) && not in_switched_window?(session) do
       execute_query_pipeline(parent, driver, query)
     else
       maybe_await_selector(parent, query)
@@ -1646,6 +1642,7 @@ defmodule Wallabidi.Browser do
         visible: Query.visible?(query),
         text: Query.inner_text(query),
         count: expected_count,
+        selected: Query.selected?(query),
         needs_elements: true
       ]
 
@@ -1724,6 +1721,10 @@ defmodule Wallabidi.Browser do
 
   defp in_frame?(%Session{} = session) do
     Process.get({:cdp_frame_stack, session.id}, []) != []
+  end
+
+  defp in_switched_window?(%Session{} = session) do
+    Process.get({:cdp_current_target, session.id}) != nil
   end
 
   defp max_time_exceeded?(start_time) do
