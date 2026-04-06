@@ -59,7 +59,11 @@ defmodule Wallabidi.SessionProcess do
     # Noise events (`firstPaint`, `networkIdle`, etc.) are dropped in-place
     # in handle_info and never reach any mailbox.
     loads: %{},
-    load_waiters: []
+    load_waiters: [],
+    # Push-based element finding. When JS calls __wallabidi(payload),
+    # Chrome fires Runtime.bindingCalled which arrives here. We match
+    # the query id against pending find waiters and reply.
+    find_waiters: %{}
   ]
 
   # --- Public API ---
@@ -152,6 +156,20 @@ defmodule Wallabidi.SessionProcess do
     GenServer.call(pid, {:await_page_load, loader_id, name, timeout_ms}, timeout_ms + 2_000)
   catch
     :exit, _ -> :timeout
+  end
+
+  @doc """
+  Register a pending find query. When the JS binding calls back with
+  a matching query id, this call resolves with `{:ok, count}`.
+  Returns `{:timeout, count}` if the timeout elapses (count from the
+  last check, may be 0).
+  """
+  @spec await_find(Session.t(), String.t(), timeout()) :: {:ok, non_neg_integer()} | {:timeout, non_neg_integer()}
+  def await_find(%Session{pid: pid}, query_id, timeout_ms \\ 5_000)
+      when is_pid(pid) and is_binary(query_id) do
+    GenServer.call(pid, {:await_find, query_id, timeout_ms}, timeout_ms + 2_000)
+  catch
+    :exit, _ -> {:timeout, 0}
   end
 
   @doc """
@@ -282,6 +300,12 @@ defmodule Wallabidi.SessionProcess do
     {:noreply, %{state | loads: %{}, load_waiters: waiters}}
   end
 
+  def handle_call({:await_find, query_id, timeout_ms}, from, state) do
+    timeout_ref = Process.send_after(self(), {:find_timeout, query_id}, timeout_ms)
+    waiters = Map.put(state.find_waiters, query_id, {from, timeout_ref})
+    {:noreply, %{state | find_waiters: waiters}}
+  end
+
   @impl true
   def handle_info({:DOWN, ref, :process, _pid, _reason}, %{owner_ref: ref} = state) do
     # Owner died — terminate ourselves so `terminate/2` runs cleanup.
@@ -337,6 +361,43 @@ defmodule Wallabidi.SessionProcess do
 
       _ ->
         # Already resolved — the timeout message was racing with the reply.
+        {:noreply, state}
+    end
+  end
+
+  # Runtime.bindingCalled: JS called __wallabidi(payload).
+  # payload is JSON: {"id": "query_id", "count": N}
+  def handle_info({:bidi_event, "Runtime.bindingCalled", event}, state) do
+    params = Map.get(event, "params", %{})
+
+    if params["name"] == "__wallabidi" do
+      case Jason.decode(params["payload"] || "") do
+        {:ok, %{"id" => query_id, "count" => count}} ->
+          case Map.pop(state.find_waiters, query_id) do
+            {{from, timeout_ref}, waiters} ->
+              Process.cancel_timer(timeout_ref)
+              GenServer.reply(from, {:ok, count})
+              {:noreply, %{state | find_waiters: waiters}}
+
+            {nil, _} ->
+              {:noreply, state}
+          end
+
+        _ ->
+          {:noreply, state}
+      end
+    else
+      {:noreply, state}
+    end
+  end
+
+  def handle_info({:find_timeout, query_id}, state) do
+    case Map.pop(state.find_waiters, query_id) do
+      {{from, _timeout_ref}, waiters} ->
+        GenServer.reply(from, {:timeout, 0})
+        {:noreply, %{state | find_waiters: waiters}}
+
+      {nil, _} ->
         {:noreply, state}
     end
   end

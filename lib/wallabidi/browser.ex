@@ -1632,33 +1632,29 @@ defmodule Wallabidi.Browser do
   # eval_async that resolves when elements match, then getProperties to
   # extract objectIds. 2 RPCs total.
   defp execute_query_pipeline(parent, _driver, query) do
-    alias Wallabidi.CDP.Pipeline
-
-    # No retry loop — the await pipeline's MutationObserver IS the retry
-    # mechanism. It watches for DOM changes and re-runs the find+filter
-    # inside the browser. If max_wait_time elapses with no match, we
-    # return what we have and let validate_count produce the error.
+    # Push-based find: register query with the persistent observer,
+    # wait for the binding callback (or timeout). No retry loop —
+    # the MutationObserver in the browser IS the retry mechanism.
+    # Survives page navigations via addScriptToEvaluateOnNewDocument.
     with {:ok, query} <- Query.validate(query),
          compiled_query <- Query.compile(query) do
       {type, selector} = compiled_query
+      expected_count = Query.count(query)
 
-      pipeline =
-        Pipeline.new(parent)
-        |> Pipeline.query_all(type, selector)
-        |> build_filters(query)
-        |> Pipeline.await(max_wait_time(), Query.count(query))
+      opts = [
+        timeout: max_wait_time(),
+        visible: Query.visible?(query),
+        text: Query.inner_text(query),
+        count: expected_count,
+        needs_elements: true
+      ]
 
-      case Wallabidi.CDPClient.find_elements_pipeline(parent, pipeline) do
+      case Wallabidi.CDPClient.find_elements_push(parent, type, selector, opts) do
         {:ok, elements} ->
           with {:ok, elements} <- validate_count(query, elements),
                {:ok, elements} <- do_at(query, elements) do
             {:ok, %{query | result: elements}}
           end
-
-        {:error, {code, _msg}} when code in [-32000, -32602] ->
-          # Context destroyed (navigation) — fall back to retry loop
-          # which will pick up the new page's context.
-          execute_query_legacy(parent, parent.driver, query)
 
         error ->
           error

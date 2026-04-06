@@ -73,6 +73,17 @@ defmodule Wallabidi.CDPClient do
       cast_cdp_with_session(pid, session_id, Commands.enable_dom(), flat_session_id: flat)
       cast_cdp_with_session(pid, session_id, Commands.set_lifecycle_events_enabled(true), flat_session_id: flat)
 
+      # Push-based element finding: install a binding that JS can call
+      # to notify us when elements match. Persists across navigations.
+      # The bootstrap script auto-installs a MutationObserver on each
+      # new document that watches for pending queries.
+      cast_cdp_with_session(pid, session_id,
+        {"Runtime.addBinding", %{name: "__wallabidi"}},
+        flat_session_id: flat)
+      cast_cdp_with_session(pid, session_id,
+        {"Page.addScriptToEvaluateOnNewDocument", %{source: bootstrap_js()}},
+        flat_session_id: flat)
+
       {:ok, %{target_id: target_id, session_id: session_id}}
     end
   end
@@ -1033,4 +1044,281 @@ defmodule Wallabidi.CDPClient do
   defp key_code("ArrowRight"), do: 39
   defp key_code("Space"), do: 32
   defp key_code(_), do: 0
+
+  # --- Push-based element finding ---
+
+  @doc """
+  Push-based find: registers a query with the bootstrap JS observer,
+  waits for the binding callback, then grabs element refs.
+
+  Flow:
+  1. One cast eval: register query in window.__wallabidi_queries + check immediately
+  2. Wait for Runtime.bindingCalled event (routed via SessionProcess.await_find)
+  3. One eval to grab element refs from window.__wallabidi_queries[id].elements
+  4. One getProperties to extract objectIds
+
+  For count-only queries (assert_has with count: 0, etc), skip steps 3-4.
+  """
+  def find_elements_push(parent, type, selector, opts \\ []) do
+    session = root_session(parent)
+    query_id = "q-#{System.unique_integer([:positive])}"
+    timeout = Keyword.get(opts, :timeout, 5_000)
+    visible = Keyword.get(opts, :visible, :any)
+    text = Keyword.get(opts, :text)
+    count = Keyword.get(opts, :count)
+    needs_elements = Keyword.get(opts, :needs_elements, true)
+
+    # Build the root reference for scoped queries
+    root_js =
+      case parent do
+        %Element{bidi_shared_id: oid} when not is_nil(oid) ->
+          # For scoped queries, we need to stash the parent ref.
+          # We'll set it via a separate callFunctionOn.
+          nil
+
+        _ ->
+          "null"
+      end
+
+    visible_js =
+      case visible do
+        true -> "true"
+        false -> "false"
+        _ -> "null"
+      end
+
+    text_js = if text, do: Jason.encode!(text), else: "null"
+    count_js = if is_integer(count), do: Integer.to_string(count), else: "null"
+
+    register_js = """
+    window.__wallabidi_queries[#{Jason.encode!(query_id)}] = {
+      type: #{Jason.encode!(to_string(type))},
+      selector: #{Jason.encode!(selector)},
+      visible: #{visible_js},
+      text: #{text_js},
+      count: #{count_js},
+      root: #{root_js || "this"},
+      resolved: false,
+      elements: []
+    };
+    window.__wallabidi_check();
+    """
+
+    # Fire-and-forget: register the query. The observer will call
+    # __wallabidi when it matches.
+    if root_js do
+      # Document-level
+      cast_cdp_command(session, "Runtime.evaluate", %{
+        expression: register_js,
+        returnByValue: true
+      })
+    else
+      # Scoped: callFunctionOn sets `this` to the parent element
+      parent_id = parent.bidi_shared_id
+
+      cast_cdp_command(session, "Runtime.callFunctionOn", %{
+        objectId: parent_id,
+        functionDeclaration: "function() { #{register_js} }",
+        returnByValue: true
+      })
+    end
+
+    # Wait for the binding callback
+    case Wallabidi.SessionProcess.await_find(session, query_id, timeout) do
+      {:ok, found_count} ->
+        if needs_elements and found_count > 0 do
+          # Grab element refs
+          grab_js = "window.__wallabidi_queries[#{Jason.encode!(query_id)}].elements"
+          {method, params} = Commands.evaluate(grab_js, return_by_value: false)
+
+          with {:ok, result} <- send_cdp_session(session, method, params),
+               {:ok, array_id} <- ResponseParser.extract_object_id({:ok, result}),
+               {:ok, result} <- send_cdp_raw(session, Commands.get_properties(array_id)),
+               {:ok, ids} <- ResponseParser.extract_element_ids({:ok, result}) do
+            if array_id, do: cast_release(session, array_id)
+            cleanup_query(session, query_id)
+
+            elements =
+              Enum.map(ids, fn object_id ->
+                %Element{
+                  id: object_id,
+                  bidi_shared_id: object_id,
+                  parent: parent,
+                  driver: session.driver,
+                  url: session.session_url
+                }
+              end)
+
+            {:ok, elements}
+          else
+            _ ->
+              cleanup_query(session, query_id)
+              {:ok, List.duplicate(%Element{parent: parent, driver: session.driver}, found_count)}
+          end
+        else
+          cleanup_query(session, query_id)
+          {:ok, List.duplicate(%Element{parent: parent, driver: session.driver}, found_count)}
+        end
+
+      {:timeout, _} ->
+        # Timeout: do a final sync check to get the real element count.
+        # This matters for count: 0 queries where timeout means "elements
+        # are still present" (failure), not "nothing found" (success).
+        cleanup_query(session, query_id)
+        final_check_js = """
+        (function() {
+          var q = #{Jason.encode!(%{type: to_string(type), selector: selector, visible: visible, text: text})};
+          #{final_check_body_js()}
+        })()
+        """
+        case send_cdp_session(session, "Runtime.evaluate", %{expression: final_check_js, returnByValue: true}) do
+          {:ok, result} ->
+            case ResponseParser.extract_value({:ok, result}) do
+              {:ok, final_count} when is_integer(final_count) ->
+                {:ok, List.duplicate(%Element{parent: parent, driver: session.driver}, final_count)}
+              _ ->
+                {:ok, []}
+            end
+          _ ->
+            {:ok, []}
+        end
+    end
+  end
+
+  defp cleanup_query(session, query_id) do
+    cast_cdp_command(session, "Runtime.evaluate", %{
+      expression: "delete window.__wallabidi_queries[#{Jason.encode!(query_id)}]",
+      returnByValue: true
+    })
+  end
+
+  defp final_check_body_js do
+    """
+    var els;
+    try {
+      if (q.type === 'css') {
+        els = Array.from(document.querySelectorAll(q.selector));
+      } else {
+        var r = document.evaluate(q.selector, document, null,
+          XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+        els = [];
+        for (var i = 0; i < r.snapshotLength; i++) els.push(r.snapshotItem(i));
+      }
+    } catch(e) { els = []; }
+    if (q.visible === true) els = els.filter(__wallabidi_isVisible);
+    if (q.visible === false) els = els.filter(function(el) { return !__wallabidi_isVisible(el); });
+    if (q.text) els = els.filter(function(el) {
+      var t = (el.innerText || el.textContent || '').replace(/[\\s\\u00a0]+/g, ' ').trim();
+      return t.indexOf(q.text) !== -1;
+    });
+    return els.length;
+    """
+  end
+
+  @doc false
+  defp bootstrap_js do
+    """
+    (function() {
+      if (window.__wallabidi_installed) return;
+      window.__wallabidi_installed = true;
+
+      // Pending queries: {id: {css/xpath, selector, text, visible, count, resolved}}
+      window.__wallabidi_queries = {};
+
+      #{visibility_check_js()}
+
+      function runQuery(q) {
+        var els;
+        try {
+          if (q.type === 'css') {
+            if (q.root && q.root.nodeType) {
+              els = Array.from(q.root.querySelectorAll(q.selector));
+            } else {
+              els = Array.from(document.querySelectorAll(q.selector));
+            }
+          } else {
+            var ctx = (q.root && q.root.nodeType) ? q.root : document;
+            var r = document.evaluate(q.selector, ctx, null,
+              XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+            els = [];
+            for (var i = 0; i < r.snapshotLength; i++) els.push(r.snapshotItem(i));
+          }
+        } catch(e) { els = []; }
+
+        if (q.visible === true) els = els.filter(__wallabidi_isVisible);
+        if (q.visible === false) els = els.filter(function(el) { return !__wallabidi_isVisible(el); });
+        if (q.text) els = els.filter(function(el) {
+          var t = (el.innerText || el.textContent || '').replace(/[\\s\\u00a0]+/g, ' ').trim();
+          return t.indexOf(q.text) !== -1;
+        });
+
+        return els;
+      }
+
+      function checkQueries() {
+        var queries = window.__wallabidi_queries;
+        for (var id in queries) {
+          var q = queries[id];
+          if (q.resolved) continue;
+          var els = runQuery(q);
+          var match = q.count === null ? els.length > 0 : els.length === q.count;
+          if (match) {
+            q.resolved = true;
+            // Stash the elements for retrieval
+            q.elements = els;
+            try { __wallabidi(JSON.stringify({id: id, count: els.length})); } catch(e) {}
+          }
+        }
+      }
+
+      // MutationObserver: check queries on any DOM change.
+      // Use document instead of document.body since the script runs
+      // via addScriptToEvaluateOnNewDocument before body exists.
+      new MutationObserver(function() {
+        requestAnimationFrame(checkQueries);
+      }).observe(document, {
+        childList: true, subtree: true,
+        attributes: true, characterData: true
+      });
+
+      // LiveView: check after every patch
+      try {
+        var ls = window.liveSocket;
+        if (ls && ls.domCallbacks && !window.__wallabidi_lv_hooked) {
+          var orig = ls.domCallbacks.onPatchEnd;
+          ls.domCallbacks.onPatchEnd = function(container) {
+            if (orig) orig(container);
+            checkQueries();
+          };
+          window.__wallabidi_lv_hooked = true;
+        }
+      } catch(e) {}
+
+      // Expose for Elixir to register queries
+      window.__wallabidi_check = checkQueries;
+    })();
+    """
+  end
+
+  defp visibility_check_js do
+    """
+    window.__wallabidi_isVisible = function(el) {
+      if (!el.isConnected) return false;
+      if (el.tagName === 'OPTION') {
+        var select = el.closest('select');
+        if (!select) return true;
+        var ss = window.getComputedStyle(select);
+        return ss.display !== 'none' && ss.visibility !== 'hidden';
+      }
+      var style = window.getComputedStyle(el);
+      if (style.display === 'none') return false;
+      if (style.visibility === 'hidden') return false;
+      var rect = el.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0 && el.offsetParent === null && style.position !== 'fixed') return false;
+      if (rect.bottom < 0) return false;
+      if (rect.right < 0) return false;
+      return true;
+    };
+    """
+  end
 end

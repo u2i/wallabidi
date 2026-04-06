@@ -44,6 +44,9 @@ defmodule Wallabidi.Protocol.CDP do
         :page_load ->
           Process.get(:wallabidi_session_process, self())
 
+        :binding ->
+          Process.get(:wallabidi_session_process, self())
+
         _ ->
           Process.get(:wallabidi_session_owner, self())
       end
@@ -97,11 +100,13 @@ defmodule Wallabidi.Protocol.CDP do
   # synchronously from Page.navigate, letting `visit/2` correlate events to
   # the specific navigation it triggered.
   def wire_methods(:page_load), do: ["Page.lifecycleEvent"]
+  def wire_methods(:binding), do: ["Runtime.bindingCalled"]
 
   defp domain_for(:log), do: "Runtime"
   defp domain_for(:dialog), do: "Page"
   defp domain_for(:network_request), do: "Network"
   defp domain_for(:page_load), do: "Page"
+  defp domain_for(:binding), do: "Runtime"
   defp domain_for(_), do: nil
 
   # --- Internal ---

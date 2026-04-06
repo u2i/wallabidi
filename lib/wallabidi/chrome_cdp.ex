@@ -125,6 +125,7 @@ defmodule Wallabidi.ChromeCDP do
       # and to page load events so CDPClient.visit can wait for DOMContentLoaded.
       Wallabidi.Protocol.subscribe(session, :log)
       Wallabidi.Protocol.subscribe(session, :page_load)
+      Wallabidi.Protocol.subscribe(session, :binding)
 
       if metadata = Keyword.get(opts, :metadata) do
         CDPClient.set_user_agent(session, Metadata.append(@base_user_agent, metadata))
