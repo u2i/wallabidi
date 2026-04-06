@@ -424,7 +424,7 @@ defmodule Wallabidi.CDP.Pipeline do
       if (type === 'change') {
         var phxChange = el.getAttribute('phx-change') || (el.form && el.form.getAttribute('phx-change'));
         return phxChange ? 'patch' : 'none';
-      }Runtime.addBinding
+      }
       if (type === 'submit') {
         var f = el.closest('form');
         if (f && f.getAttribute('phx-submit')) return 'patch';
