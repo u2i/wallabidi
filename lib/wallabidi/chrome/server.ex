@@ -152,8 +152,9 @@ defmodule Wallabidi.Chrome.Server do
     base_args = [
       "--remote-debugging-port=0",
       "--no-sandbox",
-      "--disable-gpu",
-      "--headless=new",
+      # --disable-gpu removed: not needed since Chrome 112, and it forces
+      # software rendering in headless which halves CDP throughput.
+      "--headless",
       "--user-data-dir=#{tmp_dir}",
       "--disable-background-networking",
       "--disable-background-timer-throttling",
@@ -161,13 +162,24 @@ defmodule Wallabidi.Chrome.Server do
       "--disable-renderer-backgrounding",
       "--disable-ipc-flooding-protection",
       "--disable-hang-monitor",
+      "--disable-breakpad",
+      "--disable-client-side-phishing-detection",
+      "--disable-component-update",
       "--disable-default-apps",
       "--disable-extensions",
+      "--disable-features=TranslateUI,BlinkGenPropertyTrees,CalculateNativeWinOcclusion,IntensiveWakeUpThrottling",
+      "--disable-notifications",
+      "--disable-prompt-on-repost",
       "--disable-sync",
-      "--disable-translate",
       "--disable-dev-shm-usage",
-      "--no-first-run",
       "--disable-popup-blocking",
+      "--enable-features=NetworkService,NetworkServiceInProcess",
+      "--enable-automation",
+      "--force-color-profile=srgb",
+      "--metrics-recording-only",
+      "--no-first-run",
+      "--password-store=basic",
+      "--use-mock-keychain",
       "--window-size=1280,800"
     ]
 
