@@ -1227,6 +1227,111 @@ defmodule Wallabidi.CDPClient do
     end
   end
 
+  @doc """
+  Opcode-based push find. Takes an `%Ops{}` struct instead of raw
+  type/selector/opts. The ops are JSON-serialized and sent to the
+  bootstrap interpreter — no JS generation.
+  """
+  def find_elements_ops(parent, %Wallabidi.CDP.Ops{} = ops, find_opts \\ []) do
+    session = root_session(parent)
+    query_id = "q-#{System.unique_integer([:positive])}"
+    timeout = Keyword.get(find_opts, :timeout, 5_000)
+    count = Keyword.get(find_opts, :count)
+    needs_elements = Keyword.get(find_opts, :needs_elements, true)
+
+    ops_json = Jason.encode!(ops.ops)
+    count_js = if is_integer(count), do: Integer.to_string(count), else: "null"
+    id_js = Jason.encode!(query_id)
+
+    register_js =
+      "var W=window.__w;" <>
+      "if(W){" <>
+        "W.queries[#{id_js}]={ops:#{ops_json},count:#{count_js},resolved:false,elements:[],root:#{if ops.parent_id, do: "this", else: "null"}};" <>
+        "W.check();" <>
+      "}else{" <>
+        "try{" <>
+          "var r={els:[],error:null};" <>
+          "try{var _o=#{ops_json};for(var i=0;i<_o.length;i++){var o=_o[i];if(o[0]==='query'){r.els=Array.from(document.querySelectorAll(o[2]));}}}catch(e){r.error=e.message;}" <>
+          "if(r.error)__wallabidi(JSON.stringify({id:#{id_js},count:0,error:r.error}));" <>
+          "else{var c=r.els.length;var m=#{count_js}===null?c>0:c===#{count_js};if(m)__wallabidi(JSON.stringify({id:#{id_js},count:c}));}" <>
+        "}catch(e){}" <>
+      "}"
+
+    # Register waiter BEFORE sending JS
+    Wallabidi.SessionProcess.register_find(session, query_id, timeout)
+
+    if ops.parent_id do
+      cast_cdp_command(session, "Runtime.callFunctionOn", %{
+        objectId: ops.parent_id,
+        functionDeclaration: "function(){#{register_js}}",
+        returnByValue: true
+      })
+    else
+      cast_cdp_command(session, "Runtime.evaluate", %{
+        expression: register_js,
+        returnByValue: true
+      })
+    end
+
+    # Block until binding fires or timeout
+    case Wallabidi.SessionProcess.await_find_result(session, query_id, timeout) do
+      {:error, :invalid_selector} ->
+        cleanup_query(session, query_id)
+        {:error, :invalid_selector}
+
+      {:ok, found_count} ->
+        if needs_elements and found_count > 0 do
+          grab_js = "window.__w.queries[#{id_js}].elements"
+          {method, params} = Commands.evaluate(grab_js, return_by_value: false)
+
+          with {:ok, result} <- send_cdp_session(session, method, params),
+               {:ok, array_id} <- ResponseParser.extract_object_id({:ok, result}),
+               {:ok, result} <- send_cdp_raw(session, Commands.get_properties(array_id)),
+               {:ok, ids} <- ResponseParser.extract_element_ids({:ok, result}) do
+            if array_id, do: cast_release(session, array_id)
+            cleanup_query(session, query_id)
+
+            elements =
+              Enum.map(ids, fn object_id ->
+                %Element{
+                  id: object_id,
+                  bidi_shared_id: object_id,
+                  parent: parent,
+                  driver: session.driver,
+                  url: session.session_url
+                }
+              end)
+
+            {:ok, elements}
+          else
+            _ ->
+              cleanup_query(session, query_id)
+              {:ok, List.duplicate(%Element{parent: parent, driver: session.driver}, found_count)}
+          end
+        else
+          cleanup_query(session, query_id)
+          {:ok, List.duplicate(%Element{parent: parent, driver: session.driver}, found_count)}
+        end
+
+      {:timeout, _} ->
+        cleanup_query(session, query_id)
+        # Final sync check for count: 0 queries
+        final_js = "(function(){var W=window.__w;if(!W)return 0;var r=W.exec(#{ops_json},null);return r.els.length;})()"
+
+        case send_cdp_session(session, "Runtime.evaluate", %{expression: final_js, returnByValue: true}) do
+          {:ok, result} ->
+            case ResponseParser.extract_value({:ok, result}) do
+              {:ok, n} when is_integer(n) ->
+                {:ok, List.duplicate(%Element{parent: parent, driver: session.driver}, n)}
+              _ ->
+                {:ok, []}
+            end
+          _ ->
+            {:ok, []}
+        end
+    end
+  end
+
   defp cleanup_query(session, query_id) do
     cast_cdp_command(session, "Runtime.evaluate", %{
       expression: "delete window.__wallabidi_queries[#{Jason.encode!(query_id)}]",
@@ -1259,123 +1364,194 @@ defmodule Wallabidi.CDPClient do
     """
   end
 
-  @doc false
-  defp bootstrap_js do
-    """
-    (function() {
-      if (window.__wallabidi_installed) return;
-      window.__wallabidi_installed = true;
+  @bootstrap_js """
+  (function() {
+    if (window.__w) return;
+    var W = window.__w = {};
+    W.queries = {};
 
-      // Pending queries: {id: {css/xpath, selector, text, visible, count, resolved}}
-      window.__wallabidi_queries = {};
-
-      #{visibility_check_js()}
-
-      function runQuery(q) {
-        var els;
-        q.error = null;
-        try {
-          if (q.type === 'css') {
-            if (q.root && q.root.nodeType) {
-              els = Array.from(q.root.querySelectorAll(q.selector));
-            } else {
-              els = Array.from(document.querySelectorAll(q.selector));
-            }
-          } else {
-            var ctx = (q.root && q.root.nodeType) ? q.root : document;
-            var r = document.evaluate(q.selector, ctx, null,
-              XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-            els = [];
-            for (var i = 0; i < r.snapshotLength; i++) els.push(r.snapshotItem(i));
-          }
-        } catch(e) {
-          q.error = e.message || String(e);
-          els = [];
-        }
-
-        if (q.visible === true) els = els.filter(__wallabidi_isVisible);
-        if (q.visible === false) els = els.filter(function(el) { return !__wallabidi_isVisible(el); });
-        if (q.text) els = els.filter(function(el) {
-          var t = (el.innerText || el.textContent || '').replace(/[\\s\\u00a0]+/g, ' ').trim();
-          return t.indexOf(q.text) !== -1;
-        });
-        if (q.selected === true) els = els.filter(function(el) { return el.selected || el.checked || false; });
-        if (q.selected === false) els = els.filter(function(el) { return !(el.selected || el.checked); });
-
-        return els;
-      }
-
-      function checkQueries() {
-        var queries = window.__wallabidi_queries;
-        for (var id in queries) {
-          var q = queries[id];
-          if (q.resolved) continue;
-          var els = runQuery(q);
-
-          // If the selector itself is invalid, report immediately
-          if (q.error) {
-            q.resolved = true;
-            try { __wallabidi(JSON.stringify({id: id, count: 0, error: q.error})); } catch(e) {}
-            continue;
-          }
-
-          var match = q.count === null ? els.length > 0 : els.length === q.count;
-          if (match) {
-            q.resolved = true;
-            q.elements = els;
-            try { __wallabidi(JSON.stringify({id: id, count: els.length})); } catch(e) {}
-          }
-        }
-      }
-
-      // MutationObserver: check queries on any DOM change.
-      // Use document instead of document.body since the script runs
-      // via addScriptToEvaluateOnNewDocument before body exists.
-      new MutationObserver(function() {
-        requestAnimationFrame(checkQueries);
-      }).observe(document, {
-        childList: true, subtree: true,
-        attributes: true, characterData: true
-      });
-
-      // LiveView: check after every patch
-      try {
-        var ls = window.liveSocket;
-        if (ls && ls.domCallbacks && !window.__wallabidi_lv_hooked) {
-          var orig = ls.domCallbacks.onPatchEnd;
-          ls.domCallbacks.onPatchEnd = function(container) {
-            if (orig) orig(container);
-            checkQueries();
-          };
-          window.__wallabidi_lv_hooked = true;
-        }
-      } catch(e) {}
-
-      // Expose for Elixir to register queries
-      window.__wallabidi_check = checkQueries;
-    })();
-    """
-  end
-
-  defp visibility_check_js do
-    """
-    window.__wallabidi_isVisible = function(el) {
+    // --- Visibility check ---
+    W.isVisible = function(el) {
       if (!el.isConnected) return false;
       if (el.tagName === 'OPTION') {
-        var select = el.closest('select');
-        if (!select) return true;
-        var ss = window.getComputedStyle(select);
+        var s = el.closest('select');
+        if (!s) return true;
+        var ss = getComputedStyle(s);
         return ss.display !== 'none' && ss.visibility !== 'hidden';
       }
-      var style = window.getComputedStyle(el);
-      if (style.display === 'none') return false;
-      if (style.visibility === 'hidden') return false;
-      var rect = el.getBoundingClientRect();
-      if (rect.width === 0 && rect.height === 0 && el.offsetParent === null && style.position !== 'fixed') return false;
-      if (rect.bottom < 0) return false;
-      if (rect.right < 0) return false;
-      return true;
+      var st = getComputedStyle(el);
+      if (st.display === 'none' || st.visibility === 'hidden') return false;
+      var r = el.getBoundingClientRect();
+      if (r.width === 0 && r.height === 0 && el.offsetParent === null && st.position !== 'fixed') return false;
+      return r.bottom >= 0 && r.right >= 0;
     };
-    """
-  end
+
+    // --- Click handler ---
+    W.clickEl = function(el) {
+      if (!el) return;
+      if (el.tagName === 'OPTION') {
+        var sel = el.closest('select');
+        if (sel && !sel.multiple) {
+          sel.value = el.value;
+          Array.from(sel.options).forEach(function(o) { o.selected = (o === el); });
+        } else { el.selected = !el.selected; }
+        if (sel) sel.dispatchEvent(new Event('change', {bubbles: true}));
+        return;
+      }
+      var form = el.closest('form');
+      if (form && (el.type === 'reset' || (el.tagName === 'BUTTON' && el.type === 'reset'))) {
+        Array.from(form.elements).forEach(function(fe) {
+          if (fe.type === 'checkbox' || fe.type === 'radio') fe.checked = fe.defaultChecked;
+          else if (fe.tagName === 'SELECT') Array.from(fe.options).forEach(function(o) { o.selected = o.defaultSelected; });
+          else if ('defaultValue' in fe) fe.value = fe.defaultValue;
+        });
+        form.dispatchEvent(new Event('reset', {bubbles: true}));
+        return;
+      }
+      el.focus();
+      el.click();
+    };
+
+    // --- Classify handler ---
+    W.classify = function(el, type) {
+      if (!el) return 'none';
+      if (type === 'click') {
+        var link = el.closest('[data-phx-link]');
+        if (link) return link.getAttribute('data-phx-link') === 'redirect' ? 'navigate' : 'patch';
+        var pc = el.getAttribute('phx-click');
+        if (pc) return (pc.includes('push') || !pc.startsWith('[')) ? 'patch' : 'none';
+        if (el.type === 'submit' || el.tagName === 'BUTTON') {
+          var f = el.closest('form');
+          if (f && f.getAttribute('phx-submit')) return 'patch';
+          if (f) return 'full_page';
+        }
+        var a = el.closest('a[href]');
+        if (a && a.getAttribute('href') && !a.getAttribute('href').startsWith('#')) return 'full_page';
+        return 'none';
+      }
+      if (type === 'change') {
+        var phxC = el.getAttribute('phx-change') || (el.form && el.form.getAttribute('phx-change'));
+        return phxC ? 'patch' : 'none';
+      }
+      return 'none';
+    };
+
+    // --- Opcode interpreter ---
+    // Executes an array of opcodes against a root element.
+    // Returns {els, meta, error} where meta has classification/prepared.
+    W.exec = function(ops, root) {
+      var els = [], meta = {}, error = null;
+      for (var i = 0; i < ops.length; i++) {
+        var op = ops[i], cmd = op[0];
+        try {
+          switch(cmd) {
+            case 'query':
+              var t = op[1], sel = op[2], ctx = root || document;
+              if (t === 'css') {
+                els = Array.from(ctx.querySelectorAll(sel));
+              } else {
+                if (!ctx.nodeType) ctx = document;
+                var xr = document.evaluate(sel, ctx, null, 7, null);
+                els = [];
+                for (var j = 0; j < xr.snapshotLength; j++) els.push(xr.snapshotItem(j));
+              }
+              break;
+            case 'visible':
+              var wantVis = op[1];
+              els = wantVis ? els.filter(W.isVisible) : els.filter(function(e) { return !W.isVisible(e); });
+              break;
+            case 'text':
+              var txt = op[1];
+              els = els.filter(function(e) {
+                var t = (e.innerText || e.textContent || '').replace(/[\\s\\u00a0]+/g, ' ').trim();
+                return t.indexOf(txt) !== -1;
+              });
+              break;
+            case 'selected':
+              var wantSel = op[1];
+              els = wantSel
+                ? els.filter(function(e) { return e.selected || e.checked || false; })
+                : els.filter(function(e) { return !(e.selected || e.checked); });
+              break;
+            case 'classify':
+              if (els.length > 0) meta.classification = W.classify(els[0], op[1]);
+              else meta.classification = 'none';
+              break;
+            case 'prepare_patch':
+              var ls = window.liveSocket;
+              if (ls && ls.main) {
+                if (!window.__wallabidi_patch_hooked) {
+                  var orig = ls.domCallbacks.onPatchEnd;
+                  ls.domCallbacks.onPatchEnd = function(container) {
+                    orig(container);
+                    if (window.__wallabidi_patch_resolve) {
+                      var r = window.__wallabidi_patch_resolve;
+                      window.__wallabidi_patch_resolve = null;
+                      r(true);
+                    }
+                  };
+                  window.__wallabidi_patch_hooked = true;
+                }
+                window.__wallabidi_patch_promise = new Promise(function(resolve) {
+                  window.__wallabidi_patch_resolve = resolve;
+                });
+                meta.prepared = true;
+              }
+              break;
+            case 'click':
+              // Capture result BEFORE clicking (click may navigate)
+              meta.count = els.length;
+              W.clickEl(els[0]);
+              break;
+          }
+        } catch(e) {
+          error = e.message || String(e);
+          els = [];
+          break;
+        }
+      }
+      return {els: els, meta: meta, error: error};
+    };
+
+    // --- Query checker ---
+    W.check = function() {
+      for (var id in W.queries) {
+        var q = W.queries[id];
+        if (q.resolved) continue;
+        var result = W.exec(q.ops, q.root);
+        if (result.error) {
+          q.resolved = true;
+          try { __wallabidi(JSON.stringify({id: id, count: 0, error: result.error})); } catch(e) {}
+          continue;
+        }
+        var count = result.meta.count != null ? result.meta.count : result.els.length;
+        var match = q.count == null ? count > 0 : count === q.count;
+        if (match) {
+          q.resolved = true;
+          q.elements = result.els;
+          q.meta = result.meta;
+          try { __wallabidi(JSON.stringify({id: id, count: count, meta: result.meta})); } catch(e) {}
+        }
+      }
+    };
+
+    // MutationObserver on document (before body exists)
+    new MutationObserver(function() {
+      requestAnimationFrame(W.check);
+    }).observe(document, {childList: true, subtree: true, attributes: true, characterData: true});
+
+    // LiveView onPatchEnd hook
+    try {
+      var ls = window.liveSocket;
+      if (ls && ls.domCallbacks && !W.lvHooked) {
+        var origPatch = ls.domCallbacks.onPatchEnd;
+        ls.domCallbacks.onPatchEnd = function(c) { if (origPatch) origPatch(c); W.check(); };
+        W.lvHooked = true;
+      }
+    } catch(e) {}
+  })();
+  """
+
+  @doc false
+  defp bootstrap_js, do: @bootstrap_js
 end

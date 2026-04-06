@@ -765,11 +765,15 @@ defmodule Wallabidi.Browser do
   end
 
   defp click_via_pipeline(parent, session, query) do
-    alias Wallabidi.CDP.Pipeline
+    alias Wallabidi.CDP.Ops
 
     with {:ok, validated} <- Query.validate(query),
          compiled <- Query.compile(validated) do
       {type, selector} = compiled
+
+      # Click uses old Pipeline — click_full captures return before
+      # the click fires. TODO: migrate to Ops interpreter.
+      alias Wallabidi.CDP.Pipeline
 
       pipeline =
         Pipeline.new(parent)
@@ -803,7 +807,6 @@ defmodule Wallabidi.Browser do
           parent
 
         {:error, _} ->
-          # Fall back for proper error messages
           with_patch_await(parent, query, :click, fn ->
             find(parent, query, &Element.click/1)
           end)
@@ -1628,25 +1631,24 @@ defmodule Wallabidi.Browser do
   # eval_async that resolves when elements match, then getProperties to
   # extract objectIds. 2 RPCs total.
   defp execute_query_pipeline(parent, _driver, query) do
-    # Push-based find: register query with the persistent observer,
-    # wait for the binding callback (or timeout). No retry loop —
-    # the MutationObserver in the browser IS the retry mechanism.
-    # Survives page navigations via addScriptToEvaluateOnNewDocument.
+    alias Wallabidi.CDP.Ops
+
     with {:ok, query} <- Query.validate(query),
          compiled_query <- Query.compile(query) do
       {type, selector} = compiled_query
-      expected_count = Query.count(query)
 
-      opts = [
+      ops =
+        Ops.new(parent)
+        |> Ops.query(type, selector)
+        |> Ops.from_query(query)
+
+      find_opts = [
         timeout: max_wait_time(),
-        visible: Query.visible?(query),
-        text: Query.inner_text(query),
-        count: expected_count,
-        selected: Query.selected?(query),
+        count: Query.count(query),
         needs_elements: true
       ]
 
-      case Wallabidi.CDPClient.find_elements_push(parent, type, selector, opts) do
+      case Wallabidi.CDPClient.find_elements_ops(parent, ops, find_opts) do
         {:ok, elements} ->
           with {:ok, elements} <- validate_count(query, elements),
                {:ok, elements} <- do_at(query, elements) do
