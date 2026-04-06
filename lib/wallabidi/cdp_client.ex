@@ -1048,17 +1048,109 @@ defmodule Wallabidi.CDPClient do
   # --- Push-based element finding ---
 
   @doc """
-  Push-based find: registers a query with the bootstrap JS observer,
-  waits for the binding callback, then grabs element refs.
+  Execute an opcode sequence. Single entry point for both find and click.
 
-  Flow:
-  1. One cast eval: register query in window.__wallabidi_queries + check immediately
-  2. Wait for Runtime.bindingCalled event (routed via SessionProcess.await_find)
-  3. One eval to grab element refs from window.__wallabidi_queries[id].elements
-  4. One getProperties to extract objectIds
+  For find (no side effects): registers the ops with the browser-side
+  observer, waits for the binding callback, grabs element refs.
 
-  For count-only queries (assert_has with count: 0, etc), skip steps 3-4.
+  For click (has side effects): uses the old Pipeline path which captures
+  the return value before the click fires (avoiding stale context on
+  navigation), then returns `{:ok, :clicked, meta}` with classification
+  and prepared info for post-action await.
+
+  Returns:
+  - `{:ok, elements}` for find ops
+  - `{:ok, :clicked, %{classification: str, prepared: bool}}` for click ops
+  - `{:error, :invalid_selector}` for bad selectors
+  - `{:error, {:not_found, []}}` on timeout with 0 elements
   """
+  def execute_ops(parent, %Wallabidi.CDP.Ops{} = ops, opts \\ []) do
+    if Wallabidi.CDP.Ops.has_side_effects?(ops) do
+      execute_ops_click(parent, ops, opts)
+    else
+      execute_ops_find(parent, ops, opts)
+    end
+  end
+
+  defp execute_ops_find(parent, ops, opts) do
+    count = Keyword.get(opts, :count)
+    timeout = Keyword.get(opts, :timeout, 5_000)
+    needs_elements = Keyword.get(opts, :needs_elements, true)
+
+    find_elements_ops(parent, ops, timeout: timeout, count: count, needs_elements: needs_elements)
+  end
+
+  defp execute_ops_click(parent, ops, opts) do
+    alias Wallabidi.CDP.Pipeline
+
+    count = Keyword.get(opts, :count)
+    timeout = Keyword.get(opts, :timeout, 5_000)
+
+    # Extract the query/filter portion of the ops to build a Pipeline
+    # for click_full (which captures return before the click fires).
+    {type, selector} = extract_query(ops)
+
+    pipeline =
+      Pipeline.new(parent)
+      |> Pipeline.query_all(type, selector)
+
+    # Apply filters from the ops
+    pipeline =
+      Enum.reduce(ops.ops, pipeline, fn
+        ["visible", true], p -> Pipeline.filter_visible(p)
+        ["visible", false], p -> Pipeline.filter_not_visible(p)
+        ["text", t], p -> Pipeline.filter_text(p, t)
+        ["selected", true], p -> Pipeline.filter_selected(p, true)
+        ["selected", false], p -> Pipeline.filter_selected(p, false)
+        _, p -> p
+      end)
+
+    pipeline = Pipeline.click_full(pipeline, :click)
+
+    retry_find(fn ->
+      case find_elements_pipeline(parent, pipeline) do
+        {:ok, elements, classification, prepared} ->
+          if count && length(elements) != count do
+            {:error, {:not_found, elements}}
+          else
+            {:ok, :clicked, %{classification: classification, prepared: prepared}}
+          end
+
+        {:ok, elements} ->
+          if count && length(elements) != count do
+            {:error, {:not_found, elements}}
+          else
+            {:ok, :clicked, %{classification: "none", prepared: false}}
+          end
+
+        error ->
+          error
+      end
+    end, timeout)
+  end
+
+  defp extract_query(%Wallabidi.CDP.Ops{ops: ops}) do
+    case Enum.find(ops, fn [cmd | _] -> cmd == "query" end) do
+      ["query", type, selector] -> {String.to_existing_atom(type), selector}
+      _ -> {:css, "*"}
+    end
+  end
+
+  defp retry_find(fun, timeout, start \\ nil) do
+    start = start || System.monotonic_time(:millisecond)
+
+    case fun.() do
+      {:ok, _, _} = result -> result
+      {:error, :invalid_selector} = error -> error
+      {:error, _} ->
+        if System.monotonic_time(:millisecond) - start > timeout do
+          {:error, {:not_found, []}}
+        else
+          retry_find(fun, timeout, start)
+        end
+    end
+  end
+
   def find_elements_push(parent, type, selector, opts \\ []) do
     session = root_session(parent)
     query_id = "q-#{System.unique_integer([:positive])}"

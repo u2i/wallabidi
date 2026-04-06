@@ -767,42 +767,11 @@ defmodule Wallabidi.Browser do
   defp click_via_pipeline(parent, session, query) do
     alias Wallabidi.CDP.Ops
 
-    with {:ok, validated} <- Query.validate(query),
-         compiled <- Query.compile(validated) do
-      {type, selector} = compiled
-
-      # Click uses old Pipeline — click_full captures return before
-      # the click fires. TODO: migrate to Ops interpreter.
-      alias Wallabidi.CDP.Pipeline
-
-      pipeline =
-        Pipeline.new(parent)
-        |> Pipeline.query_all(type, selector)
-        |> build_filters(validated)
-        |> Pipeline.click_full(:click)
-
-      retry(fn ->
-        try do
-          case Wallabidi.CDPClient.find_elements_pipeline(parent, pipeline) do
-            {:ok, elements, classification, prepared} ->
-              with {:ok, _} <- validate_count(validated, elements) do
-                {:ok, {classification, prepared}}
-              end
-
-            {:ok, elements} ->
-              with {:ok, _} <- validate_count(validated, elements) do
-                {:ok, {"none", false}}
-              end
-
-            error ->
-              error
-          end
-        rescue
-          Wallabidi.StaleReferenceError -> {:error, :stale_reference}
-        end
-      end)
-      |> case do
-        {:ok, {classification, prepared}} ->
+    with {:ok, ops, validated} <- Ops.from_wallaby(parent, query, :click) do
+      case Wallabidi.CDPClient.execute_ops(parent, ops,
+             timeout: max_wait_time(),
+             count: Query.count(validated)) do
+        {:ok, :clicked, %{classification: classification, prepared: prepared}} ->
           post_pipeline_click(session, classification, prepared)
           parent
 
@@ -851,29 +820,6 @@ defmodule Wallabidi.Browser do
   end
 
   defp post_pipeline_click(_, _, _), do: :ok
-
-  defp build_filters(pipeline, query) do
-    alias Wallabidi.CDP.Pipeline
-
-    pipeline =
-      case Query.visible?(query) do
-        true -> Pipeline.filter_visible(pipeline)
-        false -> Pipeline.filter_not_visible(pipeline)
-        _ -> pipeline
-      end
-
-    pipeline =
-      case Query.inner_text(query) do
-        nil -> pipeline
-        text -> Pipeline.filter_text(pipeline, text)
-      end
-
-    case Query.selected?(query) do
-      true -> Pipeline.filter_selected(pipeline, true)
-      false -> Pipeline.filter_selected(pipeline, false)
-      _ -> pipeline
-    end
-  end
 
   @doc """
   Double-clicks left mouse button at the current mouse coordinates.
@@ -1633,26 +1579,15 @@ defmodule Wallabidi.Browser do
   defp execute_query_pipeline(parent, _driver, query) do
     alias Wallabidi.CDP.Ops
 
-    with {:ok, query} <- Query.validate(query),
-         compiled_query <- Query.compile(query) do
-      {type, selector} = compiled_query
-
-      ops =
-        Ops.new(parent)
-        |> Ops.query(type, selector)
-        |> Ops.from_query(query)
-
-      find_opts = [
-        timeout: max_wait_time(),
-        count: Query.count(query),
-        needs_elements: true
-      ]
-
-      case Wallabidi.CDPClient.find_elements_ops(parent, ops, find_opts) do
+    with {:ok, ops, validated} <- Ops.from_wallaby(parent, query) do
+      case Wallabidi.CDPClient.execute_ops(parent, ops,
+             timeout: max_wait_time(),
+             count: Query.count(validated),
+             needs_elements: true) do
         {:ok, elements} ->
-          with {:ok, elements} <- validate_count(query, elements),
-               {:ok, elements} <- do_at(query, elements) do
-            {:ok, %{query | result: elements}}
+          with {:ok, elements} <- validate_count(validated, elements),
+               {:ok, elements} <- do_at(validated, elements) do
+            {:ok, %{validated | result: elements}}
           end
 
         error ->

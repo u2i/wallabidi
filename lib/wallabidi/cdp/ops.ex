@@ -108,4 +108,40 @@ defmodule Wallabidi.CDP.Ops do
       _ -> o
     end
   end
+
+  @doc """
+  Build a complete opcode sequence directly from a Wallaby Query + action.
+  Validates and compiles the query, applies all filters, and appends
+  action ops (classify, prepare_patch, click) based on the action type.
+
+  Actions:
+  - `nil`    — find only (for assert_has, find, has?)
+  - `:click` — classify + prepare_patch + click
+
+  Returns `{:ok, ops, query}` or `{:error, reason}`.
+  """
+  def from_wallaby(parent, %Wallabidi.Query{} = query, action \\ nil) do
+    with {:ok, validated} <- Wallabidi.Query.validate(query) do
+      {type, selector} = Wallabidi.Query.compile(validated)
+
+      ops =
+        new(parent)
+        |> query(type, selector)
+        |> from_query(validated)
+
+      ops =
+        case action do
+          :click ->
+            ops
+            |> classify(:click)
+            |> prepare_patch()
+            |> click()
+
+          _ ->
+            ops
+        end
+
+      {:ok, ops, validated}
+    end
+  end
 end
