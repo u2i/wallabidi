@@ -6,6 +6,10 @@ defmodule Wallabidi.BiDi.ResponseParser do
   Extracts a primitive value from a BiDi script result.
   BiDi returns results like %{"type" => "string", "value" => "hello"}.
   """
+  # Unwrap {:ok, map} tuples from send_command
+  def extract_value({:ok, map}) when is_map(map), do: extract_value(map)
+  def extract_value({:error, _} = error), do: error
+
   def extract_value(%{"type" => "exception", "exceptionDetails" => details}) do
     # Script threw an error — check if it's a stale element reference
     message = get_in(details, ["text"]) || ""

@@ -1552,9 +1552,16 @@ defmodule Wallabidi.BiDiClient do
   end
 
   @doc false
-  def await_page_load(_session, timeout \\ 10_000) do
+  def await_page_load(session, timeout \\ 10_000) do
     receive do
-      {:bidi_event, "browsingContext.load", _event} -> :ok
+      {:bidi_event, "browsingContext.load", event} ->
+        new_ctx = get_in(event, ["params", "context"])
+
+        if is_binary(new_ctx) && new_ctx != session.browsing_context do
+          Process.put({:wallabidi_focused_context, session.id}, new_ctx)
+        end
+
+        :ok
     after
       timeout -> :ok
     end
