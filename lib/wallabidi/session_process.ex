@@ -172,6 +172,19 @@ defmodule Wallabidi.SessionProcess do
     :exit, _ -> :timeout
   end
 
+  @doc """
+  Non-blocking check: was a "load" event buffered since the last consume?
+  Returns `:ok` if yes (and consumes it), `:none` if no load event is pending.
+  Used for reactive post-action navigation detection — "did the click
+  cause a page load?"
+  """
+  @spec await_page_load_nowait(Session.t()) :: :ok | :none
+  def await_page_load_nowait(%Session{pid: pid}) when is_pid(pid) do
+    GenServer.call(pid, :await_page_load_nowait)
+  catch
+    :exit, _ -> :none
+  end
+
   # --- GenServer callbacks ---
 
   @impl true
@@ -243,6 +256,20 @@ defmodule Wallabidi.SessionProcess do
         timeout_ref = Process.send_after(self(), {:page_load_timeout, from}, timeout_ms)
         waiters = [{from, loader_id, name, timeout_ref} | state.load_waiters]
         {:noreply, %{state | load_waiters: waiters}}
+    end
+  end
+
+  def handle_call(:await_page_load_nowait, _from, state) do
+    # Check if any "load" event is buffered. If so, consume it and reply :ok.
+    has_load =
+      Enum.any?(state.loads, fn {_loader_id, milestones} ->
+        Map.get(milestones, "load", false)
+      end)
+
+    if has_load do
+      {:reply, :ok, %{state | loads: %{}}}
+    else
+      {:reply, :none, state}
     end
   end
 

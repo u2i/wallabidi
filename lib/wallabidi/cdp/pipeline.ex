@@ -63,17 +63,31 @@ defmodule Wallabidi.CDP.Pipeline do
   end
 
   @doc """
-  Compiles the pipeline to a JS expression string. Returns `{js, parent_id}`
-  where `parent_id` is nil for document-level queries or an objectId for
-  element-scoped queries (to be executed via `callFunctionOn`).
+  Click the first matching element. Runs the click JS inline after
+  find+filter, eliminating a separate callFunctionOn round-trip.
+  """
+  def click(%__MODULE__{} = p) do
+    %{p | ops: p.ops ++ [:click]}
+  end
+
+  @doc """
+  Compiles the pipeline to a JS expression string. Returns `{js, parent_id, mode}`.
+
+  `mode` is `:elements` (default) or `:count`. When the pipeline includes
+  a `:click` op, mode is `:count` because the click's side effects (form
+  submit, navigation) may invalidate element references before they can
+  be returned. In count mode, the JS returns `{count: N}` by value.
   """
   def to_js(%__MODULE__{ops: ops, parent_id: parent_id}) do
     root = if parent_id, do: "this", else: "document"
+    has_click = Enum.any?(ops, &(&1 == :click))
 
     body =
       ops
       |> Enum.map(fn op -> compile_op(op, root) end)
       |> Enum.join("\n")
+
+    ret = if has_click, do: "{count: els.length}", else: "els"
 
     js =
       if parent_id do
@@ -81,7 +95,7 @@ defmodule Wallabidi.CDP.Pipeline do
         function() {
           var els;
           #{body}
-          return els;
+          return #{ret};
         }
         """
       else
@@ -89,12 +103,13 @@ defmodule Wallabidi.CDP.Pipeline do
         (() => {
           var els;
           #{body}
-          return els;
+          return #{ret};
         })()
         """
       end
 
-    {js, parent_id}
+    mode = if has_click, do: :count, else: :elements
+    {js, parent_id, mode}
   end
 
   # --- Op compilation ---
@@ -143,6 +158,15 @@ defmodule Wallabidi.CDP.Pipeline do
     "els = els.filter(function(el) { return !(el.selected || el.checked); });"
   end
 
+  defp compile_op(:click, _root) do
+    """
+    if (els.length > 0) {
+      var _el = els[0];
+      #{click_fn()}
+    }
+    """
+  end
+
   defp compile_op({:classify, interaction}, _root) do
     """
     if (els.length > 0) {
@@ -173,6 +197,45 @@ defmodule Wallabidi.CDP.Pipeline do
       if (rect.right < 0) return false;
       return true;
     }
+    """
+  end
+
+  defp click_fn do
+    """
+    (function() {
+      if (_el.tagName === 'OPTION') {
+        var select = _el.closest('select');
+        if (select && !select.multiple) {
+          select.value = _el.value;
+          Array.from(select.options).forEach(function(o) { o.selected = (o === _el); });
+        } else {
+          _el.selected = !_el.selected;
+        }
+        if (select) select.dispatchEvent(new Event('change', { bubbles: true }));
+        return;
+      }
+      var form = _el.closest('form');
+      if (form && (_el.type === 'reset' || (_el.tagName === 'BUTTON' && _el.type === 'reset'))) {
+        Array.from(form.elements).forEach(function(el) {
+          if (el.type === 'checkbox' || el.type === 'radio') {
+            el.checked = el.defaultChecked;
+          } else if (el.tagName === 'SELECT') {
+            Array.from(el.options).forEach(function(o) { o.selected = o.defaultSelected; });
+          } else if ('defaultValue' in el) {
+            el.value = el.defaultValue;
+          }
+        });
+        form.dispatchEvent(new Event('reset', { bubbles: true }));
+        return;
+      }
+      if (form && _el.tagName === 'INPUT' && (_el.type === 'submit' || _el.type === 'image')) {
+        _el.focus();
+        _el.click();
+        return;
+      }
+      _el.focus();
+      _el.click();
+    })();
     """
   end
 

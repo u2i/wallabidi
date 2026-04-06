@@ -254,11 +254,6 @@ defmodule Wallabidi.CDPClient do
 
   @doc """
   Execute a Pipeline — compiles to JS, runs via evaluate or callFunctionOn,
-  extracts element objectIds via getProperties. 2 RPCs total regardless of
-  how many filter steps the pipeline has.
-  """
-  @doc """
-  Execute a Pipeline — compiles to JS, runs via evaluate or callFunctionOn,
   extracts element objectIds via getProperties. 2 RPCs total.
 
   If the pipeline includes a `classify` step, the classification string
@@ -266,51 +261,75 @@ defmodule Wallabidi.CDPClient do
   `{:ok, elements, classification}`. Otherwise returns `{:ok, elements}`.
   """
   def find_elements_pipeline(parent, %Wallabidi.CDP.Pipeline{} = pipeline) do
-    {js, _parent_id} = Wallabidi.CDP.Pipeline.to_js(pipeline)
-    has_classify = Enum.any?(pipeline.ops, &match?({:classify, _}, &1))
-
+    {js, _parent_id, mode} = Wallabidi.CDP.Pipeline.to_js(pipeline)
     session = root_session(parent)
 
-    result =
-      if pipeline.parent_id do
-        {method, params} = Commands.call_function_on(pipeline.parent_id, js, [])
+    case mode do
+      :count ->
+        # Click pipeline: returns {count: N} by value (1 RPC, no getProperties).
+        # The click already happened inside the JS — we just need the count.
+        result =
+          if pipeline.parent_id do
+            {method, params} = Commands.call_function_on_value(pipeline.parent_id, js, [])
+            send_cdp_session(session, method, params)
+          else
+            {method, params} = Commands.evaluate(js, return_by_value: true)
+            send_cdp_session(session, method, params)
+          end
 
-        with {:ok, result} <- send_cdp_session(session, method, params),
-             {:ok, array_id} <- ResponseParser.extract_object_id({:ok, result}),
-             {:ok, result} <- send_cdp_raw(session, Commands.get_properties(array_id)) do
-          if array_id, do: cast_release(session, array_id)
-          {:ok, result, array_id}
+        with {:ok, raw} <- result,
+             {:ok, value} <- ResponseParser.extract_value({:ok, raw}) do
+          count = if is_map(value), do: value["count"] || 0, else: 0
+          # Return synthetic elements list of the right length for validate_count
+          elements = List.duplicate(%Element{parent: parent, driver: session.driver}, count)
+          {:ok, elements}
         end
-      else
-        {method, params} = Commands.evaluate(js, return_by_value: false)
 
-        with {:ok, result} <- send_cdp_session(session, method, params),
-             {:ok, array_id} <- ResponseParser.extract_object_id({:ok, result}),
-             {:ok, result} <- send_cdp_raw(session, Commands.get_properties(array_id)) do
-          if array_id, do: cast_release(session, array_id)
-          {:ok, result, array_id}
+      :elements ->
+        # Find pipeline: returns array of live node refs (2 RPCs).
+        has_classify = Enum.any?(pipeline.ops, &match?({:classify, _}, &1))
+
+        result =
+          if pipeline.parent_id do
+            {method, params} = Commands.call_function_on(pipeline.parent_id, js, [])
+
+            with {:ok, result} <- send_cdp_session(session, method, params),
+                 {:ok, array_id} <- ResponseParser.extract_object_id({:ok, result}),
+                 {:ok, result} <- send_cdp_raw(session, Commands.get_properties(array_id)) do
+              if array_id, do: cast_release(session, array_id)
+              {:ok, result}
+            end
+          else
+            {method, params} = Commands.evaluate(js, return_by_value: false)
+
+            with {:ok, result} <- send_cdp_session(session, method, params),
+                 {:ok, array_id} <- ResponseParser.extract_object_id({:ok, result}),
+                 {:ok, result} <- send_cdp_raw(session, Commands.get_properties(array_id)) do
+              if array_id, do: cast_release(session, array_id)
+              {:ok, result}
+            end
+          end
+
+        with {:ok, props_result} <- result,
+             {:ok, ids} <- ResponseParser.extract_element_ids({:ok, props_result}) do
+          elements =
+            Enum.map(ids, fn object_id ->
+              %Element{
+                id: object_id,
+                bidi_shared_id: object_id,
+                parent: parent,
+                driver: session.driver,
+                url: session.session_url
+              }
+            end)
+
+          if has_classify do
+            classification = extract_classify(props_result)
+            {:ok, elements, classification}
+          else
+            {:ok, elements}
+          end
         end
-      end
-
-    with {:ok, props_result, _} <- result,
-         {:ok, ids} <- ResponseParser.extract_element_ids({:ok, props_result}) do
-      elements =
-        Enum.map(ids, fn object_id ->
-          %Element{
-            id: object_id,
-            bidi_shared_id: object_id,
-            parent: parent,
-            driver: session.driver,
-            url: session.session_url
-          }
-        end)
-
-      if has_classify do
-        classification = extract_classify(props_result)
-        {:ok, elements, classification}
-      else
-        {:ok, elements}
-      end
     end
   end
 

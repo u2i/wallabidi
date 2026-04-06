@@ -753,9 +753,79 @@ defmodule Wallabidi.Browser do
 
   def click(parent, query) do
     with_patch_await(parent, query, :click, fn ->
-      parent
-      |> find(query, &Element.click/1)
+      session = get_session(parent)
+
+      if session && session.protocol == Wallabidi.Protocol.CDP &&
+           not in_frame?(session) do
+        click_via_pipeline(parent, session, query)
+      else
+        parent |> find(query, &Element.click/1)
+      end
     end)
+  end
+
+  defp click_via_pipeline(parent, _session, query) do
+    alias Wallabidi.CDP.Pipeline
+
+    # Same pre-check as execute_query — wait for selector in DOM.
+    maybe_await_selector(parent, query)
+
+    with {:ok, validated} <- Query.validate(query),
+         compiled <- Query.compile(validated) do
+      {type, selector} = compiled
+
+      pipeline =
+        Pipeline.new(parent)
+        |> Pipeline.query_all(type, selector)
+        |> build_filters(validated)
+        |> Pipeline.click()
+
+      retry(fn ->
+        try do
+          case Wallabidi.CDPClient.find_elements_pipeline(parent, pipeline) do
+            {:ok, elements, _} -> validate_count(validated, elements)
+            {:ok, elements} -> validate_count(validated, elements)
+            error -> error
+          end
+        rescue
+          Wallabidi.StaleReferenceError -> {:error, :stale_reference}
+        end
+      end)
+      |> case do
+        {:ok, _} -> parent
+        {:error, _} ->
+          # Fall back for proper error messages
+          find(parent, query, &Element.click/1)
+          parent
+      end
+    else
+      _ ->
+        find(parent, query, &Element.click/1)
+        parent
+    end
+  end
+
+  defp build_filters(pipeline, query) do
+    alias Wallabidi.CDP.Pipeline
+
+    pipeline =
+      case Query.visible?(query) do
+        true -> Pipeline.filter_visible(pipeline)
+        false -> Pipeline.filter_not_visible(pipeline)
+        _ -> pipeline
+      end
+
+    pipeline =
+      case Query.inner_text(query) do
+        nil -> pipeline
+        text -> Pipeline.filter_text(pipeline, text)
+      end
+
+    case Query.selected?(query) do
+      true -> Pipeline.filter_selected(pipeline, true)
+      false -> Pipeline.filter_selected(pipeline, false)
+      _ -> pipeline
+    end
   end
 
   @doc """
@@ -1523,28 +1593,10 @@ defmodule Wallabidi.Browser do
              compiled_query <- Query.compile(query) do
           {type, selector} = compiled_query
 
-          pipeline = Pipeline.new(parent)
-          pipeline = Pipeline.query_all(pipeline, type, selector)
-
           pipeline =
-            case Query.visible?(query) do
-              true -> Pipeline.filter_visible(pipeline)
-              false -> Pipeline.filter_not_visible(pipeline)
-              _ -> pipeline
-            end
-
-          pipeline =
-            case Query.inner_text(query) do
-              nil -> pipeline
-              text -> Pipeline.filter_text(pipeline, text)
-            end
-
-          pipeline =
-            case Query.selected?(query) do
-              true -> Pipeline.filter_selected(pipeline, true)
-              false -> Pipeline.filter_selected(pipeline, false)
-              _ -> pipeline
-            end
+            Pipeline.new(parent)
+            |> Pipeline.query_all(type, selector)
+            |> build_filters(query)
 
           with {:ok, elements} <- Wallabidi.CDPClient.find_elements_pipeline(parent, pipeline),
                {:ok, elements} <- validate_count(query, elements),
