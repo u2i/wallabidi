@@ -1504,10 +1504,7 @@ defmodule Wallabidi.Browser do
     session = get_session(parent)
 
     if session && session.protocol == Wallabidi.Protocol.CDP &&
-         match?(%Session{}, parent) &&
          not in_frame?(session) do
-      # Pipeline for document-level queries in the main frame. Element-scoped
-      # and frame-switched queries use the legacy path.
       execute_query_pipeline(parent, driver, query)
     else
       execute_query_legacy(parent, driver, query)

@@ -95,18 +95,17 @@ defmodule Wallabidi.CDP.Pipeline do
   end
 
   defp compile_op({:query_xpath, xpath}, root) do
+    # Use a block scope instead of an IIFE to preserve `this` binding
+    # from callFunctionOn. An IIFE rebinds `this` to undefined/window.
     """
-    els = (function() {
-      try {
-        var ctx = #{root};
-        if (!ctx || !ctx.nodeType) ctx = document;
-        var r = document.evaluate(#{Jason.encode!(xpath)}, ctx, null,
-          XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-        var a = [];
-        for (var i = 0; i < r.snapshotLength; i++) a.push(r.snapshotItem(i));
-        return a;
-      } catch(e) { return []; }
-    })();
+    try {
+      var _xctx = #{root};
+      if (!_xctx || !_xctx.nodeType) _xctx = document;
+      var _xr = document.evaluate(#{Jason.encode!(xpath)}, _xctx, null,
+        XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+      els = [];
+      for (var _xi = 0; _xi < _xr.snapshotLength; _xi++) els.push(_xr.snapshotItem(_xi));
+    } catch(_xe) { els = []; }
     """
   end
 
