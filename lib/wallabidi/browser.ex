@@ -1714,6 +1714,22 @@ defmodule Wallabidi.Browser do
   defp get_session(%Element{parent: p}), do: get_session(p)
   defp get_session(_), do: nil
 
+  # After a full-page navigation on BiDi, the browsing context ID may
+  # have changed. Refresh it from browsingContext.getTree.
+  defp update_bidi_context(%Session{bidi_pid: pid} = session) do
+    {method, params} = Wallabidi.BiDi.Commands.get_tree()
+
+    case Wallabidi.BiDi.WebSocketClient.send_command(pid, method, params) do
+      {:ok, %{"contexts" => [%{"context" => new_ctx} | _]}} ->
+        if new_ctx != session.browsing_context do
+          Process.put({:wallabidi_focused_context, session.id}, new_ctx)
+        end
+
+      _ ->
+        :ok
+    end
+  end
+
   defp in_frame?(%Session{} = session) do
     Process.get({:cdp_frame_stack, session.id}, []) != []
   end
@@ -1939,12 +1955,15 @@ defmodule Wallabidi.Browser do
 
         :full_page ->
           if bidi_session?(session) do
+            # BiDi: use the old prepare/await path which handles
+            # context changes correctly via chromedriver.
             Wallabidi.BiDiClient.prepare_page_load(session)
             result = fun.()
             Wallabidi.BiDiClient.await_page_load(session)
             Wallabidi.LiveViewAware.await_liveview_connected(session)
             result
           else
+            # CDP: wait for lifecycle event via SessionProcess.
             result = fun.()
             Wallabidi.SessionProcess.await_next_page_load(session)
             Wallabidi.LiveViewAware.await_liveview_connected(session)

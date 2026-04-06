@@ -9,6 +9,18 @@ if remote_url = System.get_env("WALLABIDI_CHROMEDRIVER_REMOTE_URL") do
     chromedriver: [
       remote_url: remote_url
     ]
+else
+  # Use local Chrome for Testing + chromedriver if available
+  chrome_binary = Path.wildcard("chrome/*/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing") |> List.first()
+  chromedriver = Path.wildcard("chromedriver/*/chromedriver-mac-arm64/chromedriver") |> List.first()
+
+  chromedriver_opts = []
+  chromedriver_opts = if chrome_binary, do: Keyword.put(chromedriver_opts, :binary, chrome_binary), else: chromedriver_opts
+  chromedriver_opts = if chromedriver, do: Keyword.put(chromedriver_opts, :path, chromedriver), else: chromedriver_opts
+
+  if chromedriver_opts != [] do
+    config :wallabidi, chromedriver: chromedriver_opts
+  end
 end
 
 # Test app configuration

@@ -206,6 +206,13 @@ defmodule Wallabidi.SessionProcess do
     :exit, _ -> :timeout
   end
 
+  @doc "Clear all buffered load events. Call before a click that will navigate."
+  def drain_loads(%Session{pid: pid}) when is_pid(pid) do
+    GenServer.call(pid, :drain_loads)
+  catch
+    :exit, _ -> :ok
+  end
+
   @doc "Append a side-effect op to the lazy queue (non-blocking cast)."
   def append_ops(%Session{pid: pid}, query_id, ops, action, opts)
       when is_pid(pid) do
@@ -293,13 +300,26 @@ defmodule Wallabidi.SessionProcess do
     end
   end
 
+  def handle_call(:drain_loads, _from, state) do
+    {:reply, :ok, %{state | loads: %{}}}
+  end
+
   def handle_call({:await_next_page_load, name, timeout_ms}, from, state) do
-    # Flush all buffered loads — they're from prior navigations. Only a
-    # fresh event that arrives *after* this call will resolve the waiter.
-    # Use loader_id = :any as a wildcard sentinel that record_load matches.
-    timeout_ref = Process.send_after(self(), {:page_load_timeout, from}, timeout_ms)
-    waiters = [{from, :any, name, timeout_ref} | state.load_waiters]
-    {:noreply, %{state | loads: %{}, load_waiters: waiters}}
+    # Check if a load event is already buffered (the navigation may have
+    # completed before we got here). If so, consume it immediately.
+    already_loaded =
+      Enum.any?(state.loads, fn {_loader_id, milestones} ->
+        Map.get(milestones, name, false)
+      end)
+
+    if already_loaded do
+      {:reply, :ok, %{state | loads: %{}}}
+    else
+      # Not yet — wait for the next one. Use :any as wildcard loader_id.
+      timeout_ref = Process.send_after(self(), {:page_load_timeout, from}, timeout_ms)
+      waiters = [{from, :any, name, timeout_ref} | state.load_waiters]
+      {:noreply, %{state | loads: %{}, load_waiters: waiters}}
+    end
   end
 
   def handle_call({:register_find, query_id, timeout_ms}, _from, state) do

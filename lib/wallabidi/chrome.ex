@@ -184,8 +184,10 @@ defmodule Wallabidi.Chrome do
 
       session = connect_bidi!(session, response, base_url)
 
-      # Subscribe to console logs so they buffer from session start
+      # Subscribe to console logs so they buffer from session start,
+      # and to page load events so SessionProcess can track navigations.
       Wallabidi.Protocol.subscribe(session, :log)
+      Wallabidi.Protocol.subscribe(session, :page_load)
 
       if window_size = Keyword.get(opts, :window_size),
         do: {:ok, _} = set_window_size(session, window_size[:width], window_size[:height])
