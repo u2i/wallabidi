@@ -752,22 +752,24 @@ defmodule Wallabidi.Browser do
   end
 
   def click(parent, query) do
-    with_patch_await(parent, query, :click, fn ->
-      session = get_session(parent)
+    session = get_session(parent)
 
-      if session && session.protocol == Wallabidi.Protocol.CDP &&
-           not in_frame?(session) do
-        click_via_pipeline(parent, session, query)
-      else
+    if session && session.protocol == Wallabidi.Protocol.CDP &&
+         not in_frame?(session) do
+      # CDP pipeline: classify + prepare_patch + find + filter + click
+      # all in one JS eval. Post-action await uses the classification
+      # returned from the same call.
+      click_via_pipeline(parent, session, query)
+    else
+      with_patch_await(parent, query, :click, fn ->
         parent |> find(query, &Element.click/1)
-      end
-    end)
+      end)
+    end
   end
 
-  defp click_via_pipeline(parent, _session, query) do
+  defp click_via_pipeline(parent, session, query) do
     alias Wallabidi.CDP.Pipeline
 
-    # Same pre-check as execute_query — wait for selector in DOM.
     maybe_await_selector(parent, query)
 
     with {:ok, validated} <- Query.validate(query),
@@ -778,32 +780,79 @@ defmodule Wallabidi.Browser do
         Pipeline.new(parent)
         |> Pipeline.query_all(type, selector)
         |> build_filters(validated)
-        |> Pipeline.click()
+        |> Pipeline.click_full(:click)
 
       retry(fn ->
         try do
           case Wallabidi.CDPClient.find_elements_pipeline(parent, pipeline) do
-            {:ok, elements, _} -> validate_count(validated, elements)
-            {:ok, elements} -> validate_count(validated, elements)
-            error -> error
+            {:ok, elements, classification, prepared} ->
+              with {:ok, _} <- validate_count(validated, elements) do
+                {:ok, {classification, prepared}}
+              end
+
+            {:ok, elements} ->
+              with {:ok, _} <- validate_count(validated, elements) do
+                {:ok, {"none", false}}
+              end
+
+            error ->
+              error
           end
         rescue
           Wallabidi.StaleReferenceError -> {:error, :stale_reference}
         end
       end)
       |> case do
-        {:ok, _} -> parent
+        {:ok, {classification, prepared}} ->
+          post_pipeline_click(session, classification, prepared)
+          parent
+
         {:error, _} ->
           # Fall back for proper error messages
-          find(parent, query, &Element.click/1)
+          with_patch_await(parent, query, :click, fn ->
+            find(parent, query, &Element.click/1)
+          end)
           parent
       end
     else
       _ ->
-        find(parent, query, &Element.click/1)
+        with_patch_await(parent, query, :click, fn ->
+          find(parent, query, &Element.click/1)
+        end)
         parent
     end
   end
+
+  # Post-click await using classification from the pipeline.
+  # prepare_patch already ran inside the pipeline JS.
+  defp post_pipeline_click(_session, "none", _prepared), do: :ok
+
+  defp post_pipeline_click(session, "patch", true) do
+    case Wallabidi.LiveViewAware.await_patch(session) do
+      :page_navigated ->
+        Wallabidi.SessionProcess.await_next_page_load(session)
+        Wallabidi.LiveViewAware.await_liveview_connected(session)
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp post_pipeline_click(_session, "patch", false) do
+    :ok
+  end
+
+  defp post_pipeline_click(session, "navigate", _prepared) do
+    {:ok, pre_url} = Wallabidi.Protocol.current_url(session)
+    Wallabidi.LiveViewAware.await_liveview_connected(session, pre_url: pre_url)
+  end
+
+  defp post_pipeline_click(session, "full_page", _prepared) do
+    Wallabidi.SessionProcess.await_next_page_load(session)
+    Wallabidi.LiveViewAware.await_liveview_connected(session)
+  end
+
+  defp post_pipeline_click(_, _, _), do: :ok
 
   defp build_filters(pipeline, query) do
     alias Wallabidi.CDP.Pipeline

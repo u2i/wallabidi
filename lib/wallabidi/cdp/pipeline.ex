@@ -71,6 +71,19 @@ defmodule Wallabidi.CDP.Pipeline do
   end
 
   @doc """
+  Combined classify + prepare_patch + click in one op. Replaces three
+  separate RPCs (classify_interaction, prepare_patch, pipeline click)
+  with one JS evaluation that:
+  1. Installs the LiveView onPatchEnd promise (prepare_patch)
+  2. Classifies the first matching element's phx bindings
+  3. Clicks the element
+  4. Returns {count, classification, prepared} by value
+  """
+  def click_full(%__MODULE__{} = p, interaction) do
+    %{p | ops: p.ops ++ [{:click_full, interaction}]}
+  end
+
+  @doc """
   Compiles the pipeline to a JS expression string. Returns `{js, parent_id, mode}`.
 
   `mode` is `:elements` (default) or `:count`. When the pipeline includes
@@ -81,13 +94,19 @@ defmodule Wallabidi.CDP.Pipeline do
   def to_js(%__MODULE__{ops: ops, parent_id: parent_id}) do
     root = if parent_id, do: "this", else: "document"
     has_click = Enum.any?(ops, &(&1 == :click))
+    has_click_full = Enum.any?(ops, &match?({:click_full, _}, &1))
 
     body =
       ops
       |> Enum.map(fn op -> compile_op(op, root) end)
       |> Enum.join("\n")
 
-    ret = if has_click, do: "{count: els.length}", else: "els"
+    ret =
+      cond do
+        has_click_full -> "_ret"
+        has_click -> "{count: els.length}"
+        true -> "els"
+      end
 
     js =
       if parent_id do
@@ -108,7 +127,13 @@ defmodule Wallabidi.CDP.Pipeline do
         """
       end
 
-    mode = if has_click, do: :count, else: :elements
+    mode =
+      cond do
+        has_click_full -> :click_full
+        has_click -> :count
+        true -> :elements
+      end
+
     {js, parent_id, mode}
   end
 
@@ -160,6 +185,52 @@ defmodule Wallabidi.CDP.Pipeline do
 
   defp compile_op(:click, _root) do
     """
+    if (els.length > 0) {
+      var _el = els[0];
+      #{click_fn()}
+    }
+    """
+  end
+
+  defp compile_op({:click_full, interaction}, _root) do
+    """
+    var _prepared = false;
+    var _classification = "none";
+    var _count = els.length;
+    (function() {
+      // 1. prepare_patch — install onPatchEnd hook + promise
+      var ls = window.liveSocket;
+      if (ls && ls.main) {
+        if (!window.__wallabidi_patch_hooked) {
+          var orig = ls.domCallbacks.onPatchEnd;
+          ls.domCallbacks.onPatchEnd = function(container) {
+            orig(container);
+            if (window.__wallabidi_patch_resolve) {
+              var r = window.__wallabidi_patch_resolve;
+              window.__wallabidi_patch_resolve = null;
+              r(true);
+            }
+          };
+          window.__wallabidi_patch_hooked = true;
+        }
+        window.__wallabidi_patch_promise = new Promise(function(resolve) {
+          window.__wallabidi_patch_resolve = resolve;
+        });
+        _prepared = true;
+      }
+
+      // 2. classify first element
+      if (els.length > 0) {
+        _classification = (#{classify_fn()})(els[0], #{Jason.encode!(to_string(interaction))});
+      }
+    })();
+
+    // 3. Capture return value BEFORE clicking — the click may navigate
+    // the page and destroy the execution context.
+    var _ret = {count: _count, classification: _classification, prepared: _prepared};
+
+    // 4. Click (fire-and-forget — if it navigates, we won't get a
+    // response, but Chrome still processes the click).
     if (els.length > 0) {
       var _el = els[0];
       #{click_fn()}

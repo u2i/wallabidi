@@ -265,22 +265,27 @@ defmodule Wallabidi.CDPClient do
     session = root_session(parent)
 
     case mode do
-      :count ->
-        # Click pipeline: returns {count: N} by value (1 RPC, no getProperties).
-        # The click already happened inside the JS — we just need the count.
-        result =
-          if pipeline.parent_id do
-            {method, params} = Commands.call_function_on_value(pipeline.parent_id, js, [])
-            send_cdp_session(session, method, params)
-          else
-            {method, params} = Commands.evaluate(js, return_by_value: true)
-            send_cdp_session(session, method, params)
-          end
+      :click_full ->
+        # Combined classify + prepare_patch + click. Returns
+        # {count, classification, prepared} by value. 1 RPC total.
+        result = eval_by_value(session, pipeline, js)
 
         with {:ok, raw} <- result,
              {:ok, value} <- ResponseParser.extract_value({:ok, raw}) do
           count = if is_map(value), do: value["count"] || 0, else: 0
-          # Return synthetic elements list of the right length for validate_count
+          classification = if is_map(value), do: value["classification"] || "none", else: "none"
+          prepared = if is_map(value), do: value["prepared"] || false, else: false
+          elements = List.duplicate(%Element{parent: parent, driver: session.driver}, count)
+          {:ok, elements, classification, prepared}
+        end
+
+      :count ->
+        # Click pipeline: returns {count: N} by value (1 RPC, no getProperties).
+        result = eval_by_value(session, pipeline, js)
+
+        with {:ok, raw} <- result,
+             {:ok, value} <- ResponseParser.extract_value({:ok, raw}) do
+          count = if is_map(value), do: value["count"] || 0, else: 0
           elements = List.duplicate(%Element{parent: parent, driver: session.driver}, count)
           {:ok, elements}
         end
@@ -330,6 +335,16 @@ defmodule Wallabidi.CDPClient do
             {:ok, elements}
           end
         end
+    end
+  end
+
+  defp eval_by_value(session, pipeline, js) do
+    if pipeline.parent_id do
+      {method, params} = Commands.call_function_on_value(pipeline.parent_id, js, [])
+      send_cdp_session(session, method, params)
+    else
+      {method, params} = Commands.evaluate(js, return_by_value: true)
+      send_cdp_session(session, method, params)
     end
   end
 
