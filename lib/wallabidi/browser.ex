@@ -770,8 +770,6 @@ defmodule Wallabidi.Browser do
   defp click_via_pipeline(parent, session, query) do
     alias Wallabidi.CDP.Pipeline
 
-    maybe_await_selector(parent, query)
-
     with {:ok, validated} <- Query.validate(query),
          compiled <- Query.compile(validated) do
       {type, selector} = compiled
@@ -1617,47 +1615,55 @@ defmodule Wallabidi.Browser do
   end
 
   def execute_query(%{driver: driver} = parent, query) do
-    # For BiDi sessions, try event-driven wait before polling
-    maybe_await_selector(parent, query)
-
     session = get_session(parent)
 
     if session && session.protocol == Wallabidi.Protocol.CDP &&
          not in_frame?(session) do
+      # CDP: await + find + filter in one async eval (no separate maybe_await_selector)
       execute_query_pipeline(parent, driver, query)
     else
+      maybe_await_selector(parent, query)
       execute_query_legacy(parent, driver, query)
     end
   end
 
-  # CDP path: compile find + visibility/text/selected filters into one JS
-  # function, execute via evaluate + getProperties (2 RPCs). Eliminates
-  # per-element displayed/text RPCs.
+  # CDP path: await (MutationObserver) + find + filter in one async JS eval.
+  # Replaces the separate maybe_await_selector + sync pipeline with a single
+  # eval_async that resolves when elements match, then getProperties to
+  # extract objectIds. 2 RPCs total.
   defp execute_query_pipeline(parent, _driver, query) do
     alias Wallabidi.CDP.Pipeline
 
-    retry(fn ->
-      try do
-        with {:ok, query} <- Query.validate(query),
-             compiled_query <- Query.compile(query) do
-          {type, selector} = compiled_query
+    # No retry loop — the await pipeline's MutationObserver IS the retry
+    # mechanism. It watches for DOM changes and re-runs the find+filter
+    # inside the browser. If max_wait_time elapses with no match, we
+    # return what we have and let validate_count produce the error.
+    with {:ok, query} <- Query.validate(query),
+         compiled_query <- Query.compile(query) do
+      {type, selector} = compiled_query
 
-          pipeline =
-            Pipeline.new(parent)
-            |> Pipeline.query_all(type, selector)
-            |> build_filters(query)
+      pipeline =
+        Pipeline.new(parent)
+        |> Pipeline.query_all(type, selector)
+        |> build_filters(query)
+        |> Pipeline.await(max_wait_time(), Query.count(query))
 
-          with {:ok, elements} <- Wallabidi.CDPClient.find_elements_pipeline(parent, pipeline),
-               {:ok, elements} <- validate_count(query, elements),
+      case Wallabidi.CDPClient.find_elements_pipeline(parent, pipeline) do
+        {:ok, elements} ->
+          with {:ok, elements} <- validate_count(query, elements),
                {:ok, elements} <- do_at(query, elements) do
             {:ok, %{query | result: elements}}
           end
-        end
-      rescue
-        StaleReferenceError ->
-          {:error, :stale_reference}
+
+        {:error, {code, _msg}} when code in [-32000, -32602] ->
+          # Context destroyed (navigation) — fall back to retry loop
+          # which will pick up the new page's context.
+          execute_query_legacy(parent, parent.driver, query)
+
+        error ->
+          error
       end
-    end)
+    end
   end
 
   defp execute_query_legacy(parent, driver, query) do

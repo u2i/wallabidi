@@ -84,6 +84,15 @@ defmodule Wallabidi.CDP.Pipeline do
   end
 
   @doc """
+  Mark this pipeline as async. `count` is the expected element count —
+  the Promise only resolves when exactly this many elements match (or
+  `:any` to resolve as soon as at least 1 matches).
+  """
+  def await(%__MODULE__{} = p, timeout \\ 200, count \\ :any) do
+    %{p | ops: p.ops ++ [{:await, timeout, count}]}
+  end
+
+  @doc """
   Compiles the pipeline to a JS expression string. Returns `{js, parent_id, mode}`.
 
   `mode` is `:elements` (default) or `:count`. When the pipeline includes
@@ -95,9 +104,13 @@ defmodule Wallabidi.CDP.Pipeline do
     root = if parent_id, do: "this", else: "document"
     has_click = Enum.any?(ops, &(&1 == :click))
     has_click_full = Enum.any?(ops, &match?({:click_full, _}, &1))
+    await_op = Enum.find(ops, &match?({:await, _, _}, &1))
+
+    # Separate ops: everything except :await (which wraps the whole thing)
+    non_await_ops = Enum.reject(ops, &match?({:await, _, _}, &1))
 
     body =
-      ops
+      non_await_ops
       |> Enum.map(fn op -> compile_op(op, root) end)
       |> Enum.join("\n")
 
@@ -109,28 +122,34 @@ defmodule Wallabidi.CDP.Pipeline do
       end
 
     js =
-      if parent_id do
-        """
-        function() {
-          var els;
-          #{body}
-          return #{ret};
-        }
-        """
+      if await_op do
+        {_, timeout, count} = await_op
+        compile_await_wrapper(body, ret, root, parent_id, timeout, count)
       else
-        """
-        (() => {
-          var els;
-          #{body}
-          return #{ret};
-        })()
-        """
+        if parent_id do
+          """
+          function() {
+            var els;
+            #{body}
+            return #{ret};
+          }
+          """
+        else
+          """
+          (() => {
+            var els;
+            #{body}
+            return #{ret};
+          })()
+          """
+        end
       end
 
     mode =
       cond do
         has_click_full -> :click_full
         has_click -> :count
+        await_op != nil -> :await
         true -> :elements
       end
 
@@ -309,6 +328,80 @@ defmodule Wallabidi.CDP.Pipeline do
     })();
     """
   end
+
+  defp compile_await_wrapper(body, ret, root, parent_id, timeout, count) do
+    # Capture the root element outside tryFind so nested function calls
+    # don't rebind `this`. For document-level queries root is "document"
+    # (no rebinding issue). For scoped queries root is "this" which
+    # we capture as _root.
+    capture = if root == "this", do: "var _root = this;", else: ""
+    # Replace references to "this" in the body with "_root" for scoped queries
+    safe_body = if root == "this", do: String.replace(body, "this", "_root"), else: body
+
+    inner =
+      """
+      #{capture}
+      function tryFind() {
+        var els;
+        #{safe_body}
+        return #{ret};
+      }
+
+      var _expected = #{compile_count(count)};
+      function _matches(r) {
+        if (!Array.isArray(r)) return r != null;
+        if (_expected === null) return r.length > 0;
+        return r.length === _expected;
+      }
+
+      var found = tryFind();
+      if (_matches(found)) return Promise.resolve(found);
+
+      return new Promise(function(resolve) {
+        var timer = setTimeout(function() { cleanup(); resolve(tryFind()); }, #{timeout});
+
+        var origOnPatchEnd;
+        var ls = window.liveSocket;
+        if (ls && ls.domCallbacks) {
+          origOnPatchEnd = ls.domCallbacks.onPatchEnd;
+          ls.domCallbacks.onPatchEnd = function(container) {
+            if (origOnPatchEnd) origOnPatchEnd(container);
+            var r = tryFind();
+            if (_matches(r)) { cleanup(); resolve(r); }
+          };
+        }
+
+        var observer = new MutationObserver(function() {
+          requestAnimationFrame(function() {
+            var r = tryFind();
+            if (_matches(r)) { cleanup(); resolve(r); }
+          });
+        });
+        observer.observe(document.body, {
+          childList: true, subtree: true,
+          attributes: true, characterData: true
+        });
+
+        function cleanup() {
+          clearTimeout(timer);
+          observer.disconnect();
+          if (origOnPatchEnd && ls && ls.domCallbacks) {
+            ls.domCallbacks.onPatchEnd = origOnPatchEnd;
+          }
+        }
+      });
+      """
+
+    if parent_id do
+      "function() {\n#{inner}\n}"
+    else
+      "(function() {\n#{inner}\n})()"
+    end
+  end
+
+  defp compile_count(:any), do: "null"
+  defp compile_count(nil), do: "null"
+  defp compile_count(n) when is_integer(n), do: Integer.to_string(n)
 
   defp classify_fn do
     """

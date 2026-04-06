@@ -290,6 +290,47 @@ defmodule Wallabidi.CDPClient do
           {:ok, elements}
         end
 
+      :await ->
+        # Async await+find pipeline: returns a Promise that resolves with
+        # the element array once MutationObserver sees them. Uses
+        # awaitPromise so the RPC blocks until resolved. 1 eval + 1 getProperties.
+        result =
+          if pipeline.parent_id do
+            send_cdp_session(session, "Runtime.callFunctionOn", %{
+              objectId: pipeline.parent_id,
+              functionDeclaration: js,
+              returnByValue: false,
+              awaitPromise: true
+            })
+          else
+            send_cdp_session(session, "Runtime.evaluate", %{
+              expression: js,
+              returnByValue: false,
+              awaitPromise: true
+            })
+          end
+
+        with {:ok, eval_result} <- ResponseParser.check_error(result),
+             {:ok, array_id} <- ResponseParser.extract_object_id({:ok, eval_result}),
+             {:ok, props_result} <- send_cdp_raw(session, Commands.get_properties(array_id)) do
+          if array_id, do: cast_release(session, array_id)
+
+          with {:ok, ids} <- ResponseParser.extract_element_ids({:ok, props_result}) do
+            elements =
+              Enum.map(ids, fn object_id ->
+                %Element{
+                  id: object_id,
+                  bidi_shared_id: object_id,
+                  parent: parent,
+                  driver: session.driver,
+                  url: session.session_url
+                }
+              end)
+
+            {:ok, elements}
+          end
+        end
+
       :elements ->
         # Find pipeline: returns array of live node refs (2 RPCs).
         has_classify = Enum.any?(pipeline.ops, &match?({:classify, _}, &1))
