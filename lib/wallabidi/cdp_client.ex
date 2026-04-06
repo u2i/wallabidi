@@ -65,19 +65,13 @@ defmodule Wallabidi.CDPClient do
            send_cdp(pid, Commands.create_target("", create_target_opts)),
          {:ok, %{"sessionId" => session_id}} <-
            send_cdp(pid, Commands.attach_to_target(target_id)) do
-      # Enable required domains using raw pid + sessionId. Lifecycle events
-      # give us loaderId-correlated load state so `visit/2` can deterministically
-      # wait for exactly the navigation it just triggered.
-      send_cdp_with_session(pid, session_id, Commands.enable_page(), flat_session_id: flat)
-      send_cdp_with_session(pid, session_id, Commands.enable_runtime(), flat_session_id: flat)
-      send_cdp_with_session(pid, session_id, Commands.enable_dom(), flat_session_id: flat)
-
-      send_cdp_with_session(
-        pid,
-        session_id,
-        Commands.set_lifecycle_events_enabled(true),
-        flat_session_id: flat
-      )
+      # Fire-and-forget: enables don't need ack. Chrome processes them in
+      # order on the session, so by the time the first real command (e.g.
+      # Page.navigate) gets a response, all enables have been processed.
+      cast_cdp_with_session(pid, session_id, Commands.enable_page(), flat_session_id: flat)
+      cast_cdp_with_session(pid, session_id, Commands.enable_runtime(), flat_session_id: flat)
+      cast_cdp_with_session(pid, session_id, Commands.enable_dom(), flat_session_id: flat)
+      cast_cdp_with_session(pid, session_id, Commands.set_lifecycle_events_enabled(true), flat_session_id: flat)
 
       {:ok, %{target_id: target_id, session_id: session_id}}
     end
@@ -775,16 +769,15 @@ defmodule Wallabidi.CDPClient do
     |> ResponseParser.check_error()
   end
 
-  # Bootstrap: send CDP command with raw pid + sessionId (before Session struct exists)
-  defp send_cdp_with_session(pid, session_id, {method, params}, opts)
+  # Fire-and-forget: write to WebSocket, don't wait for response.
+  defp cast_cdp_with_session(pid, session_id, {method, params}, opts)
        when is_pid(pid) do
     if Keyword.get(opts, :flat_session_id) do
-      WebSocketClient.send_command_flat(pid, method, params, session_id)
+      WebSocketClient.cast_command_flat(pid, method, params, session_id)
     else
       params = Map.put(params, :sessionId, session_id)
-      WebSocketClient.send_command(pid, method, params)
+      WebSocketClient.cast_command_flat(pid, method, params, session_id)
     end
-    |> ResponseParser.check_error()
   end
 
   defp send_cdp_session(%Session{} = session, method, params) do

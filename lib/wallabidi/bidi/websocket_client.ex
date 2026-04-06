@@ -48,6 +48,16 @@ defmodule Wallabidi.BiDi.WebSocketClient do
   end
 
   @doc """
+  Fire-and-forget: writes the command to the WebSocket but doesn't wait for
+  Chrome's response. Use for commands where we need ordering (Chrome processes
+  them in order on a session) but don't need the response value — domain
+  enables, configuration, etc.
+  """
+  def cast_command_flat(pid, method, params, session_id) do
+    GenServer.cast(pid, {:cast_command_flat, method, params, session_id})
+  end
+
+  @doc """
   Subscribe `subscriber` (default: caller) to events matching `event_method`.
 
   When a shared WebSocket carries events for multiple CDP sessions, pass
@@ -154,6 +164,12 @@ defmodule Wallabidi.BiDi.WebSocketClient do
         Mint.HTTP.close(state.conn)
         {:stop, :normal, :ok, state}
     end
+  end
+
+  @impl true
+  def handle_cast({:cast_command_flat, method, params, session_id}, state) do
+    state = do_cast_command_flat(state, method, params, session_id)
+    {:noreply, state}
   end
 
   @impl true
@@ -304,6 +320,24 @@ defmodule Wallabidi.BiDi.WebSocketClient do
 
       {:error, state, reason} ->
         GenServer.reply(from, {:error, reason})
+        state
+    end
+  end
+
+  defp do_cast_command_flat(state, method, params, session_id) do
+    id = state.next_id
+
+    message =
+      %{id: id, method: method, params: params, sessionId: session_id}
+      |> Jason.encode!()
+
+    case send_frame(state, {:text, message}) do
+      {:ok, state} ->
+        # No pending entry — response will arrive in handle_command_response
+        # and be silently dropped (id not in pending map).
+        %{state | next_id: id + 1}
+
+      {:error, state, _reason} ->
         state
     end
   end
