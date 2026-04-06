@@ -756,70 +756,37 @@ defmodule Wallabidi.Browser do
 
     if session && session.protocol == Wallabidi.Protocol.CDP &&
          not in_frame?(session) && not in_switched_window?(session) do
-      click_via_pipeline(parent, session, query)
+      # Execute click synchronously via pipeline (must be immediate
+      # because callers like assert_raise expect errors to surface now,
+      # and dialog handlers expect the click to have fired).
+      alias Wallabidi.CDP.Ops
+
+      with {:ok, ops, validated} <- Ops.from_wallaby(parent, query, :click) do
+        case Wallabidi.CDPClient.execute_ops(parent, ops,
+               timeout: max_wait_time(),
+               count: Query.count(validated)) do
+          {:ok, :clicked, %{classification: c, prepared: p}} ->
+            Wallabidi.CDPClient.do_post_click(session, c, p)
+            parent
+
+          {:error, _} ->
+            with_patch_await(parent, query, :click, fn ->
+              find(parent, query, &Element.click/1)
+            end)
+            parent
+        end
+      else
+        _ ->
+          with_patch_await(parent, query, :click, fn ->
+            parent |> find(query, &Element.click/1)
+          end)
+      end
     else
       with_patch_await(parent, query, :click, fn ->
         parent |> find(query, &Element.click/1)
       end)
     end
   end
-
-  defp click_via_pipeline(parent, session, query) do
-    alias Wallabidi.CDP.Ops
-
-    with {:ok, ops, validated} <- Ops.from_wallaby(parent, query, :click) do
-      case Wallabidi.CDPClient.execute_ops(parent, ops,
-             timeout: max_wait_time(),
-             count: Query.count(validated)) do
-        {:ok, :clicked, %{classification: classification, prepared: prepared}} ->
-          post_pipeline_click(session, classification, prepared)
-          parent
-
-        {:error, _} ->
-          with_patch_await(parent, query, :click, fn ->
-            find(parent, query, &Element.click/1)
-          end)
-          parent
-      end
-    else
-      _ ->
-        with_patch_await(parent, query, :click, fn ->
-          find(parent, query, &Element.click/1)
-        end)
-        parent
-    end
-  end
-
-  # Post-click await using classification from the pipeline.
-  # prepare_patch already ran inside the pipeline JS.
-  defp post_pipeline_click(_session, "none", _prepared), do: :ok
-
-  defp post_pipeline_click(session, "patch", true) do
-    case Wallabidi.LiveViewAware.await_patch(session) do
-      :page_navigated ->
-        Wallabidi.SessionProcess.await_next_page_load(session)
-        Wallabidi.LiveViewAware.await_liveview_connected(session)
-
-      _ ->
-        :ok
-    end
-  end
-
-  defp post_pipeline_click(_session, "patch", false) do
-    :ok
-  end
-
-  defp post_pipeline_click(session, "navigate", _prepared) do
-    {:ok, pre_url} = Wallabidi.Protocol.current_url(session)
-    Wallabidi.LiveViewAware.await_liveview_connected(session, pre_url: pre_url)
-  end
-
-  defp post_pipeline_click(session, "full_page", _prepared) do
-    Wallabidi.SessionProcess.await_next_page_load(session)
-    Wallabidi.LiveViewAware.await_liveview_connected(session)
-  end
-
-  defp post_pipeline_click(_, _, _), do: :ok
 
   @doc """
   Double-clicks left mouse button at the current mouse coordinates.

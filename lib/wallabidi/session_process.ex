@@ -63,7 +63,10 @@ defmodule Wallabidi.SessionProcess do
     # Push-based element finding. When JS calls __wallabidi(payload),
     # Chrome fires Runtime.bindingCalled which arrives here. We match
     # the query id against pending find waiters and reply.
-    find_waiters: %{}
+    find_waiters: %{},
+    # Lazy ops queue. Side-effect ops (click) append here; the next
+    # blocking RPC auto-flushes them via CDPClient.maybe_flush_pending.
+    pending_ops: []
   ]
 
   # --- Public API ---
@@ -216,6 +219,19 @@ defmodule Wallabidi.SessionProcess do
     :exit, _ -> :none
   end
 
+  @doc "Append a side-effect op to the lazy queue (non-blocking cast)."
+  def append_ops(%Session{pid: pid}, query_id, ops, action, opts)
+      when is_pid(pid) do
+    GenServer.cast(pid, {:append_ops, query_id, ops, action, opts})
+  end
+
+  @doc "Drain all pending ops atomically. Returns the list and clears it."
+  def drain_ops(%Session{pid: pid}) when is_pid(pid) do
+    GenServer.call(pid, :drain_ops)
+  catch
+    :exit, _ -> []
+  end
+
   # --- GenServer callbacks ---
 
   @impl true
@@ -337,6 +353,16 @@ defmodule Wallabidi.SessionProcess do
         # Already timed out and cleaned up
         {:reply, {:timeout, 0}, state}
     end
+  end
+
+  def handle_call(:drain_ops, _from, state) do
+    {:reply, state.pending_ops, %{state | pending_ops: []}}
+  end
+
+  @impl true
+  def handle_cast({:append_ops, query_id, ops, action, opts}, state) do
+    entry = {query_id, ops, action, opts}
+    {:noreply, %{state | pending_ops: state.pending_ops ++ [entry]}}
   end
 
   @impl true

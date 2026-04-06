@@ -963,7 +963,81 @@ defmodule Wallabidi.CDPClient do
     end
   end
 
+  # Auto-flush pending ops before any blocking RPC. Drains from
+  # SessionProcess and executes them (including post-click await).
+  # Uses process dict to prevent recursive flushing.
+  defp maybe_flush_pending(%Session{pid: pid} = session) when is_pid(pid) do
+    if Process.get(:wallabidi_flushing) do
+      :ok
+    else
+      case Wallabidi.SessionProcess.drain_ops(session) do
+        [] -> :ok
+        pending -> flush_pending(session, pending)
+      end
+    end
+  end
+
+  defp maybe_flush_pending(_), do: :ok
+
+  defp flush_pending(session, pending) do
+    # Guard against re-entrant flushing (execute_ops calls send_cdp_session)
+    Process.put(:wallabidi_flushing, true)
+
+    try do
+      Enum.each(pending, fn {_query_id, ops, action, opts} ->
+        case action do
+          :click ->
+            case execute_ops(session, ops, opts) do
+              {:ok, :clicked, %{classification: c, prepared: p}} ->
+                do_post_click(session, c, p)
+
+              _ ->
+                :ok
+            end
+
+          _ ->
+            execute_ops(session, ops, opts)
+        end
+      end)
+    after
+      Process.delete(:wallabidi_flushing)
+    end
+  end
+
+  # Post-click await — same logic as Browser.post_pipeline_click but
+  # called from within the flush so it runs between the click and the
+  # next operation.
+  @doc false
+  def do_post_click(_session, "none", _prepared), do: :ok
+
+  def do_post_click(session, "patch", true) do
+    case Wallabidi.LiveViewAware.await_patch(session) do
+      :page_navigated ->
+        Wallabidi.SessionProcess.await_next_page_load(session)
+        Wallabidi.LiveViewAware.await_liveview_connected(session)
+
+      _ ->
+        :ok
+    end
+  end
+
+  def do_post_click(_session, "patch", false), do: :ok
+
+  def do_post_click(session, "navigate", _prepared) do
+    {:ok, pre_url} = Wallabidi.Protocol.current_url(session)
+    Wallabidi.LiveViewAware.await_liveview_connected(session, pre_url: pre_url)
+  end
+
+  def do_post_click(session, "full_page", _prepared) do
+    Wallabidi.SessionProcess.await_next_page_load(session)
+    Wallabidi.LiveViewAware.await_liveview_connected(session)
+  end
+
+  def do_post_click(_, _, _), do: :ok
+
   defp send_cdp_session(%Session{} = session, method, params) do
+    maybe_flush_pending(session)
+
     pid = bidi_pid(session)
     session_id = effective_session_id(session)
 
