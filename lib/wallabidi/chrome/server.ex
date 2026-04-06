@@ -146,11 +146,15 @@ defmodule Wallabidi.Chrome.Server do
   end
 
   defp chrome_args(opts) do
+    tmp_dir = System.tmp_dir!() |> Path.join("wallabidi_chrome_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(tmp_dir)
+
     base_args = [
       "--remote-debugging-port=0",
       "--no-sandbox",
       "--disable-gpu",
       "--headless=new",
+      "--user-data-dir=#{tmp_dir}",
       "--disable-background-networking",
       "--disable-background-timer-throttling",
       "--disable-backgrounding-occluded-windows",
@@ -164,7 +168,7 @@ defmodule Wallabidi.Chrome.Server do
       "--disable-dev-shm-usage",
       "--no-first-run",
       "--disable-popup-blocking",
-      "window-size=1280,800"
+      "--window-size=1280,800"
     ]
 
     extra_args = Keyword.get(opts, :args, [])
