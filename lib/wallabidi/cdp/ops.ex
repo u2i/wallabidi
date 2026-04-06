@@ -77,17 +77,6 @@ defmodule Wallabidi.CDP.Ops do
   end
 
   @doc """
-  Build the query registration payload. JSON-serializable map.
-  """
-  def to_query(%__MODULE__{} = o, opts \\ []) do
-    %{
-      ops: o.ops,
-      count: Keyword.get(opts, :count),
-      parent_id: o.parent_id
-    }
-  end
-
-  @doc """
   Build filters from a Wallaby Query struct.
   """
   def from_query(%__MODULE__{} = o, query) do

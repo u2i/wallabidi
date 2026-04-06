@@ -126,18 +126,7 @@ defmodule Wallabidi.BiDi.WebSocketClient do
   end
 
   def handle_call({:send_command_flat, method, params, session_id}, from, state) do
-    # Timing: measure mailbox-to-processing delay and send_frame cost.
-    # The caller tagged the message with its send time so we can see
-    # how long it sat in our mailbox.
-    {:message_queue_len, mailbox_depth} = Process.info(self(), :message_queue_len)
-    t0 = System.monotonic_time(:microsecond)
     state = do_send_command_flat(state, from, method, params, session_id)
-    send_us = System.monotonic_time(:microsecond) - t0
-
-    if send_us > 5_000 do
-      Logger.warning("[ws] send_command_flat took #{div(send_us, 1000)}ms (queue=#{inspect(mailbox_depth)}) method=#{method}")
-    end
-
     {:noreply, state}
   end
 
@@ -319,7 +308,7 @@ defmodule Wallabidi.BiDi.WebSocketClient do
 
     case send_frame(state, {:text, message}) do
       {:ok, state} ->
-        pending = Map.put(state.pending, id, {from, System.monotonic_time(:microsecond), method})
+        pending = Map.put(state.pending, id, from)
         %{state | next_id: id + 1, pending: pending}
 
       {:error, state, reason} ->
@@ -363,18 +352,6 @@ defmodule Wallabidi.BiDi.WebSocketClient do
       {nil, _pending} ->
         state
 
-      {{from, sent_at, method}, pending} ->
-        chrome_us = System.monotonic_time(:microsecond) - sent_at
-
-        if chrome_us > 0 do
-          Logger.warning("[ws] chrome response #{div(chrome_us, 1000)}ms method=#{method}")
-        end
-
-        result = parse_bidi_response(response)
-        GenServer.reply(from, result)
-        %{state | pending: pending}
-
-      # Backwards compat: old pending format without timestamp
       {from, pending} ->
         result = parse_bidi_response(response)
         GenServer.reply(from, result)
