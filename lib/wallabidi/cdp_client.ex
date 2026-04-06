@@ -1008,32 +1008,49 @@ defmodule Wallabidi.CDPClient do
   # called from within the flush so it runs between the click and the
   # next operation.
   @doc false
-  def do_post_click(_session, "none", _prepared), do: :ok
+  def do_post_click(session, classification, prepared, pre_url \\ nil)
 
-  def do_post_click(session, "patch", true) do
-    case Wallabidi.LiveViewAware.await_patch(session) do
+  def do_post_click(_session, "none", _prepared, _pre_url), do: :ok
+
+  def do_post_click(session, "patch", true, _pre_url) do
+    # Short timeout: patches resolve in <100ms. If await_patch doesn't
+    # resolve in 1s, the click likely caused a redirect (not a patch).
+    # The 5s default wastes time on redirects that await_patch can't
+    # detect (beforeunload fires before the listener is installed).
+    case Wallabidi.LiveViewAware.await_patch(session, 1_000) do
+      :ok ->
+        :ok
+
       :page_navigated ->
         Wallabidi.SessionProcess.await_next_page_load(session)
         Wallabidi.LiveViewAware.await_liveview_connected(session)
 
-      _ ->
-        :ok
+      :timeout ->
+        # Patch didn't resolve in 1s. The click may have caused a
+        # redirect that await_patch couldn't detect. Check by reading
+        # the current page — if the context changed or LV marker is
+        # absent, the page navigated.
+        Wallabidi.LiveViewAware.await_liveview_connected(session)
     end
   end
 
-  def do_post_click(_session, "patch", false), do: :ok
+  def do_post_click(_session, "patch", false, _pre_url), do: :ok
 
-  def do_post_click(session, "navigate", _prepared) do
-    {:ok, pre_url} = Wallabidi.Protocol.current_url(session)
-    Wallabidi.LiveViewAware.await_liveview_connected(session, pre_url: pre_url)
+  def do_post_click(session, "navigate", _prepared, pre_url) do
+    pre = pre_url || case Wallabidi.Protocol.current_url(session) do
+      {:ok, url} -> url
+      _ -> nil
+    end
+
+    Wallabidi.LiveViewAware.await_liveview_connected(session, pre_url: pre)
   end
 
-  def do_post_click(session, "full_page", _prepared) do
+  def do_post_click(session, "full_page", _prepared, _pre_url) do
     Wallabidi.SessionProcess.await_next_page_load(session)
     Wallabidi.LiveViewAware.await_liveview_connected(session)
   end
 
-  def do_post_click(_, _, _), do: :ok
+  def do_post_click(_, _, _, _), do: :ok
 
   defp send_cdp_session(%Session{} = session, method, params) do
     maybe_flush_pending(session)

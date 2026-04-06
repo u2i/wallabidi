@@ -1880,6 +1880,9 @@ defmodule Wallabidi.Browser do
           :ok ->
             result
 
+          :timeout ->
+            result
+
           :page_navigated ->
             Wallabidi.SessionProcess.await_next_page_load(session)
             Wallabidi.LiveViewAware.await_liveview_connected(session)

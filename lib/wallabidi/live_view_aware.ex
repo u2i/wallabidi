@@ -33,7 +33,7 @@ defmodule Wallabidi.LiveViewAware do
       window.__wallabidi_patch_hooked = true;
     }
 
-    // Set up the one-shot promise for the NEXT patch
+    // Set up the one-shot promise for the NEXT patch.
     window.__wallabidi_patch_promise = new Promise(resolve => {
       window.__wallabidi_patch_resolve = resolve;
     });
@@ -49,7 +49,6 @@ defmodule Wallabidi.LiveViewAware do
     return Promise.race([
       p,
       new Promise(resolve => {
-        window.addEventListener('beforeunload', () => resolve("navigated"), {once: true});
         setTimeout(() => resolve(false), 5000);
       })
     ]);
@@ -108,6 +107,8 @@ defmodule Wallabidi.LiveViewAware do
   def await_patch(%Session{} = session, timeout \\ 5_000) do
     case Protocol.eval_async(session, @await_patch_js, timeout) do
       {:ok, "navigated"} -> :page_navigated
+      {:ok, true} -> :ok
+      {:ok, false} -> :timeout
       {:ok, _} -> :ok
       {:error, _} -> :page_navigated
     end
