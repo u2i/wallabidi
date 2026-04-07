@@ -53,6 +53,11 @@ defmodule Wallabidi.BiDi.WebSocketClient do
   them in order on a session) but don't need the response value — domain
   enables, configuration, etc.
   """
+  @doc "Fire-and-forget: send a BiDi command without waiting for the response."
+  def cast_command(pid, method, params) do
+    GenServer.cast(pid, {:cast_command, method, params})
+  end
+
   def cast_command_flat(pid, method, params, session_id) do
     GenServer.cast(pid, {:cast_command_flat, method, params, session_id})
   end
@@ -153,6 +158,12 @@ defmodule Wallabidi.BiDi.WebSocketClient do
         Mint.HTTP.close(state.conn)
         {:stop, :normal, :ok, state}
     end
+  end
+
+  @impl true
+  def handle_cast({:cast_command, method, params}, state) do
+    state = do_cast_command(state, method, params)
+    {:noreply, state}
   end
 
   @impl true
@@ -313,6 +324,19 @@ defmodule Wallabidi.BiDi.WebSocketClient do
 
       {:error, state, reason} ->
         GenServer.reply(from, {:error, reason})
+        state
+    end
+  end
+
+  defp do_cast_command(state, method, params) do
+    id = state.next_id
+    message = Jason.encode!(%{id: id, method: method, params: params})
+
+    case send_frame(state, {:text, message}) do
+      {:ok, state} ->
+        %{state | next_id: id + 1}
+
+      {:error, state, _reason} ->
         state
     end
   end
