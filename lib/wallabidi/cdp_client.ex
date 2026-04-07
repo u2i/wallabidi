@@ -1484,6 +1484,12 @@ defmodule Wallabidi.CDPClient do
                 }
                 window.__wallabidi_patch_promise = new Promise(function(resolve) {
                   window.__wallabidi_patch_resolve = resolve;
+                  window.addEventListener('beforeunload', function() {
+                    if (window.__wallabidi_patch_resolve) {
+                      window.__wallabidi_patch_resolve = null;
+                      resolve('navigated');
+                    }
+                  }, {once: true});
                 });
                 meta.prepared = true;
               }

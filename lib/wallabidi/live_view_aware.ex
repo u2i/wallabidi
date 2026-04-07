@@ -34,8 +34,16 @@ defmodule Wallabidi.LiveViewAware do
     }
 
     // Set up the one-shot promise for the NEXT patch.
+    // Also listen for beforeunload — if the action causes a redirect
+    // instead of a patch, resolve immediately with "navigated".
     window.__wallabidi_patch_promise = new Promise(resolve => {
       window.__wallabidi_patch_resolve = resolve;
+      window.addEventListener('beforeunload', () => {
+        if (window.__wallabidi_patch_resolve) {
+          window.__wallabidi_patch_resolve = null;
+          resolve("navigated");
+        }
+      }, {once: true});
     });
     return true;
   })()
