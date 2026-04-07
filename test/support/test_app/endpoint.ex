@@ -24,6 +24,15 @@ defmodule Wallabidi.TestApp.Endpoint do
     from: {:phoenix_live_view, "priv/static"}
   )
 
+  # Suppress favicon 404 noise in test logs
+  plug(:favicon)
+
+  defp favicon(%{path_info: ["favicon.ico"]} = conn, _opts) do
+    conn |> Plug.Conn.send_resp(204, "") |> Plug.Conn.halt()
+  end
+
+  defp favicon(conn, _opts), do: conn
+
   # Serve integration test static pages (forms.html, page_1.html, etc.)
   # so the LiveView driver can access them via dispatch without HTTP
   plug(Plug.Static, at: "/", from: "integration_test/support/pages")

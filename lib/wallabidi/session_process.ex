@@ -438,6 +438,31 @@ defmodule Wallabidi.SessionProcess do
     end
   end
 
+  # BiDi: script.message from addPreloadScript channel callback.
+  # The channel fires when JS calls __wallabidi(payload) via the channel.
+  # Payload format is identical to the Runtime.bindingCalled handler above.
+  def handle_info({:bidi_event, "script.message", event}, state) do
+    params = Map.get(event, "params", %{})
+
+    if params["channel"] == "__wallabidi" do
+      # Channel data is a BiDi typed value: %{"type" => "string", "value" => "..."}
+      payload = get_in(params, ["data", "value"]) || ""
+
+      case Jason.decode(payload) do
+        {:ok, %{"id" => query_id, "error" => error}} when is_binary(error) ->
+          {:noreply, resolve_find(state, query_id, {:error, :invalid_selector})}
+
+        {:ok, %{"id" => query_id, "count" => count}} ->
+          {:noreply, resolve_find(state, query_id, {:ok, count})}
+
+        _ ->
+          {:noreply, state}
+      end
+    else
+      {:noreply, state}
+    end
+  end
+
   def handle_info({:find_timeout, query_id}, state) do
     {:noreply, resolve_find(state, query_id, {:timeout, 0})}
   end

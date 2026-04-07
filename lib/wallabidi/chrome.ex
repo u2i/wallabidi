@@ -188,6 +188,7 @@ defmodule Wallabidi.Chrome do
       # and to page load events so SessionProcess can track navigations.
       Wallabidi.Protocol.subscribe(session, :log)
       Wallabidi.Protocol.subscribe(session, :page_load)
+      Wallabidi.Protocol.subscribe(session, :find_binding)
 
       if window_size = Keyword.get(opts, :window_size),
         do: {:ok, _} = set_window_size(session, window_size[:width], window_size[:height])
@@ -272,6 +273,17 @@ defmodule Wallabidi.Chrome do
       WebSocketClient.send_command(bidi_pid, "browsingContext.getTree", %{})
 
     {:ok, context_id} = ResponseParser.extract_context(result)
+
+    # Install push-based element finding: preload script with channel.
+    # The bootstrap receives the channel callback as __wallabidi and
+    # installs the opcode interpreter, MutationObserver, and LiveView hook.
+    {cmd, params} =
+      Wallabidi.BiDi.Commands.add_preload_script(
+        Wallabidi.Bootstrap.bidi_preload(),
+        [%{type: "channel", value: %{channel: "__wallabidi"}}]
+      )
+
+    {:ok, _} = WebSocketClient.send_command(bidi_pid, cmd, params)
 
     %{session | bidi_pid: bidi_pid, browsing_context: context_id}
   end

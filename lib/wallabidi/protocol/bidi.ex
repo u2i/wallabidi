@@ -51,6 +51,9 @@ defmodule Wallabidi.Protocol.BiDi do
         :page_load ->
           Process.get(:wallabidi_session_process, self())
 
+        :find_binding ->
+          Process.get(:wallabidi_session_process, self())
+
         _ ->
           Process.get(:wallabidi_session_owner, self())
       end
@@ -73,6 +76,7 @@ defmodule Wallabidi.Protocol.BiDi do
   # synchronously from browsingContext.navigate, letting the SessionProcess
   # router correlate events to the navigation that triggered them.
   def wire_methods(:page_load), do: ["browsingContext.load", "browsingContext.domContentLoaded"]
+  def wire_methods(:find_binding), do: ["script.message"]
 
   defp send_command(%Session{bidi_pid: pid}, method, params, timeout \\ 10_000) do
     WebSocketClient.send_command(pid, method, params, timeout)

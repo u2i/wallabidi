@@ -66,6 +66,19 @@ defmodule Wallabidi.BiDi.Commands do
     {"script.callFunction", params}
   end
 
+  # Preload script commands
+
+  def add_preload_script(function_declaration, arguments \\ []) do
+    {"script.addPreloadScript", %{
+      functionDeclaration: function_declaration,
+      arguments: arguments
+    }}
+  end
+
+  def remove_preload_script(script_id) do
+    {"script.removePreloadScript", %{script: script_id}}
+  end
+
   # Dialog commands
 
   def handle_user_prompt(context, accept, user_text \\ nil) do
