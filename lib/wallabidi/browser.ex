@@ -1788,6 +1788,7 @@ defmodule Wallabidi.Browser do
             elements =
               Enum.flat_map(items, fn
                 {:node, shared_id, _} ->
+                  Process.put({:wallabidi_element_shared_id, shared_id}, shared_id)
                   [%Wallabidi.Element{
                     id: shared_id, bidi_shared_id: shared_id,
                     parent: parent, driver: session.driver,
@@ -1855,6 +1856,9 @@ defmodule Wallabidi.Browser do
     |> Enum.filter(fn item -> item["type"] == "node" end)
     |> Enum.map(fn node ->
       shared_id = node["sharedId"]
+      # Store the id→sharedId mapping so execute_script can resolve
+      # WebDriver-style element refs back to BiDi shared references.
+      Process.put({:wallabidi_element_shared_id, shared_id}, shared_id)
 
       %Wallabidi.Element{
         id: shared_id,
@@ -1928,11 +1932,13 @@ defmodule Wallabidi.Browser do
 
 
   defp in_frame?(%Session{} = session) do
-    Process.get({:cdp_frame_stack, session.id}, []) != []
+    Process.get({:cdp_frame_stack, session.id}, []) != [] or
+      Process.get({:wallabidi_frame_context, session.id}) != nil
   end
 
   defp in_switched_window?(%Session{} = session) do
-    Process.get({:cdp_current_target, session.id}) != nil
+    Process.get({:cdp_current_target, session.id}) != nil or
+      Process.get({:wallabidi_focused_context, session.id}) != nil
   end
 
   defp max_time_exceeded?(start_time) do

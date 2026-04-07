@@ -285,6 +285,13 @@ defmodule Wallabidi.Chrome do
 
     {:ok, _} = WebSocketClient.send_command(bidi_pid, cmd, params)
 
+    # Navigate to about:blank to trigger the preload script. The initial
+    # page after session creation may not fire addPreloadScript, so we
+    # need an explicit navigation to ensure the bootstrap is installed
+    # before any find/click operations.
+    WebSocketClient.send_command(bidi_pid, "browsingContext.navigate",
+      %{context: context_id, url: "about:blank", wait: "complete"})
+
     %{session | bidi_pid: bidi_pid, browsing_context: context_id}
   end
 

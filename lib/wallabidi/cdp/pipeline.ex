@@ -418,7 +418,7 @@ defmodule Wallabidi.CDP.Pipeline do
         if (link) return link.getAttribute('data-phx-link') === 'redirect' ? 'navigate' : 'patch';
         var phxClick = el.getAttribute('phx-click');
         if (phxClick) return (phxClick.includes('push') || !phxClick.startsWith('[')) ? 'patch' : 'none';
-        if (el.type === 'submit' || el.tagName === 'BUTTON') {
+        if (el.type === 'submit' || el.type === 'image' || el.tagName === 'BUTTON') {
           var form = el.closest('form');
           if (form && form.getAttribute('phx-submit')) return 'patch';
           if (form) return 'full_page';

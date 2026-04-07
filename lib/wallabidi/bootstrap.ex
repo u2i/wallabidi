@@ -99,7 +99,7 @@ defmodule Wallabidi.Bootstrap do
         if (link) return link.getAttribute('data-phx-link') === 'redirect' ? 'navigate' : 'patch';
         var pc = el.getAttribute('phx-click');
         if (pc) return (pc.includes('push') || !pc.startsWith('[')) ? 'patch' : 'none';
-        if (el.type === 'submit' || el.tagName === 'BUTTON') {
+        if (el.type === 'submit' || el.type === 'image' || el.tagName === 'BUTTON') {
           var f = el.closest('form');
           if (f && f.getAttribute('phx-submit')) return 'patch';
           if (f) return 'full_page';
