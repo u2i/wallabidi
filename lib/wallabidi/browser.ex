@@ -1723,11 +1723,13 @@ defmodule Wallabidi.Browser do
     # Register waiter BEFORE sending JS (prevents race)
     Wallabidi.SessionProcess.register_find(session, query_id, timeout)
 
-    # Evaluate the registration JS — this stores the query and calls W.check()
+    # Fire-and-forget: register the query and call W.check(). The actual
+    # result arrives via script.message channel, not the eval response.
+    # On timeout, final_check_bidi re-runs ops inline (no W.queries
+    # dependency), so this is safe even if the eval hasn't completed.
     context = session.browsing_context
 
     if scoped? do
-      # Scoped: wrap in function, call with parent element bound as `this`
       shared_id = case parent do
         %Wallabidi.Element{bidi_shared_id: sid} -> sid
         _ -> nil
@@ -1737,14 +1739,14 @@ defmodule Wallabidi.Browser do
         wrapper = "function(_el) { return (function(){#{register_js}}).call(_el); }"
         {method, params} = Wallabidi.BiDi.Commands.call_function(context, wrapper,
           [%{sharedId: shared_id}])
-        Wallabidi.BiDi.WebSocketClient.send_command(session.bidi_pid, method, params)
+        Wallabidi.BiDi.WebSocketClient.cast_command(session.bidi_pid, method, params)
       else
         {method, params} = Wallabidi.BiDi.Commands.evaluate(context, register_js)
-        Wallabidi.BiDi.WebSocketClient.send_command(session.bidi_pid, method, params)
+        Wallabidi.BiDi.WebSocketClient.cast_command(session.bidi_pid, method, params)
       end
     else
       {method, params} = Wallabidi.BiDi.Commands.evaluate(context, register_js)
-      Wallabidi.BiDi.WebSocketClient.send_command(session.bidi_pid, method, params)
+      Wallabidi.BiDi.WebSocketClient.cast_command(session.bidi_pid, method, params)
     end
 
     # Block until script.message fires or timeout
@@ -1762,9 +1764,9 @@ defmodule Wallabidi.Browser do
 
       {:timeout, _} ->
         cleanup_bidi_query(session, query_id)
-        # Final sync check: the query may have matched but the event
-        # was delayed. Check the stored result synchronously.
-        final_check_bidi(session, parent, query_id, count)
+        # Final sync check: re-run ops inline (not from W.queries) so
+        # this works even with fire-and-forget registration.
+        final_check_bidi(session, parent, query_id, count, ops_json)
     end
   end
 
@@ -1808,18 +1810,14 @@ defmodule Wallabidi.Browser do
     end
   end
 
-  # Final synchronous check after timeout — return the actual element
-  # count so validate_count can report the right number in error messages.
-  # Mirrors CDPClient's timeout path which returns dummy elements.
-  defp final_check_bidi(session, parent, query_id, _expected_count) do
-    id_js = Jason.encode!(query_id)
-    # Return just the count — simpler and avoids serialization issues with node arrays
+  # Final synchronous check after timeout — re-run the ops inline (not
+  # from W.queries) so this works even if the register_js eval hasn't
+  # completed yet (fire-and-forget registration). Mirrors CDP's final_js.
+  defp final_check_bidi(session, parent, query_id, _expected_count, ops_json) do
+    # Run ops inline — no dependency on W.queries
     check_js =
       "(function(){var W=window.__w;if(!W)return 0;" <>
-      "var q=W.queries[#{id_js}];" <>
-      "if(!q)return 0;" <>
-      "if(q.resolved)return q.elements.length;" <>
-      "var r=W.exec(q.ops,q.root);return r.els.length;})()"
+      "var r=W.exec(#{ops_json},null);return r.els.length;})()"
 
     context = session.browsing_context
     {method, params} = Wallabidi.BiDi.Commands.evaluate(context, check_js)
@@ -1840,12 +1838,9 @@ defmodule Wallabidi.Browser do
     # Fire-and-forget: the browsing context may be destroyed after navigation,
     # so a sync eval would timeout. Best-effort cleanup.
     context = session.browsing_context
-    bidi_pid = session.bidi_pid
     js = Wallabidi.Bootstrap.cleanup_js(query_id)
     {method, params} = Wallabidi.BiDi.Commands.evaluate(context, js)
-    Task.start(fn ->
-      Wallabidi.BiDi.WebSocketClient.send_command(bidi_pid, method, params, 2_000)
-    end)
+    Wallabidi.BiDi.WebSocketClient.cast_command(session.bidi_pid, method, params)
     :ok
   rescue
     _ -> :ok
