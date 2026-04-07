@@ -274,23 +274,25 @@ defmodule Wallabidi.Chrome do
 
     {:ok, context_id} = ResponseParser.extract_context(result)
 
-    # Install push-based element finding: preload script with channel.
-    # The bootstrap receives the channel callback as __wallabidi and
-    # installs the opcode interpreter, MutationObserver, and LiveView hook.
-    {cmd, params} =
-      Wallabidi.BiDi.Commands.add_preload_script(
-        Wallabidi.Bootstrap.bidi_preload(),
-        [%{type: "channel", value: %{channel: "__wallabidi"}}]
-      )
+    # Install push-based element finding via two paths:
+    #
+    # 1. addPreloadScript — persists across navigations. Each new document
+    #    gets the bootstrap with a fresh channel callback.
+    # 2. callFunction — installs immediately on the current page so finds
+    #    work before the first navigation. The channel argument makes
+    #    __wallabidi callable right away (no about:blank navigate needed).
+    #
+    # The bootstrap guards with `if (window.__w) return;` so the preload
+    # script is a no-op if callFunction already installed it on this page.
+    channel_arg = [%{type: "channel", value: %{channel: "__wallabidi"}}]
+    bootstrap_fn = Wallabidi.Bootstrap.bidi_preload()
 
+    {cmd, params} = Wallabidi.BiDi.Commands.add_preload_script(bootstrap_fn, channel_arg)
     {:ok, _} = WebSocketClient.send_command(bidi_pid, cmd, params)
 
-    # Navigate to about:blank to trigger the preload script. The initial
-    # page after session creation may not fire addPreloadScript, so we
-    # need an explicit navigation to ensure the bootstrap is installed
-    # before any find/click operations.
-    WebSocketClient.send_command(bidi_pid, "browsingContext.navigate",
-      %{context: context_id, url: "about:blank", wait: "complete"})
+    {cmd, params} = Wallabidi.BiDi.Commands.call_function(
+      context_id, bootstrap_fn, channel_arg)
+    WebSocketClient.send_command(bidi_pid, cmd, params)
 
     %{session | bidi_pid: bidi_pid, browsing_context: context_id}
   end
