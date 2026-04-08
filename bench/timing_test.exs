@@ -16,7 +16,6 @@ defmodule Wallabidi.Integration.Chrome.TraceTimingTest do
   use ExUnit.Case, async: false
   use Wallabidi.DSL
 
-  @moduletag :trace
 
   @warmup_rounds 2
   @bench_rounds 5
@@ -58,7 +57,6 @@ defmodule Wallabidi.Integration.Chrome.TraceTimingTest do
     end
   end
 
-  @tag :trace_all
   test "compare all drivers" do
     drivers = [:chrome_cdp, :chrome, :live_view]
 

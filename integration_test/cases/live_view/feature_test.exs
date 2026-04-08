@@ -1,6 +1,7 @@
 defmodule Wallabidi.Integration.LiveView.FeatureTest do
   use ExUnit.Case, async: true
   use Wallabidi.Feature
+  @moduletag :live_view_only
 
   # These tests verify that Feature setup correctly routes to the LiveView
   # driver when no @tag :browser is set and driver config is :live_view.

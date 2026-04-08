@@ -9,7 +9,6 @@ defmodule Wallabidi.Integration.Chrome.LoadStaleTest do
   use ExUnit.Case, async: false
   use Wallabidi.DSL
 
-  @moduletag :load
 
   setup do
     url = Application.fetch_env!(:wallabidi, :live_app_url)

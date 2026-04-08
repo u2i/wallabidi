@@ -1,6 +1,7 @@
 defmodule Wallabidi.Integration.AwaitPatchTest do
   use ExUnit.Case, async: true
   use Wallabidi.DSL
+  @moduletag :browser
 
   setup do
     live_url = Application.get_env(:wallabidi, :live_app_url)

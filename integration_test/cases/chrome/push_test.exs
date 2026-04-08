@@ -1,6 +1,6 @@
 defmodule Wallabidi.Integration.Chrome.TracePushTest do
   use Wallabidi.Integration.SessionCase, async: false
-  @moduletag :trace
+  @moduletag :browser
 
   test "bootstrap JS is installed", %{session: session} do
     session = visit(session, "page_1.html")

@@ -2,7 +2,6 @@ defmodule Wallabidi.Integration.Chrome.LoadTest do
   @moduledoc false
 
   use Wallabidi.Integration.LoadTestCase
-  @moduletag :load
 
   # Concurrent LiveView load test — exercises connection management,
   # session cleanup, event handling, and DOM diffing under load.

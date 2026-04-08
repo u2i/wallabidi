@@ -23,7 +23,6 @@ defmodule Wallabidi.Integration.Chrome.TraceLoadingTest do
   alias Wallabidi.CDP.Commands
   alias Wallabidi.CDPClient
 
-  @moduletag :trace
 
   # Loading-related CDP events. `Page.lifecycleEvent` is the richest —
   # it fires for every lifecycle milestone (init, DOMContentLoaded, load,
