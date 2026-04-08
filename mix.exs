@@ -68,7 +68,6 @@ defmodule Wallabidi.Mixfile do
       {:mint_web_socket, "~> 1.0"},
       {:dialyxir, "~> 1.0", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      {:bypass, "~> 1.0.0", only: :test},
       {:ex_doc, "~> 0.28", only: :dev},
       {:ecto_sql, "~> 3.12", optional: true},
       {:phoenix_ecto, "~> 4.6", optional: true},
@@ -76,6 +75,7 @@ defmodule Wallabidi.Mixfile do
       {:phoenix_live_view, "~> 1.0", optional: true},
       {:lazy_html, "~> 0.1"},
       {:sandbox_shim, "~> 0.1"},
+      {:plug_cowboy, "~> 2.7"},
       # Test-only deps
       {:lightpanda, "0.2.8-3", only: :test},
       {:sandbox_case, "~> 0.3.8", only: :test},
