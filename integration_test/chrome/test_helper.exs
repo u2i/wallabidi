@@ -1,15 +1,53 @@
 ExUnit.configure(exclude: [pending: true])
 
-# Configure the driver from the env var before the app starts.
-# Both chrome_cdp and chrome need explicit config since the default
-# may differ. Both need ensure_all_started when run with --no-start.
-case System.get_env("WALLABIDI_DRIVER") do
-  "chrome_cdp" -> Application.put_env(:wallabidi, :driver, :chrome_cdp)
-  "chrome" -> Application.put_env(:wallabidi, :driver, :chrome)
-  _ -> :ok
+# --- Configure primary driver from env var ---
+driver =
+  case System.get_env("WALLABIDI_DRIVER") do
+    "chrome" -> :chrome
+    "live_view" -> :live_view
+    _ -> :chrome_cdp
+  end
+
+Application.put_env(:wallabidi, :driver, driver)
+
+# --- Start the wallabidi app (starts the primary driver's supervisor) ---
+{:ok, _} = Application.ensure_all_started(:wallabidi)
+
+# --- Start additional driver backends so all three are available ---
+# CDP: needs ChromeCDP supervisor (Chrome.Server + SharedConnection)
+# BiDi: needs Chrome supervisor (Chromedriver)
+# LiveView: needs TestApp.Endpoint (+ Repo for sandbox)
+
+# Start the other browser backend if not already started
+case driver do
+  :chrome_cdp ->
+    # CDP is primary — also start BiDi's chromedriver
+    try do
+      Wallabidi.Chrome.validate()
+      Wallabidi.Chrome.start_link(name: Wallabidi.Chrome.Supervisor)
+    rescue
+      _ -> :ok
+    catch
+      _, _ -> :ok
+    end
+
+  :chrome ->
+    # BiDi is primary — also start CDP's Chrome server
+    try do
+      Wallabidi.ChromeCDP.validate()
+      Wallabidi.ChromeCDP.start_link(name: Wallabidi.ChromeCDP.Supervisor)
+    rescue
+      _ -> :ok
+    catch
+      _, _ -> :ok
+    end
+
+  _ ->
+    :ok
 end
 
-{:ok, _} = Application.ensure_all_started(:wallabidi)
+# LiveView driver needs TestApp infrastructure
+Application.put_env(:wallabidi, :endpoint, Wallabidi.Integration.LiveApp.Endpoint)
 
 ExUnit.start()
 
@@ -24,7 +62,7 @@ Code.require_file("../support/load_test_case.ex", __DIR__)
 {:ok, server} = Wallabidi.Integration.TestServer.start()
 Application.put_env(:wallabidi, :base_url, server.base_url)
 
-# Start the LiveView test app for await_patch tests
+# Start the LiveView test app for await_patch and perf tests
 Application.put_env(:wallabidi, Wallabidi.Integration.LiveApp.Endpoint,
   http: [ip: {0, 0, 0, 0}, port: 4321],
   server: true,
@@ -37,9 +75,8 @@ Application.put_env(:wallabidi, Wallabidi.Integration.LiveApp.Endpoint,
 {:ok, _} = Wallabidi.Integration.LiveApp.Endpoint.start_link()
 
 # Chrome in Docker can't reach localhost — use host.docker.internal
-# ChromeCDP runs locally so always uses localhost
 live_host =
-  if System.get_env("WALLABIDI_DRIVER") != "chrome_cdp" &&
+  if driver != :chrome_cdp &&
        Application.get_env(:wallabidi, :chromedriver, []) |> Keyword.get(:remote_url),
      do: "host.docker.internal",
      else: "localhost"
