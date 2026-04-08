@@ -1,11 +1,15 @@
 ExUnit.configure(exclude: [pending: true])
 
-# When running as chrome_cdp, we use --no-start so we can configure the driver
-# before the app starts. For plain chrome, the app auto-starts with defaults.
-if System.get_env("WALLABIDI_DRIVER") == "chrome_cdp" do
-  Application.put_env(:wallabidi, :driver, :chrome_cdp)
-  {:ok, _} = Application.ensure_all_started(:wallabidi)
+# Configure the driver from the env var before the app starts.
+# Both chrome_cdp and chrome need explicit config since the default
+# may differ. Both need ensure_all_started when run with --no-start.
+case System.get_env("WALLABIDI_DRIVER") do
+  "chrome_cdp" -> Application.put_env(:wallabidi, :driver, :chrome_cdp)
+  "chrome" -> Application.put_env(:wallabidi, :driver, :chrome)
+  _ -> :ok
 end
+
+{:ok, _} = Application.ensure_all_started(:wallabidi)
 
 ExUnit.start()
 
