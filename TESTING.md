@@ -100,8 +100,8 @@ For LiveView-only tests, add `@moduletag :live_view_only`.
 WALLABIDI_DRIVER=chrome_cdp mix test integration_test/cases/browser/click_test.exs:54 \
   --no-start --max-cases 1 --timeout 60000
 
-# Per-operation timing benchmark
-mix test.bench
+# Per-operation timing benchmark (2>/dev/null suppresses Chrome's stderr noise)
+mix test.bench 2>/dev/null
 
 # Kill zombie Chrome processes
 pkill -9 -f "Google Chrome for Testing"; pkill -9 -f chromedriver

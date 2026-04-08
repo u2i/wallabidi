@@ -175,6 +175,7 @@ defmodule Wallabidi.Chrome.Server do
       "--disable-popup-blocking",
       "--enable-features=NetworkService,NetworkServiceInProcess",
       "--enable-automation",
+      "--disable-logging",
       "--force-color-profile=srgb",
       "--metrics-recording-only",
       "--no-first-run",

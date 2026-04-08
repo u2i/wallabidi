@@ -1,3 +1,5 @@
+Logger.configure(level: :warning)
+
 # Bench test helper — starts all driver backends for load tests and benchmarks.
 
 driver =

@@ -1,5 +1,7 @@
 import Config
 
+config :logger, level: :warning
+
 config :wallabidi,
   tmp_dir_prefix: "wallabidi_test",
   otp_app: :wallabidi

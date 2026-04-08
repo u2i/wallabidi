@@ -1,3 +1,6 @@
+# Suppress debug/info noise during test runs
+Logger.configure(level: :warning)
+
 # Unified integration test helper.
 #
 # Starts all driver backends so any test can create sessions on any driver.

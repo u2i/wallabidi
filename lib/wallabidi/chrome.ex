@@ -331,7 +331,7 @@ defmodule Wallabidi.Chrome do
       {:ok, %{"value" => sessions}} when is_list(sessions) and sessions != [] ->
         require Logger
 
-        Logger.info("Wallabidi: cleaning up #{length(sessions)} stale ChromeDriver session(s)")
+        Logger.debug("Wallabidi: cleaning up #{length(sessions)} stale ChromeDriver session(s)")
 
         for %{"id" => id} <- sessions do
           mint_request(:delete, "#{base_url}session/#{id}", "")

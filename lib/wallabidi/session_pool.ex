@@ -187,7 +187,7 @@ defmodule Wallabidi.SessionPool do
     driver.reset_session(session)
   rescue
     e ->
-      Logger.warning("SessionPool: reset_session failed: #{inspect(e)}")
+      Logger.debug("SessionPool: reset_session failed: #{inspect(e)}")
       {:error, e}
   end
 
@@ -195,7 +195,7 @@ defmodule Wallabidi.SessionPool do
     driver.close_session_hard(session)
   rescue
     e ->
-      Logger.warning("SessionPool: close_session_hard failed: #{inspect(e)}")
+      Logger.debug("SessionPool: close_session_hard failed: #{inspect(e)}")
       :ok
   end
 

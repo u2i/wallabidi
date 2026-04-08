@@ -47,12 +47,6 @@ defmodule Wallabidi.BiDi.WebSocketClient do
     :exit, :shutdown -> {:error, :session_closed}
   end
 
-  @doc """
-  Fire-and-forget: writes the command to the WebSocket but doesn't wait for
-  Chrome's response. Use for commands where we need ordering (Chrome processes
-  them in order on a session) but don't need the response value — domain
-  enables, configuration, etc.
-  """
   @doc "Fire-and-forget: send a BiDi command without waiting for the response."
   def cast_command(pid, method, params) do
     GenServer.cast(pid, {:cast_command, method, params})
@@ -181,7 +175,7 @@ defmodule Wallabidi.BiDi.WebSocketClient do
         {:noreply, state}
 
       {:error, conn, reason, _responses} ->
-        Logger.error("BiDi WebSocket error: #{inspect(reason)}")
+        Logger.debug("BiDi WebSocket error: #{inspect(reason)}")
         {:noreply, %{state | conn: conn}}
 
       :unknown ->
@@ -263,10 +257,6 @@ defmodule Wallabidi.BiDi.WebSocketClient do
   defp process_frame(_frame, state), do: state
 
   defp broadcast_event(state, method, event) do
-    if method == "Runtime.bindingCalled" do
-      Logger.warning("[ws] broadcast_event: #{method} subs=#{inspect(Map.keys(state.subscribers))}")
-    end
-
     # Session-scoped subscribers receive only events for their session.
     # Global subscribers (:global) receive all events regardless of session.
     session_id = event["sessionId"]
