@@ -176,7 +176,7 @@ defmodule Wallabidi.Feature do
 
         # @tag :browser — needs full browser (Chrome)
         context[:browser] ->
-          Application.get_env(:wallabidi, :browser, :chrome)
+          Application.get_env(:wallabidi, :browser, :chrome_cdp)
 
         # @tag :headless — needs a headless browser
         # Defaults to chrome_cdp since Lightpanda is experimental and
