@@ -63,18 +63,29 @@ defmodule Wallabidi.Integration.Chrome.TraceTimingTest do
     drivers = [:chrome_cdp, :chrome, :live_view]
 
     results =
-      for driver <- drivers do
-        {:ok, session} = Wallabidi.start_session(driver: driver)
+      for driver <- drivers, reduce: [] do
+        acc ->
+          opts =
+            if driver == :live_view,
+              do: [driver: driver, endpoint: Wallabidi.Integration.LiveApp.Endpoint],
+              else: [driver: driver]
 
-        try do
-          timings = run_counter_benchmark(session, driver, quiet: true)
-          {driver, timings}
-        after
-          Wallabidi.end_session(session)
-        end
+          case Wallabidi.start_session(opts) do
+            {:ok, session} ->
+              try do
+                timings = run_counter_benchmark(session, driver, quiet: true)
+                [{driver, timings} | acc]
+              after
+                Wallabidi.end_session(session)
+              end
+
+            {:error, _} ->
+              IO.puts("  #{driver}: skipped (driver not available)")
+              acc
+          end
       end
 
-    print_comparison(results)
+    print_comparison(Enum.reverse(results))
   end
 
   # --- Helpers ---
