@@ -117,11 +117,11 @@ defmodule Wallabidi do
   @doc """
   Resolves which driver to use.
 
-  Checks in order: explicit opts, application config, default (:chrome).
+  Checks in order: explicit opts, application config, default (:chrome_cdp).
   """
   def resolve_driver(opts \\ []) do
     Keyword.get_lazy(opts, :driver, fn ->
-      Application.get_env(:wallabidi, :driver, :chrome)
+      Application.get_env(:wallabidi, :driver, :chrome_cdp)
     end)
   end
 
