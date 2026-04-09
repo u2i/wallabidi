@@ -24,6 +24,7 @@ defmodule Wallabidi.Integration.Browser.SessionIsolationTest do
     Wallabidi.end_session(session_b)
   end
 
+  @tag :browser
   test "concurrent sessions have independent cookies" do
     {:ok, session_a} = start_test_session()
     {:ok, session_b} = start_test_session()

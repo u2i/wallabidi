@@ -40,6 +40,7 @@ defmodule Wallabidi.Integration.InspectTest do
       assert actual =~ expected
     end
 
+    @tag :browser
     test "doesn't fail when request to fetch outerHTML fails", %{session: session} do
       actual =
         capture_io(fn ->

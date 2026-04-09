@@ -119,6 +119,11 @@ defmodule Wallabidi.LiveViewDriver do
   @impl true
   def current_path(session), do: {:ok, get_state(session)[:path] || "/"}
 
+  def blank_page?(session) do
+    # A LiveView session is "blank" if it hasn't visited any page yet
+    get_state(session)[:html] == nil
+  end
+
   # --- Finding elements ---
 
   @impl true
@@ -577,7 +582,13 @@ defmodule Wallabidi.LiveViewDriver do
       end
     else
       html = element_html(element)
-      {:ok, extract_attr(html, attr_name)}
+
+      # outerHTML/innerHTML are DOM properties, not HTML attributes
+      case attr_name do
+        "outerHTML" -> {:ok, html}
+        "innerHTML" -> {:ok, inner_html(html)}
+        _ -> {:ok, extract_attr(html, attr_name)}
+      end
     end
   end
 
@@ -751,6 +762,14 @@ defmodule Wallabidi.LiveViewDriver do
   defp element_selector(%Element{bidi_shared_id: {:lv_element, sel, _, _}}), do: sel
 
   defp element_html(%Element{bidi_shared_id: {:lv_element, _, _, html}}), do: html
+
+  defp inner_html(html) do
+    # Strip the outermost tag to get innerHTML
+    case Regex.run(~r/^<[^>]+>(.*)<\/[^>]+>$/s, html) do
+      [_, inner] -> inner
+      _ -> html
+    end
+  end
 
   defp extract_attr(html, name) do
     doc = parse_html(html)
