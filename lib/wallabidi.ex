@@ -94,7 +94,20 @@ defmodule Wallabidi do
   """
   @spec end_session(Session.t()) :: :ok | {:error, reason}
   def end_session(%Session{driver: driver} = session) do
-    driver.end_session(session)
+    result = driver.end_session(session)
+    # Drain any in-flight WebSocket events that arrived after session
+    # teardown. Without this, :bidi_event messages linger in the test
+    # process mailbox and can interfere with the next session.
+    drain_bidi_events()
+    result
+  end
+
+  defp drain_bidi_events do
+    receive do
+      {:bidi_event, _, _} -> drain_bidi_events()
+    after
+      0 -> :ok
+    end
   end
 
   @doc false
