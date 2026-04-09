@@ -492,6 +492,8 @@ defmodule Wallabidi.CDPClient do
           if (name === 'value' && 'value' in this) return this.value;
           if (name === 'checked') return this.checked ? 'true' : null;
           if (name === 'selected') return this.selected ? 'true' : null;
+          if (name === 'outerHTML') return this.outerHTML;
+          if (name === 'innerHTML') return this.innerHTML;
           return this.getAttribute(name);
         }
         """,
