@@ -1,5 +1,77 @@
 # Changelog
 
+## Wallabidi 0.2.0 (2026-04-11)
+
+Significant refactor and performance work since 0.1.43. The default browser
+protocol is now CDP (`:chrome_cdp`); BiDi (`:chrome`) remains available as
+opt-in via `config :wallabidi, driver: :chrome`.
+
+### Added
+
+- **CDP driver as default** — direct CDP-to-Chrome path is ~1.5x faster
+  than BiDi via chromedriver. Use `config :wallabidi, driver: :chrome` to
+  opt back into BiDi.
+- **Push-based element finding** — bootstrap installs an opcode interpreter
+  with MutationObserver and LiveView `onPatchEnd` hook. Find operations
+  register an opcode query and block until the bootstrap pushes a match
+  notification via `Runtime.addBinding` (CDP) or `script.message` channel
+  (BiDi). Zero polling.
+- **Push-based page-ready notification** — bootstrap fires a `page_ready`
+  channel notification when a new document is parsed and any LiveView has
+  finished joining (or non-LV is detected). `do_post_click` waits for this
+  notification, eliminating the prior polling-based race in
+  `await_liveview_connected`.
+- **Pipeline click via `Pipeline.click_full`** — find + classify +
+  prepare_patch + click compiled into one JS expression. 1 RPC instead of
+  4-6.
+- **`Wallabidi.LiveViewDriver`** — server-side LiveView driver, no browser.
+  ~60x faster than CDP for LiveView-only test suites.
+- **BiDi support** — full WebDriver BiDi protocol implementation with the
+  same push model as CDP, using `script.addPreloadScript` channels.
+- **`mix test.bench`** — load tests, per-operation benchmarks, and
+  diagnostic traces in a separate `bench/` bucket.
+- **`TESTING.md`** — guide to the three test buckets and four driver
+  backends.
+
+### Changed
+
+- **Test directory restructure** — three buckets:
+  `test/` (unit), `integration_test/cases/` (correctness across all
+  drivers), `bench/` (load tests + benchmarks). Unified `test_helper.exs`
+  starts all driver backends so any test can request any driver.
+- **Default `@tag :browser`** — now resolves to `:chrome_cdp` (was
+  `:chrome`).
+- **`mix test.chrome`** now runs CDP. New `mix test.chrome.bidi` runs the
+  BiDi driver.
+
+### Performance
+
+- BiDi click cold-start: ~500ms → ~50ms (eliminated about:blank navigate
+  overhead)
+- BiDi find: polling retry → 1 RPC fire-and-forget + push notification
+- CDP visit + 3 clicks + 4 finds: ~93ms total
+- LiveView driver: same workload in ~1.4ms
+
+### Fixed
+
+- `bidi_event` mailbox leak — `end_session` now drains stale events
+- Test logs quieted (Logger level `:warning` in test helpers; WebSocket
+  `:closed` errors downgraded to debug)
+- LiveView driver: `blank_page?/1`, `outerHTML`/`innerHTML` extraction
+- CDP `attribute("outerHTML")` now reads the DOM property
+- Removed unused `bypass` dep that pinned `ranch` to 1.8 and triggered
+  `:simple_one_for_one` deprecation warnings
+
+### Removed
+
+- Selenium driver, `web_driver_client`, `httpoison`, `hackney`
+- Legacy per-driver `test_helper.exs` files and `Code.require_file`
+  injection (`tests.exs`, `all_test.exs`)
+
+---
+
+# Wallaby (upstream)
+
 ## [0.30.12](https://github.com/elixir-wallaby/wallaby/compare/v0.30.11...v0.30.12) (2026-01-09)
 
 

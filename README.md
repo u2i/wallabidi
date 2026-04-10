@@ -82,7 +82,7 @@ All of this is installed via injected JavaScript — no changes to your `app.js`
 
 ```elixir
 # mix.exs
-{:wallabidi, "~> 0.1", runtime: false, only: :test}
+{:wallabidi, "~> 0.2", runtime: false, only: :test}
 ```
 
 2. Find and replace in your project:
@@ -111,7 +111,7 @@ Requires Elixir 1.19+, OTP 28+, and either Docker or a local ChromeDriver instal
 
 ```elixir
 def deps do
-  [{:wallabidi, "~> 0.1", runtime: false, only: :test}]
+  [{:wallabidi, "~> 0.2", runtime: false, only: :test}]
 end
 ```
 
@@ -198,7 +198,7 @@ Browser tests need sandbox access propagated to every server-side process the br
 # mix.exs
 {:sandbox_shim, "~> 0.1"},                                    # all envs (compile-time only)
 {:sandbox_case, "~> 0.3", only: :test},                       # test only
-{:wallabidi, "~> 0.1", only: :test, runtime: false},           # test only
+{:wallabidi, "~> 0.2", only: :test, runtime: false},           # test only
 ```
 
 ```elixir
