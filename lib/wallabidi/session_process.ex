@@ -64,6 +64,11 @@ defmodule Wallabidi.SessionProcess do
     # Chrome fires Runtime.bindingCalled which arrives here. We match
     # the query id against pending find waiters and reply.
     find_waiters: %{},
+    # Page-ready tracking. The bootstrap fires a page_ready notification
+    # via __wallabidi when each new document is parsed AND any LiveView
+    # has finished joining. Captures pageId per page.
+    last_page_id: nil,
+    page_ready_waiter: nil,
     # Lazy ops queue. Side-effect ops (click) append here; the next
     # blocking RPC auto-flushes them via CDPClient.maybe_flush_pending.
     pending_ops: []
@@ -202,6 +207,34 @@ defmodule Wallabidi.SessionProcess do
   def await_next_page_load(%Session{pid: pid}, name \\ "load", timeout_ms \\ 10_000)
       when is_pid(pid) and is_binary(name) do
     GenServer.call(pid, {:await_next_page_load, name, timeout_ms}, timeout_ms + 2_000)
+  catch
+    :exit, _ -> :timeout
+  end
+
+  @doc """
+  Read the current page id (set by the bootstrap on each new document).
+  Returns nil if the bootstrap hasn't yet fired a page_ready notification.
+  Capture this BEFORE a click that may navigate, then pass it to
+  `await_page_ready_after/3`.
+  """
+  def get_page_id(%Session{pid: pid}) when is_pid(pid) do
+    GenServer.call(pid, :get_page_id)
+  catch
+    :exit, _ -> nil
+  end
+
+  @doc """
+  Block until a page_ready notification arrives with a pageId different
+  from `pre_page_id`. The bootstrap fires this notification when the new
+  document is parsed AND any LiveView has finished joining (or non-LV
+  is detected). Zero polling.
+
+  Returns :ok or :timeout. If a page_ready with a new pageId has already
+  arrived before this call, returns immediately.
+  """
+  def await_page_ready_after(%Session{pid: pid}, pre_page_id, timeout_ms \\ 5_000)
+      when is_pid(pid) do
+    GenServer.call(pid, {:await_page_ready_after, pre_page_id, timeout_ms}, timeout_ms + 2_000)
   catch
     :exit, _ -> :timeout
   end
@@ -352,6 +385,23 @@ defmodule Wallabidi.SessionProcess do
     {:reply, state.pending_ops, %{state | pending_ops: []}}
   end
 
+  def handle_call(:get_page_id, _from, state) do
+    {:reply, state.last_page_id, state}
+  end
+
+  def handle_call({:await_page_ready_after, pre_page_id, timeout_ms}, from, state) do
+    cond do
+      # Already received a notification with a different pageId — return now
+      state.last_page_id != nil and state.last_page_id != pre_page_id ->
+        {:reply, :ok, state}
+
+      true ->
+        # Register waiter; the next page_ready event will resolve it
+        timeout_ref = Process.send_after(self(), :page_ready_timeout, timeout_ms)
+        {:noreply, %{state | page_ready_waiter: {from, pre_page_id, timeout_ref}}}
+    end
+  end
+
   @impl true
   def handle_cast({:append_ops, query_id, ops, action, opts}, state) do
     entry = {query_id, ops, action, opts}
@@ -418,46 +468,24 @@ defmodule Wallabidi.SessionProcess do
   end
 
   # Runtime.bindingCalled: JS called __wallabidi(payload).
-  # payload is JSON: {"id": "query_id", "count": N}
+  # payload is JSON: {"id": "query_id", "count": N} OR {"type": "page_ready", "pageId": "..."}
   def handle_info({:bidi_event, "Runtime.bindingCalled", event}, state) do
     params = Map.get(event, "params", %{})
 
     if params["name"] == "__wallabidi" do
-      case Jason.decode(params["payload"] || "") do
-        {:ok, %{"id" => query_id, "error" => error}} when is_binary(error) ->
-          {:noreply, resolve_find(state, query_id, {:error, :invalid_selector})}
-
-        {:ok, %{"id" => query_id, "count" => count}} ->
-          {:noreply, resolve_find(state, query_id, {:ok, count})}
-
-        _ ->
-          {:noreply, state}
-      end
+      {:noreply, handle_wallabidi_payload(state, params["payload"] || "")}
     else
       {:noreply, state}
     end
   end
 
   # BiDi: script.message from addPreloadScript channel callback.
-  # The channel fires when JS calls __wallabidi(payload) via the channel.
-  # Payload format is identical to the Runtime.bindingCalled handler above.
   def handle_info({:bidi_event, "script.message", event}, state) do
     params = Map.get(event, "params", %{})
 
     if params["channel"] == "__wallabidi" do
-      # Channel data is a BiDi typed value: %{"type" => "string", "value" => "..."}
       payload = get_in(params, ["data", "value"]) || ""
-
-      case Jason.decode(payload) do
-        {:ok, %{"id" => query_id, "error" => error}} when is_binary(error) ->
-          {:noreply, resolve_find(state, query_id, {:error, :invalid_selector})}
-
-        {:ok, %{"id" => query_id, "count" => count}} ->
-          {:noreply, resolve_find(state, query_id, {:ok, count})}
-
-        _ ->
-          {:noreply, state}
-      end
+      {:noreply, handle_wallabidi_payload(state, payload)}
     else
       {:noreply, state}
     end
@@ -467,7 +495,50 @@ defmodule Wallabidi.SessionProcess do
     {:noreply, resolve_find(state, query_id, {:timeout, 0})}
   end
 
+  def handle_info(:page_ready_timeout, state) do
+    case state.page_ready_waiter do
+      {from, _pre_id, _ref} ->
+        GenServer.reply(from, :timeout)
+        {:noreply, %{state | page_ready_waiter: nil}}
+
+      nil ->
+        {:noreply, state}
+    end
+  end
+
   def handle_info(_msg, state), do: {:noreply, state}
+
+  # Decode a __wallabidi channel payload and dispatch to the right handler
+  # (find result OR page_ready notification).
+  defp handle_wallabidi_payload(state, payload) do
+    case Jason.decode(payload) do
+      {:ok, %{"id" => query_id, "error" => error}} when is_binary(error) ->
+        resolve_find(state, query_id, {:error, :invalid_selector})
+
+      {:ok, %{"id" => query_id, "count" => count}} ->
+        resolve_find(state, query_id, {:ok, count})
+
+      {:ok, %{"type" => "page_ready", "pageId" => page_id}} ->
+        resolve_page_ready(state, page_id)
+
+      _ ->
+        state
+    end
+  end
+
+  defp resolve_page_ready(state, page_id) do
+    state = %{state | last_page_id: page_id}
+
+    case state.page_ready_waiter do
+      {from, pre_id, timeout_ref} when pre_id != page_id ->
+        Process.cancel_timer(timeout_ref)
+        GenServer.reply(from, :ok)
+        %{state | page_ready_waiter: nil}
+
+      _ ->
+        state
+    end
+  end
 
   # Resolve a find waiter. If the caller is already blocking in
   # await_find_result, reply immediately. If not (caller hasn't called

@@ -225,15 +225,71 @@ defmodule Wallabidi.Bootstrap do
       requestAnimationFrame(W.check);
     }).observe(document, {childList: true, subtree: true, attributes: true, characterData: true});
 
-    // LiveView onPatchEnd hook
-    try {
-      var ls = window.liveSocket;
-      if (ls && ls.domCallbacks && !W.lvHooked) {
-        var origPatch = ls.domCallbacks.onPatchEnd;
-        ls.domCallbacks.onPatchEnd = function(c) { if (origPatch) origPatch(c); W.check(); };
-        W.lvHooked = true;
+    // --- Page-ready detection + LiveView patch hook ---
+    //
+    // Each new document gets a fresh pageId. When the page is ready
+    // (DOM parsed + LV connected, OR non-LV detected), we set pageReady
+    // and fire a channel notification. Elixir captures the pre-click
+    // pageId, then waits for a page_ready notification with a new pageId.
+    // Zero polling.
+    //
+    // The LV patch hook bumps pageId on every onPatchEnd, so live_redirect
+    // and other in-document navigations also fire page_ready.
+    W.pageId = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+    W.pageReady = false;
+    W.lvHooked = false;
+
+    function bumpPageId() {
+      W.pageId = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+      W.pageReady = true;
+      try { __wallabidi(JSON.stringify({type: 'page_ready', pageId: W.pageId})); } catch(e) {}
+    }
+
+    function installLvHook() {
+      if (W.lvHooked) return true;
+      try {
+        var ls = window.liveSocket;
+        if (ls && ls.domCallbacks) {
+          var origPatch = ls.domCallbacks.onPatchEnd;
+          ls.domCallbacks.onPatchEnd = function(c) {
+            if (origPatch) origPatch(c);
+            W.check();
+            bumpPageId();
+          };
+          W.lvHooked = true;
+          return true;
+        }
+      } catch(e) {}
+      return false;
+    }
+
+    function markReady() {
+      if (W.pageReady) return;
+      W.pageReady = true;
+      try { __wallabidi(JSON.stringify({type: 'page_ready', pageId: W.pageId})); } catch(e) {}
+    }
+
+    function detectReady() {
+      // Non-LV page: ready as soon as DOM is parsed
+      if (!document.querySelector('[data-phx-session]')) {
+        return markReady();
       }
-    } catch(e) {}
+      // LV page: install the patch hook (deferred until liveSocket exists)
+      // and wait for liveSocket.main to finish joining
+      installLvHook();
+      var ls = window.liveSocket;
+      if (ls && ls.main && !ls.main.joinPending) {
+        return markReady();
+      }
+      // Still waiting — re-check on next animation frame
+      requestAnimationFrame(detectReady);
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', detectReady);
+    } else {
+      detectReady();
+    }
     """
   end
 end
