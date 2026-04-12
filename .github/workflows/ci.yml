@@ -74,14 +74,9 @@ jobs:
         path: deps
         key: ${{ runner.os }}-mix-${{ hashFiles('mix.lock') }}
 
-    - uses: actions/cache@v5
-      with:
-        path: .browsers
-        key: ${{ runner.os }}-browsers-stable
-
     - run: mix deps.get
     - run: mix wallabidi.install
-    - run: mix test.chrome
+    - run: mix test.chrome --max-cases 4
 
   chrome_bidi_tests:
     name: Chrome BiDi
@@ -104,14 +99,9 @@ jobs:
         path: deps
         key: ${{ runner.os }}-mix-${{ hashFiles('mix.lock') }}
 
-    - uses: actions/cache@v5
-      with:
-        path: .browsers
-        key: ${{ runner.os }}-browsers-stable
-
     - run: mix deps.get
     - run: mix wallabidi.install
-    - run: mix test.chrome.bidi
+    - run: mix test.chrome.bidi --max-cases 4
 
   linting:
     name: Linting
