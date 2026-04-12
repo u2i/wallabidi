@@ -1,5 +1,31 @@
 # Changelog
 
+## Wallabidi 0.2.1 (2026-04-13)
+
+### Added
+
+- **`mix wallabidi.install`** — downloads Chrome for Testing + chromedriver
+  via `npx @puppeteer/browsers`. Cross-platform, no manual setup.
+- **`Wallabidi.BrowserPaths`** — unified browser discovery: env var URL/path
+  → `.browsers/PATHS` → system PATH. Supports `WALLABIDI_CHROME_URL` and
+  `WALLABIDI_CHROMEDRIVER_URL` for Docker/remote connections.
+- **CI documentation** in README with GitHub Actions example.
+
+### Fixed
+
+- CDP bootstrap race on slow CI — `addScriptToEvaluateOnNewDocument` now
+  synchronous (was fire-and-forget, causing `window.__w` to be undefined)
+- `Inspect` protocol for `Element` — compatible with Elixir 1.18 and 1.19+
+- `function_exported?` check uses `Code.ensure_loaded!` for Elixir 1.20-rc
+- All credo strict issues resolved
+- Dialyzer ignore patterns cleaned (14 patterns, 0 unnecessary skips)
+- Removed stale dev `elixirc_paths` hack
+
+### Changed
+
+- CI linting runs in dev env (matching upstream Wallaby pattern)
+- Config simplified — removed platform-specific glob patterns in test.exs
+
 ## Wallabidi 0.2.0 (2026-04-11)
 
 Significant refactor and performance work since 0.1.43. The default browser
