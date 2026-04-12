@@ -76,19 +76,23 @@ defmodule Wallabidi.CDPClient do
         flat_session_id: flat
       )
 
-      # Push-based element finding: install a binding that JS can call
-      # to notify us when elements match. Persists across navigations.
-      # The bootstrap script auto-installs a MutationObserver on each
-      # new document that watches for pending queries.
-      cast_cdp_with_session(pid, session_id, {"Runtime.addBinding", %{name: "__wallabidi"}},
-        flat_session_id: flat
+      # Push-based element finding: install a binding + bootstrap script.
+      # These MUST complete before any find/click operation — use sync
+      # send_command (not fire-and-forget cast) to guarantee ordering.
+      # On slow CI machines, fire-and-forget allows the first visit to
+      # race ahead of the bootstrap installation.
+      WebSocketClient.send_command_flat(
+        pid,
+        "Runtime.addBinding",
+        %{name: "__wallabidi"},
+        session_id
       )
 
-      cast_cdp_with_session(
+      WebSocketClient.send_command_flat(
         pid,
-        session_id,
-        {"Page.addScriptToEvaluateOnNewDocument", %{source: Wallabidi.Bootstrap.cdp_iife()}},
-        flat_session_id: flat
+        "Page.addScriptToEvaluateOnNewDocument",
+        %{source: Wallabidi.Bootstrap.cdp_iife()},
+        session_id
       )
 
       {:ok, %{target_id: target_id, session_id: session_id}}
