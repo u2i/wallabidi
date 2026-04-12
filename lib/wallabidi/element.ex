@@ -275,25 +275,29 @@ defmodule Wallabidi.Element do
 end
 
 defimpl Inspect, for: Wallabidi.Element do
-  def inspect(element, opts) do
-    base = Inspect.Any.inspect(element, opts)
-
-    suffix =
+  def inspect(element, _opts) do
+    outer_html =
       try do
-        outer_html = Wallabidi.Element.attr(element, "outerHTML")
-
-        IO.ANSI.cyan() <> "outerHTML:" <> IO.ANSI.reset() <>
-          IO.ANSI.yellow() <> outer_html <> IO.ANSI.reset()
+        Wallabidi.Element.attr(element, "outerHTML")
       rescue
         _ -> nil
       catch
         _, _ -> nil
       end
 
-    if suffix do
-      Inspect.Algebra.concat([base, Inspect.Algebra.line(), suffix])
-    else
-      base
-    end
+    suffix =
+      if outer_html do
+        "\n" <> IO.ANSI.cyan() <> "outerHTML:" <> IO.ANSI.reset() <>
+          IO.ANSI.yellow() <> outer_html <> IO.ANSI.reset()
+      else
+        ""
+      end
+
+    Inspect.Algebra.string(
+      "%Wallabidi.Element{" <>
+        "id: #{Kernel.inspect(element.id)}, " <>
+        "driver: #{Kernel.inspect(element.driver)}" <>
+        "}" <> suffix
+    )
   end
 end
