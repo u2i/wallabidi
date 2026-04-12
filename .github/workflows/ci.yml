@@ -137,7 +137,7 @@ jobs:
         key: ${{ runner.os }}-dialyzer-28-1.19-${{ hashFiles('mix.lock') }}
 
     - run: mix deps.get
-    - run: mix compile --force --warnings-as-errors --no-deps-check
+    - run: MIX_ENV=test mix compile --force --warnings-as-errors --no-deps-check
     - run: mix format --check-formatted
     - run: mix credo --strict
-    - run: mix dialyzer
+    - run: MIX_ENV=test mix dialyzer

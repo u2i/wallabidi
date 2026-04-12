@@ -299,5 +299,10 @@ defimpl Inspect, for: Wallabidi.Element do
   end
 
   defp maybe_concat(inspect_result, []), do: inspect_result
-  defp maybe_concat(inspect_result, output), do: concat([inspect_result | output])
+
+  defp maybe_concat(inspect_result, output) do
+    Enum.reduce(output, inspect_result, fn str, acc ->
+      concat(acc, str)
+    end)
+  end
 end
