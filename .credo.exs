@@ -99,7 +99,7 @@
         {Credo.Check.Refactor.MatchInCondition},
         {Credo.Check.Refactor.NegatedConditionsInUnless},
         {Credo.Check.Refactor.NegatedConditionsWithElse},
-        {Credo.Check.Refactor.Nesting},
+        {Credo.Check.Refactor.Nesting, [max_nesting: 4]},
         {Credo.Check.Refactor.PipeChainStart, false},
         {Credo.Check.Refactor.UnlessWithElse},
         {Credo.Check.Warning.BoolOperationOnSameValues},

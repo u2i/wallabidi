@@ -765,30 +765,31 @@ defmodule Wallabidi.Browser do
       # bootstrap's push notification on the NEW page (zero polling).
       pre_page_id = Wallabidi.SessionProcess.get_page_id(session)
 
-      with {:ok, ops, validated} <- Ops.from_wallaby(parent, query, :click) do
-        result =
-          if session.protocol == Wallabidi.Protocol.CDP do
-            Wallabidi.CDPClient.execute_ops(parent, ops,
-              timeout: max_wait_time(),
-              count: Query.count(validated)
-            )
-          else
-            execute_ops_click_bidi(parent, session, ops, validated)
+      case Ops.from_wallaby(parent, query, :click) do
+        {:ok, ops, validated} ->
+          result =
+            if session.protocol == Wallabidi.Protocol.CDP do
+              Wallabidi.CDPClient.execute_ops(parent, ops,
+                timeout: max_wait_time(),
+                count: Query.count(validated)
+              )
+            else
+              execute_ops_click_bidi(parent, session, ops, validated)
+            end
+
+          case result do
+            {:ok, :clicked, %{classification: c, prepared: p}} ->
+              do_post_click(session, c, p, pre_page_id)
+              parent
+
+            {:error, _} ->
+              with_patch_await(parent, query, :click, fn ->
+                find(parent, query, &Element.click/1)
+              end)
+
+              parent
           end
 
-        case result do
-          {:ok, :clicked, %{classification: c, prepared: p}} ->
-            do_post_click(session, c, p, pre_page_id)
-            parent
-
-          {:error, _} ->
-            with_patch_await(parent, query, :click, fn ->
-              find(parent, query, &Element.click/1)
-            end)
-
-            parent
-        end
-      else
         _ ->
           with_patch_await(parent, query, :click, fn ->
             parent |> find(query, &Element.click/1)

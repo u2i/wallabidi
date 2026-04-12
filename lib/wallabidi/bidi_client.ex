@@ -3,8 +3,8 @@ defmodule Wallabidi.BiDiClient do
   # Pure BiDi protocol client — no WebdriverClient fallbacks.
   # All operations go through WebSocket using the BiDi protocol.
 
-  alias Wallabidi.{Element, Session}
   alias Wallabidi.BiDi.{Commands, ResponseParser, WebSocketClient}
+  alias Wallabidi.{Element, Session}
 
   @type parent :: Element.t() | Session.t()
 

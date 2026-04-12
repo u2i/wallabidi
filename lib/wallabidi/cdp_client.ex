@@ -595,7 +595,7 @@ defmodule Wallabidi.CDPClient do
     session = root_session(element)
 
     # File inputs can't be set via JS — use DOM.setFileInputFiles
-    case is_file_input?(session, object_id) do
+    case file_input?(session, object_id) do
       true ->
         files =
           if(is_list(value), do: value, else: [value])
@@ -631,7 +631,7 @@ defmodule Wallabidi.CDPClient do
     end
   end
 
-  defp is_file_input?(session, object_id) do
+  defp file_input?(session, object_id) do
     {method, params} =
       Commands.call_function_on_value(object_id, "function() { return this.type === 'file'; }")
 

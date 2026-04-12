@@ -24,7 +24,7 @@ defmodule Wallabidi.Protocol do
   #
   # | Semantic         | BiDi                                | CDP                           |
   # | ---------------- | ----------------------------------- | ----------------------------- |
-  # | `:log`           | `log.entryAdded`                    | `Runtime.consoleAPICalled` + `Runtime.exceptionThrown` |
+  # | `:log`           | `log.entryAdded`                    | `Runtime.consoleAPICalled` etc |
   # | `:dialog`        | `browsingContext.userPromptOpened`  | `Page.javascriptDialogOpening` |
   # | `:network_request` | `network.beforeRequestSent`       | `Network.requestWillBeSent`   |
   # | `:page_load`     | `browsingContext.load`              | `Page.loadEventFired`         |

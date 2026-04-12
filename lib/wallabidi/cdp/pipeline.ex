@@ -109,10 +109,7 @@ defmodule Wallabidi.CDP.Pipeline do
     # Separate ops: everything except :await (which wraps the whole thing)
     non_await_ops = Enum.reject(ops, &match?({:await, _, _}, &1))
 
-    body =
-      non_await_ops
-      |> Enum.map(fn op -> compile_op(op, root) end)
-      |> Enum.join("\n")
+    body = Enum.map_join(non_await_ops, "\n", fn op -> compile_op(op, root) end)
 
     ret =
       cond do

@@ -93,15 +93,13 @@ defmodule Wallabidi.Driver.LogChecker do
     args = params["args"] || []
 
     text =
-      args
-      |> Enum.map(fn
+      Enum.map_join(args, " ", fn
         %{"value" => v} when is_binary(v) -> v
         %{"value" => v} -> inspect(v)
         %{"description" => d} -> d
         %{"type" => "undefined"} -> "undefined"
         other -> inspect(other)
       end)
-      |> Enum.join(" ")
 
     trace = params["stackTrace"] || %{}
     frames = trace["callFrames"] || []

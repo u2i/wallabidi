@@ -115,11 +115,9 @@ defmodule Wallabidi.SessionProcess do
   @doc "Stops the session process, triggering cleanup in terminate/2."
   @spec stop(Session.t()) :: :ok
   def stop(%Session{pid: pid}) when is_pid(pid) do
-    try do
-      GenServer.stop(pid, :normal, 10_000)
-    catch
-      :exit, _ -> :ok
-    end
+    GenServer.stop(pid, :normal, 10_000)
+  catch
+    :exit, _ -> :ok
   end
 
   def stop(%Session{}), do: :ok
@@ -390,15 +388,13 @@ defmodule Wallabidi.SessionProcess do
   end
 
   def handle_call({:await_page_ready_after, pre_page_id, timeout_ms}, from, state) do
-    cond do
-      # Already received a notification with a different pageId — return now
-      state.last_page_id != nil and state.last_page_id != pre_page_id ->
-        {:reply, :ok, state}
-
-      true ->
-        # Register waiter; the next page_ready event will resolve it
-        timeout_ref = Process.send_after(self(), :page_ready_timeout, timeout_ms)
-        {:noreply, %{state | page_ready_waiter: {from, pre_page_id, timeout_ref}}}
+    if state.last_page_id != nil and state.last_page_id != pre_page_id do
+      # Already received a notification with a different pageId
+      {:reply, :ok, state}
+    else
+      # Register waiter; the next page_ready event will resolve it
+      timeout_ref = Process.send_after(self(), :page_ready_timeout, timeout_ms)
+      {:noreply, %{state | page_ready_waiter: {from, pre_page_id, timeout_ref}}}
     end
   end
 

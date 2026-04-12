@@ -69,10 +69,9 @@ defmodule Wallabidi.Chrome do
   @default_readiness_timeout 10_000
 
   alias Wallabidi.BiDi.{ResponseParser, WebSocketClient}
-  alias Wallabidi.BiDiClient
+  alias Wallabidi.{BiDiClient, DependencyError, Metadata}
   alias Wallabidi.Chrome.Chromedriver
   alias Wallabidi.Driver.SessionLifecycle
-  alias Wallabidi.{DependencyError, Metadata}
   import Wallabidi.Driver.LogChecker
 
   @typedoc """
