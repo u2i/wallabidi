@@ -22,8 +22,18 @@
   # Same warning in Erlang type format on Elixir 1.19
   ~r"method.*text.*can never match",
 
-  # Mix.Task behaviour not in PLT — safe to ignore
+  # Mix.Task behaviour and Mix.shell/Mix.raise not in PLT
   ~r"callback_info_missing",
+  ~r"Function Mix\.(shell|raise|env)",
+
+  # Protocol.subscribe called during session init before SessionProcess
+  # sets pid — dialyzer narrows the session struct type
+  ~r"chrome\.ex:\d+:\d+:call",
+  ~r"chrome_cdp\.ex:\d+:\d+:call",
+
+  # await_patch CAN return :timeout ({:ok, false} path) but dialyzer
+  # narrows the eval_async return type and thinks it's unreachable
+  ~r"cdp_client\.ex.*1051.*pattern_match",
 
   # first_attr returns string|nil but dialyzer narrows to string in some paths
   ~r"(live_view_driver|native).ex.*(guard_fail|can never succeed)"

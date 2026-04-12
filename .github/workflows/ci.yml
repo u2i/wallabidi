@@ -123,11 +123,11 @@ jobs:
 
     - uses: actions/cache@v5
       with:
-        path: _build/dev
+        path: _build
         key: ${{ runner.os }}-dialyzer-28-1.19-${{ hashFiles('mix.lock') }}
 
     - run: mix deps.get
     - run: mix compile --force --warnings-as-errors
     - run: mix format --check-formatted
     - run: mix credo --strict
-    - run: mix dialyzer
+    - run: mix dialyzer --halt-exit-status
