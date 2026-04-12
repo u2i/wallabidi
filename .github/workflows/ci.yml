@@ -131,4 +131,4 @@ jobs:
     - run: MIX_ENV=test mix compile --force --warnings-as-errors
     - run: mix format --check-formatted
     - run: mix credo --strict
-    - run: MIX_ENV=test mix dialyzer
+    - run: mix dialyzer
