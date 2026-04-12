@@ -25,175 +25,119 @@ jobs:
         version-type: ${{matrix.elixir-otp.version_type || 'loose'}}
 
     - uses: actions/cache@v5
-      id: cache
       with:
         path: deps
-        key: ${{ runner.os }}-mix-${{ hashFiles(format('{0}{1}', github.workspace, '/mix.lock')) }}
+        key: ${{ runner.os }}-mix-${{ hashFiles('mix.lock') }}
 
-    - name: Install Dependencies
-      if: steps.cache.outputs.cache-hit != 'true'
-      run: mix deps.get
-
-    - name: Run Unit Tests
-      run: mix test
+    - run: mix deps.get
+    - run: mix test
 
   live_view_tests:
-    name: LiveView Driver (${{matrix.elixir-otp.elixir}}/${{matrix.elixir-otp.otp}})
+    name: LiveView Driver
     runs-on: ubuntu-latest
-    continue-on-error: ${{ matrix.elixir-otp.experimental || false }}
 
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true)
-
-    strategy:
-      matrix:
-        elixir-otp:
-          - {otp: 28.x, elixir: 1.19.x}
-          - {otp: 28.4.1, elixir: 1.20.0-rc.4, version_type: strict, experimental: true}
-      fail-fast: false
 
     steps:
     - uses: actions/checkout@v6
     - uses: erlef/setup-beam@v1
       with:
-        otp-version: ${{matrix.elixir-otp.otp}}
-        elixir-version: ${{matrix.elixir-otp.elixir}}
-        version-type: ${{matrix.elixir-otp.version_type || 'loose'}}
+        otp-version: 28.x
+        elixir-version: 1.19.x
 
     - uses: actions/cache@v5
-      id: cache
       with:
         path: deps
-        key: ${{ runner.os }}-mix-${{ hashFiles(format('{0}{1}', github.workspace, '/mix.lock')) }}
+        key: ${{ runner.os }}-mix-${{ hashFiles('mix.lock') }}
 
-    - name: Install Dependencies
-      if: steps.cache.outputs.cache-hit != 'true'
-      run: mix deps.get
+    - run: mix deps.get
+    - run: mix test.live_view
 
-    - name: Run LiveView Tests
-      run: mix test.live_view
-
-  lightpanda_tests:
-    name: Lightpanda CDP (${{matrix.elixir-otp.elixir}}/${{matrix.elixir-otp.otp}})
+  chrome_cdp_tests:
+    name: Chrome CDP
     runs-on: ubuntu-latest
-    continue-on-error: ${{ matrix.elixir-otp.experimental || false }}
 
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true)
-
-    strategy:
-      matrix:
-        elixir-otp:
-          - {otp: 28.x, elixir: 1.19.x}
-          - {otp: 28.4.1, elixir: 1.20.0-rc.4, version_type: strict, experimental: true}
-      fail-fast: false
 
     steps:
     - uses: actions/checkout@v6
     - uses: erlef/setup-beam@v1
       with:
-        otp-version: ${{matrix.elixir-otp.otp}}
-        elixir-version: ${{matrix.elixir-otp.elixir}}
-        version-type: ${{matrix.elixir-otp.version_type || 'loose'}}
+        otp-version: 28.x
+        elixir-version: 1.19.x
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 20
 
     - uses: actions/cache@v5
-      id: cache
       with:
         path: deps
-        key: ${{ runner.os }}-mix-${{ hashFiles(format('{0}{1}', github.workspace, '/mix.lock')) }}
+        key: ${{ runner.os }}-mix-${{ hashFiles('mix.lock') }}
 
-    - name: Install Dependencies
-      if: steps.cache.outputs.cache-hit != 'true'
-      run: mix deps.get
+    - uses: actions/cache@v5
+      with:
+        path: .browsers
+        key: ${{ runner.os }}-browsers-stable
 
-    - name: Install Lightpanda
-      run: MIX_ENV=test mix lightpanda.install
+    - run: mix deps.get
+    - run: mix wallabidi.install
+    - run: mix test.chrome
 
-    - name: Run Lightpanda Tests
-      run: mix test.lightpanda
-
-  chrome_tests:
-    name: Chrome BiDi (${{matrix.elixir-otp.elixir}}/${{matrix.elixir-otp.otp}})
+  chrome_bidi_tests:
+    name: Chrome BiDi
     runs-on: ubuntu-latest
-    continue-on-error: ${{ matrix.elixir-otp.experimental || false }}
 
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true)
-
-    strategy:
-      matrix:
-        elixir-otp:
-          - {otp: 28.x, elixir: 1.19.x}
-          - {otp: 28.4.1, elixir: 1.20.0-rc.4, version_type: strict, experimental: true}
-      fail-fast: false
-
-    env:
-      WALLABIDI_DRIVER: chrome
 
     steps:
     - uses: actions/checkout@v6
     - uses: erlef/setup-beam@v1
       with:
-        otp-version: ${{matrix.elixir-otp.otp}}
-        elixir-version: ${{matrix.elixir-otp.elixir}}
-        version-type: ${{matrix.elixir-otp.version_type || 'loose'}}
+        otp-version: 28.x
+        elixir-version: 1.19.x
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 20
 
     - uses: actions/cache@v5
-      id: cache
       with:
         path: deps
-        key: ${{ runner.os }}-mix-${{ hashFiles(format('{0}{1}', github.workspace, '/mix.lock')) }}
+        key: ${{ runner.os }}-mix-${{ hashFiles('mix.lock') }}
 
-    - name: Install Dependencies
-      if: steps.cache.outputs.cache-hit != 'true'
-      run: mix deps.get
+    - uses: actions/cache@v5
+      with:
+        path: .browsers
+        key: ${{ runner.os }}-browsers-stable
 
-    - name: Run Chrome Tests
-      run: mix test
-
-    - name: Run Lifecycle Tests
-      run: mix test.chrome.lifecycle
+    - run: mix deps.get
+    - run: mix wallabidi.install
+    - run: mix test.chrome.bidi
 
   linting:
-    name: Linting (${{matrix.elixir-otp.elixir}}/${{matrix.elixir-otp.otp}})
+    name: Linting
     runs-on: ubuntu-latest
 
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true)
-
-    strategy:
-      matrix:
-        elixir-otp: [{otp: 28.x, elixir: 1.19.x}]
-      fail-fast: false
 
     steps:
     - uses: actions/checkout@v6
     - uses: erlef/setup-beam@v1
       with:
-        otp-version: ${{matrix.elixir-otp.otp}}
-        elixir-version: ${{matrix.elixir-otp.elixir}}
+        otp-version: 28.x
+        elixir-version: 1.19.x
 
     - uses: actions/cache@v5
-      id: deps-cache
       with:
         path: deps
-        key: ${{ runner.os }}-mix-${{ hashFiles(format('{0}{1}', github.workspace, '/mix.lock')) }}
+        key: ${{ runner.os }}-mix-${{ hashFiles('mix.lock') }}
 
     - uses: actions/cache@v5
       with:
         path: _build
-        key: ${{ runner.os }}-v3-dialyzer-${{matrix.elixir-otp.otp}}-${{ matrix.elixir-otp.elixir }}-${{ hashFiles(format('{0}{1}', github.workspace, '/mix.lock')) }}
+        key: ${{ runner.os }}-dialyzer-28-1.19-${{ hashFiles('mix.lock') }}
 
-    - name: Install Dependencies
-      if: steps.deps-cache.outputs.cache-hit != 'true'
-      run: mix deps.get
-
-    - name: Compile deps
-      run: mix deps.compile
-    - name: Compile
-      run: mix compile --force --warnings-as-errors --no-deps-check
-
-    - name: Check formatting
-      run: mix format --check-formatted
-
-    - name: Run Credo
-      run: mix credo --strict
-
-    - name: Run Dialyzer
-      run: mix dialyzer
+    - run: mix deps.get
+    - run: mix compile --force --warnings-as-errors --no-deps-check
+    - run: mix format --check-formatted
+    - run: mix credo --strict
+    - run: mix dialyzer
