@@ -48,12 +48,19 @@ defmodule Mix.Tasks.Wallabidi.Install do
 
   defp install_browser(browser, version) do
     {output, 0} =
-      System.cmd("npx", [
-        "@puppeteer/browsers", "install",
-        "#{browser}@#{version}",
-        "--path", @install_dir,
-        "--format", "{{path}}"
-      ], stderr_to_stdout: true)
+      System.cmd(
+        "npx",
+        [
+          "@puppeteer/browsers",
+          "install",
+          "#{browser}@#{version}",
+          "--path",
+          @install_dir,
+          "--format",
+          "{{path}}"
+        ],
+        stderr_to_stdout: true
+      )
 
     path =
       output
@@ -64,7 +71,9 @@ defmodule Mix.Tasks.Wallabidi.Install do
     abs_path = Path.expand(path)
 
     unless File.exists?(abs_path) do
-      Mix.raise("Installation reported path #{abs_path} but file does not exist.\nOutput: #{output}")
+      Mix.raise(
+        "Installation reported path #{abs_path} but file does not exist.\nOutput: #{output}"
+      )
     end
 
     abs_path

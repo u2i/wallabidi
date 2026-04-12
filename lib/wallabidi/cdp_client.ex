@@ -71,18 +71,25 @@ defmodule Wallabidi.CDPClient do
       cast_cdp_with_session(pid, session_id, Commands.enable_page(), flat_session_id: flat)
       cast_cdp_with_session(pid, session_id, Commands.enable_runtime(), flat_session_id: flat)
       cast_cdp_with_session(pid, session_id, Commands.enable_dom(), flat_session_id: flat)
-      cast_cdp_with_session(pid, session_id, Commands.set_lifecycle_events_enabled(true), flat_session_id: flat)
+
+      cast_cdp_with_session(pid, session_id, Commands.set_lifecycle_events_enabled(true),
+        flat_session_id: flat
+      )
 
       # Push-based element finding: install a binding that JS can call
       # to notify us when elements match. Persists across navigations.
       # The bootstrap script auto-installs a MutationObserver on each
       # new document that watches for pending queries.
-      cast_cdp_with_session(pid, session_id,
-        {"Runtime.addBinding", %{name: "__wallabidi"}},
-        flat_session_id: flat)
-      cast_cdp_with_session(pid, session_id,
+      cast_cdp_with_session(pid, session_id, {"Runtime.addBinding", %{name: "__wallabidi"}},
+        flat_session_id: flat
+      )
+
+      cast_cdp_with_session(
+        pid,
+        session_id,
         {"Page.addScriptToEvaluateOnNewDocument", %{source: Wallabidi.Bootstrap.cdp_iife()}},
-        flat_session_id: flat)
+        flat_session_id: flat
+      )
 
       {:ok, %{target_id: target_id, session_id: session_id}}
     end
@@ -587,7 +594,7 @@ defmodule Wallabidi.CDPClient do
     case is_file_input?(session, object_id) do
       true ->
         files =
-          (if is_list(value), do: value, else: [value])
+          if(is_list(value), do: value, else: [value])
           |> Enum.filter(&File.exists?/1)
 
         send_cdp_session(session, "DOM.setFileInputFiles", %{
@@ -959,9 +966,19 @@ defmodule Wallabidi.CDPClient do
     session_id = effective_session_id(session)
 
     if session.capabilities[:flat_session_id] do
-      WebSocketClient.cast_command_flat(pid, "Runtime.releaseObject", %{objectId: object_id}, session_id)
+      WebSocketClient.cast_command_flat(
+        pid,
+        "Runtime.releaseObject",
+        %{objectId: object_id},
+        session_id
+      )
     else
-      WebSocketClient.cast_command_flat(pid, "Runtime.releaseObject", %{objectId: object_id, sessionId: session_id}, session_id)
+      WebSocketClient.cast_command_flat(
+        pid,
+        "Runtime.releaseObject",
+        %{objectId: object_id, sessionId: session_id},
+        session_id
+      )
     end
   end
 
@@ -1039,10 +1056,12 @@ defmodule Wallabidi.CDPClient do
   def do_post_click(_session, "patch", false, _pre_url), do: :ok
 
   def do_post_click(session, "navigate", _prepared, pre_url) do
-    pre = pre_url || case Wallabidi.Protocol.current_url(session) do
-      {:ok, url} -> url
-      _ -> nil
-    end
+    pre =
+      pre_url ||
+        case Wallabidi.Protocol.current_url(session) do
+          {:ok, url} -> url
+          _ -> nil
+        end
 
     Wallabidi.LiveViewAware.await_liveview_connected(session, pre_url: pre)
   end
@@ -1200,26 +1219,29 @@ defmodule Wallabidi.CDPClient do
 
     pipeline = Pipeline.click_full(pipeline, :click)
 
-    retry_find(fn ->
-      case find_elements_pipeline(parent, pipeline) do
-        {:ok, elements, classification, prepared} ->
-          if count && length(elements) != count do
-            {:error, {:not_found, elements}}
-          else
-            {:ok, :clicked, %{classification: classification, prepared: prepared}}
-          end
+    retry_find(
+      fn ->
+        case find_elements_pipeline(parent, pipeline) do
+          {:ok, elements, classification, prepared} ->
+            if count && length(elements) != count do
+              {:error, {:not_found, elements}}
+            else
+              {:ok, :clicked, %{classification: classification, prepared: prepared}}
+            end
 
-        {:ok, elements} ->
-          if count && length(elements) != count do
-            {:error, {:not_found, elements}}
-          else
-            {:ok, :clicked, %{classification: "none", prepared: false}}
-          end
+          {:ok, elements} ->
+            if count && length(elements) != count do
+              {:error, {:not_found, elements}}
+            else
+              {:ok, :clicked, %{classification: "none", prepared: false}}
+            end
 
-        error ->
-          error
-      end
-    end, timeout)
+          error ->
+            error
+        end
+      end,
+      timeout
+    )
   end
 
   defp extract_query(%Wallabidi.CDP.Ops{ops: ops}) do
@@ -1233,8 +1255,12 @@ defmodule Wallabidi.CDPClient do
     start = start || System.monotonic_time(:millisecond)
 
     case fun.() do
-      {:ok, _, _} = result -> result
-      {:error, :invalid_selector} = error -> error
+      {:ok, _, _} = result ->
+        result
+
+      {:error, :invalid_selector} = error ->
+        error
+
       {:error, _} ->
         if System.monotonic_time(:millisecond) - start > timeout do
           {:error, {:not_found, []}}
@@ -1322,16 +1348,22 @@ defmodule Wallabidi.CDPClient do
       {:timeout, _} ->
         cleanup_query(session, query_id)
         # Final sync check for count: 0 queries
-        final_js = "(function(){var W=window.__w;if(!W)return 0;var r=W.exec(#{ops_json},null);return r.els.length;})()"
+        final_js =
+          "(function(){var W=window.__w;if(!W)return 0;var r=W.exec(#{ops_json},null);return r.els.length;})()"
 
-        case send_cdp_session(session, "Runtime.evaluate", %{expression: final_js, returnByValue: true}) do
+        case send_cdp_session(session, "Runtime.evaluate", %{
+               expression: final_js,
+               returnByValue: true
+             }) do
           {:ok, result} ->
             case ResponseParser.extract_value({:ok, result}) do
               {:ok, n} when is_integer(n) ->
                 {:ok, List.duplicate(%Element{parent: parent, driver: session.driver}, n)}
+
               _ ->
                 {:ok, []}
             end
+
           _ ->
             {:ok, []}
         end
@@ -1344,5 +1376,4 @@ defmodule Wallabidi.CDPClient do
       returnByValue: true
     })
   end
-
 end

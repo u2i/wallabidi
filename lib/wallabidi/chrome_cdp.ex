@@ -286,7 +286,8 @@ defmodule Wallabidi.ChromeCDP do
   def page_title(session), do: delegate(:page_title, session)
 
   @impl true
-  def execute_script(session, script, args), do: delegate(:execute_script, session, [script, args])
+  def execute_script(session, script, args),
+    do: delegate(:execute_script, session, [script, args])
 
   @impl true
   def execute_script_async(session, script, args),
@@ -423,7 +424,8 @@ defmodule Wallabidi.ChromeCDP do
     result =
       CDPClient.send_cdp_command(session, "Runtime.callFunctionOn", %{
         objectId: element.bidi_shared_id,
-        functionDeclaration: "function() { var r = this.getBoundingClientRect(); return JSON.stringify([Math.round(r.width), Math.round(r.height)]); }",
+        functionDeclaration:
+          "function() { var r = this.getBoundingClientRect(); return JSON.stringify([Math.round(r.width), Math.round(r.height)]); }",
         returnByValue: true
       })
 
@@ -439,7 +441,8 @@ defmodule Wallabidi.ChromeCDP do
     result =
       CDPClient.send_cdp_command(session, "Runtime.callFunctionOn", %{
         objectId: element.bidi_shared_id,
-        functionDeclaration: "function() { var r = this.getBoundingClientRect(); return JSON.stringify([Math.round(r.x), Math.round(r.y)]); }",
+        functionDeclaration:
+          "function() { var r = this.getBoundingClientRect(); return JSON.stringify([Math.round(r.x), Math.round(r.y)]); }",
         returnByValue: true
       })
 
@@ -685,7 +688,8 @@ defmodule Wallabidi.ChromeCDP do
 
     case CDPClient.send_cdp_command(session, "Runtime.callFunctionOn", %{
            objectId: object_id,
-           functionDeclaration: "function() { var r = this.getBoundingClientRect(); return JSON.stringify({x: r.x, y: r.y}); }",
+           functionDeclaration:
+             "function() { var r = this.getBoundingClientRect(); return JSON.stringify({x: r.x, y: r.y}); }",
            returnByValue: true
          }) do
       {:ok, %{"result" => %{"value" => json}}} ->
@@ -702,7 +706,8 @@ defmodule Wallabidi.ChromeCDP do
 
     case CDPClient.send_cdp_command(session, "Runtime.callFunctionOn", %{
            objectId: object_id,
-           functionDeclaration: "function() { var r = this.getBoundingClientRect(); return JSON.stringify({x: r.x + r.width/2, y: r.y + r.height/2}); }",
+           functionDeclaration:
+             "function() { var r = this.getBoundingClientRect(); return JSON.stringify({x: r.x + r.width/2, y: r.y + r.height/2}); }",
            returnByValue: true
          }) do
       {:ok, %{"result" => %{"value" => json}}} ->

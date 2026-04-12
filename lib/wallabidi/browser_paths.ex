@@ -56,18 +56,28 @@ defmodule Wallabidi.BrowserPaths do
   @doc "Returns the local Chrome binary path or raises."
   def chrome_path! do
     case chrome() do
-      {:path, path} -> path
-      {:url, _} -> raise "WALLABIDI_CHROME_URL is set — use chrome_url/0 instead of chrome_path!/0"
-      :error -> raise "Chrome not found. Run `mix wallabidi.install` or set WALLABIDI_CHROME_PATH."
+      {:path, path} ->
+        path
+
+      {:url, _} ->
+        raise "WALLABIDI_CHROME_URL is set — use chrome_url/0 instead of chrome_path!/0"
+
+      :error ->
+        raise "Chrome not found. Run `mix wallabidi.install` or set WALLABIDI_CHROME_PATH."
     end
   end
 
   @doc "Returns the local chromedriver binary path or raises."
   def chromedriver_path! do
     case chromedriver() do
-      {:path, path} -> path
-      {:url, _} -> raise "WALLABIDI_CHROMEDRIVER_URL is set — use chromedriver_url/0 instead"
-      :error -> raise "Chromedriver not found. Run `mix wallabidi.install` or set WALLABIDI_CHROMEDRIVER_PATH."
+      {:path, path} ->
+        path
+
+      {:url, _} ->
+        raise "WALLABIDI_CHROMEDRIVER_URL is set — use chromedriver_url/0 instead"
+
+      :error ->
+        raise "Chromedriver not found. Run `mix wallabidi.install` or set WALLABIDI_CHROMEDRIVER_PATH."
     end
   end
 

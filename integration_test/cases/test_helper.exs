@@ -50,10 +50,17 @@ excludes = [pending: true]
 
 excludes =
   case driver do
-    :live_view -> excludes ++ [browser: true, headless: true, cdp_only: true]
-    :lightpanda -> excludes ++ [browser: true, lightpanda_ni: true, live_view_only: true, cdp_only: true]
-    :chrome -> excludes ++ [live_view_only: true, cdp_only: true]
-    _ -> excludes ++ [live_view_only: true]
+    :live_view ->
+      excludes ++ [browser: true, headless: true, cdp_only: true]
+
+    :lightpanda ->
+      excludes ++ [browser: true, lightpanda_ni: true, live_view_only: true, cdp_only: true]
+
+    :chrome ->
+      excludes ++ [live_view_only: true, cdp_only: true]
+
+    _ ->
+      excludes ++ [live_view_only: true]
   end
 
 ExUnit.configure(exclude: excludes)

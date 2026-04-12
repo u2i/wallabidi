@@ -119,7 +119,11 @@ defmodule Wallabidi.BiDi.WebSocketClient do
     {:noreply, state}
   end
 
-  def handle_call({:send_command_flat, method, params, session_id}, from, %{websocket: nil} = state) do
+  def handle_call(
+        {:send_command_flat, method, params, session_id},
+        from,
+        %{websocket: nil} = state
+      ) do
     queued = state.queued_commands ++ [{:flat, from, method, params, session_id}]
     {:noreply, %{state | queued_commands: queued}}
   end

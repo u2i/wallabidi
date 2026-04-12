@@ -290,8 +290,13 @@ defmodule Wallabidi.Chrome do
     {cmd, params} = Wallabidi.BiDi.Commands.add_preload_script(bootstrap_fn, channel_arg)
     {:ok, _} = WebSocketClient.send_command(bidi_pid, cmd, params)
 
-    {cmd, params} = Wallabidi.BiDi.Commands.call_function(
-      context_id, bootstrap_fn, channel_arg)
+    {cmd, params} =
+      Wallabidi.BiDi.Commands.call_function(
+        context_id,
+        bootstrap_fn,
+        channel_arg
+      )
+
     WebSocketClient.send_command(bidi_pid, cmd, params)
 
     %{session | bidi_pid: bidi_pid, browsing_context: context_id}

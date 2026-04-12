@@ -287,7 +287,10 @@ defimpl Inspect, for: Wallabidi.Element do
 
     suffix =
       if outer_html do
-        "\n" <> IO.ANSI.cyan() <> "outerHTML:" <> IO.ANSI.reset() <>
+        "\n" <>
+          IO.ANSI.cyan() <>
+          "outerHTML:" <>
+          IO.ANSI.reset() <>
           IO.ANSI.yellow() <> outer_html <> IO.ANSI.reset()
       else
         ""

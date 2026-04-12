@@ -80,16 +80,18 @@ defmodule Wallabidi.CDP.Ops do
   Build filters from a Wallaby Query struct.
   """
   def from_query(%__MODULE__{} = o, query) do
-    o = case Wallabidi.Query.visible?(query) do
-      true -> visible(o, true)
-      false -> visible(o, false)
-      _ -> o
-    end
+    o =
+      case Wallabidi.Query.visible?(query) do
+        true -> visible(o, true)
+        false -> visible(o, false)
+        _ -> o
+      end
 
-    o = case Wallabidi.Query.inner_text(query) do
-      nil -> o
-      t -> text(o, t)
-    end
+    o =
+      case Wallabidi.Query.inner_text(query) do
+        nil -> o
+        t -> text(o, t)
+      end
 
     case Wallabidi.Query.selected?(query) do
       true -> selected(o, true)

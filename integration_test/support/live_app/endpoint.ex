@@ -13,9 +13,11 @@ defmodule Wallabidi.Integration.LiveApp.Endpoint do
 
   # Suppress favicon 404 noise
   plug(:favicon)
+
   defp favicon(%{path_info: ["favicon.ico"]} = conn, _opts) do
     conn |> Plug.Conn.send_resp(204, "") |> Plug.Conn.halt()
   end
+
   defp favicon(conn, _opts), do: conn
 
   # Serve integration test static pages (forms.html, page_1.html, etc.)
@@ -24,8 +26,10 @@ defmodule Wallabidi.Integration.LiveApp.Endpoint do
 
   # Serve index.html for / (Plug.Static doesn't do directory indexes)
   plug(:maybe_index_html)
+
   defp maybe_index_html(%{path_info: [], method: "GET"} = conn, _opts) do
     path = Path.join("integration_test/support/pages", "index.html")
+
     if File.exists?(path) do
       conn
       |> Plug.Conn.put_resp_content_type("text/html")
@@ -35,6 +39,7 @@ defmodule Wallabidi.Integration.LiveApp.Endpoint do
       conn
     end
   end
+
   defp maybe_index_html(conn, _opts), do: conn
 
   plug(Plug.Parsers,

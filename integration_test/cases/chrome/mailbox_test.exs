@@ -85,9 +85,7 @@ defmodule Wallabidi.Integration.Chrome.LoadMailboxTest do
     methods = collect_bidi_methods([])
 
     if methods != [] do
-      IO.puts(
-        "  iteration #{iteration}: leftover events: #{Enum.join(methods, ", ")}"
-      )
+      IO.puts("  iteration #{iteration}: leftover events: #{Enum.join(methods, ", ")}")
     end
 
     length(methods)

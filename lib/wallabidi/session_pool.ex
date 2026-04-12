@@ -77,7 +77,12 @@ defmodule Wallabidi.SessionPool do
   def handle_call({:checkout, _opts}, from, state) do
     case state.available do
       [session | rest] ->
-        state = %{state | available: rest, checked_out: Map.put(state.checked_out, session.id, {session, from})}
+        state = %{
+          state
+          | available: rest,
+            checked_out: Map.put(state.checked_out, session.id, {session, from})
+        }
+
         monitor_caller(from)
         {:reply, {:ok, session}, state}
 
@@ -85,7 +90,12 @@ defmodule Wallabidi.SessionPool do
         # Create a new session lazily
         case state.driver.create_pooled_session(state.driver_opts) do
           {:ok, session} ->
-            state = %{state | created: state.created + 1, checked_out: Map.put(state.checked_out, session.id, {session, from})}
+            state = %{
+              state
+              | created: state.created + 1,
+                checked_out: Map.put(state.checked_out, session.id, {session, from})
+            }
+
             monitor_caller(from)
             {:reply, {:ok, session}, state}
 
@@ -114,7 +124,12 @@ defmodule Wallabidi.SessionPool do
     # Reply to any waiters with error
     drain_waiters(state.waiters)
 
-    {:reply, :ok, %__MODULE__{driver: state.driver, max_sessions: state.max_sessions, driver_opts: state.driver_opts}}
+    {:reply, :ok,
+     %__MODULE__{
+       driver: state.driver,
+       max_sessions: state.max_sessions,
+       driver_opts: state.driver_opts
+     }}
   end
 
   @impl true
@@ -162,7 +177,12 @@ defmodule Wallabidi.SessionPool do
   defp serve_or_park(session, state) do
     case :queue.out(state.waiters) do
       {{:value, waiter}, rest} ->
-        state = %{state | waiters: rest, checked_out: Map.put(state.checked_out, session.id, {session, waiter})}
+        state = %{
+          state
+          | waiters: rest,
+            checked_out: Map.put(state.checked_out, session.id, {session, waiter})
+        }
+
         monitor_caller(waiter)
         GenServer.reply(waiter, {:ok, session})
         {:noreply, state}

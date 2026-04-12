@@ -770,7 +770,8 @@ defmodule Wallabidi.Browser do
           if session.protocol == Wallabidi.Protocol.CDP do
             Wallabidi.CDPClient.execute_ops(parent, ops,
               timeout: max_wait_time(),
-              count: Query.count(validated))
+              count: Query.count(validated)
+            )
           else
             execute_ops_click_bidi(parent, session, ops, validated)
           end
@@ -784,6 +785,7 @@ defmodule Wallabidi.Browser do
             with_patch_await(parent, query, :click, fn ->
               find(parent, query, &Element.click/1)
             end)
+
             parent
         end
       else
@@ -820,15 +822,15 @@ defmodule Wallabidi.Browser do
     # callFunction doesn't bind `this` like CDP's callFunctionOn.
     {method, params} =
       if parent_id do
-        shared_id = case parent do
-          %Wallabidi.Element{bidi_shared_id: sid} -> sid
-          _ -> nil
-        end
+        shared_id =
+          case parent do
+            %Wallabidi.Element{bidi_shared_id: sid} -> sid
+            _ -> nil
+          end
 
         if shared_id do
           wrapper = "function(_el) { return (#{js}).call(_el); }"
-          Wallabidi.BiDi.Commands.call_function(context, wrapper,
-            [%{sharedId: shared_id}])
+          Wallabidi.BiDi.Commands.call_function(context, wrapper, [%{sharedId: shared_id}])
         else
           Wallabidi.BiDi.Commands.evaluate(context, js)
         end
@@ -1689,11 +1691,13 @@ defmodule Wallabidi.Browser do
           Wallabidi.CDPClient.execute_ops(parent, ops,
             timeout: max_wait_time(),
             count: Query.count(validated),
-            needs_elements: true)
+            needs_elements: true
+          )
         else
           find_elements_ops_bidi(parent, session, ops,
             timeout: max_wait_time(),
-            count: Query.count(validated))
+            count: Query.count(validated)
+          )
         end
 
       case result do
@@ -1734,15 +1738,18 @@ defmodule Wallabidi.Browser do
     context = session.browsing_context
 
     if scoped? do
-      shared_id = case parent do
-        %Wallabidi.Element{bidi_shared_id: sid} -> sid
-        _ -> nil
-      end
+      shared_id =
+        case parent do
+          %Wallabidi.Element{bidi_shared_id: sid} -> sid
+          _ -> nil
+        end
 
       if shared_id do
         wrapper = "function(_el) { return (function(){#{register_js}}).call(_el); }"
-        {method, params} = Wallabidi.BiDi.Commands.call_function(context, wrapper,
-          [%{sharedId: shared_id}])
+
+        {method, params} =
+          Wallabidi.BiDi.Commands.call_function(context, wrapper, [%{sharedId: shared_id}])
+
         Wallabidi.BiDi.WebSocketClient.cast_command(session.bidi_pid, method, params)
       else
         {method, params} = Wallabidi.BiDi.Commands.evaluate(context, register_js)
@@ -1777,7 +1784,10 @@ defmodule Wallabidi.Browser do
   # After push resolves, grab the matched elements from window.__w.queries
   defp grab_elements_bidi(session, parent, query_id, _found_count) do
     id_js = Jason.encode!(query_id)
-    grab_js = "window.__w && window.__w.queries[#{id_js}] && window.__w.queries[#{id_js}].elements"
+
+    grab_js =
+      "window.__w && window.__w.queries[#{id_js}] && window.__w.queries[#{id_js}].elements"
+
     context = session.browsing_context
     {method, params} = Wallabidi.BiDi.Commands.evaluate(context, grab_js)
 
@@ -1795,12 +1805,19 @@ defmodule Wallabidi.Browser do
               Enum.flat_map(items, fn
                 {:node, shared_id, _} ->
                   Process.put({:wallabidi_element_shared_id, shared_id}, shared_id)
-                  [%Wallabidi.Element{
-                    id: shared_id, bidi_shared_id: shared_id,
-                    parent: parent, driver: session.driver,
-                    url: session.session_url
-                  }]
-                _ -> []
+
+                  [
+                    %Wallabidi.Element{
+                      id: shared_id,
+                      bidi_shared_id: shared_id,
+                      parent: parent,
+                      driver: session.driver,
+                      url: session.session_url
+                    }
+                  ]
+
+                _ ->
+                  []
               end)
 
             {:ok, elements}
@@ -1821,7 +1838,7 @@ defmodule Wallabidi.Browser do
     # Run ops inline — no dependency on W.queries
     check_js =
       "(function(){var W=window.__w;if(!W)return 0;" <>
-      "var r=W.exec(#{ops_json},null);return r.els.length;})()"
+        "var r=W.exec(#{ops_json},null);return r.els.length;})()"
 
     context = session.browsing_context
     {method, params} = Wallabidi.BiDi.Commands.evaluate(context, check_js)
@@ -1928,7 +1945,6 @@ defmodule Wallabidi.Browser do
   defp get_session(%Session{} = s), do: s
   defp get_session(%Element{parent: p}), do: get_session(p)
   defp get_session(_), do: nil
-
 
   defp in_frame?(%Session{} = session) do
     Process.get({:cdp_frame_stack, session.id}, []) != [] or

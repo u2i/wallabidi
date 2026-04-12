@@ -69,10 +69,11 @@ defmodule Wallabidi.BiDi.Commands do
   # Preload script commands
 
   def add_preload_script(function_declaration, arguments \\ []) do
-    {"script.addPreloadScript", %{
-      functionDeclaration: function_declaration,
-      arguments: arguments
-    }}
+    {"script.addPreloadScript",
+     %{
+       functionDeclaration: function_declaration,
+       arguments: arguments
+     }}
   end
 
   def remove_preload_script(script_id) do

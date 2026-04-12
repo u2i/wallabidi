@@ -19,7 +19,9 @@ defmodule Wallabidi.Integration.Chrome.TracePushTest do
     session = visit(session, "nesting.html")
 
     ops = Ops.new() |> Ops.query(:css, ".users") |> Ops.visible(true)
-    {:ok, elements} = Wallabidi.CDPClient.find_elements_ops(session, ops, timeout: 2_000, needs_elements: true)
+
+    {:ok, elements} =
+      Wallabidi.CDPClient.find_elements_ops(session, ops, timeout: 2_000, needs_elements: true)
 
     IO.puts("  found #{length(elements)} .users elements")
     assert length(elements) > 0
@@ -30,7 +32,9 @@ defmodule Wallabidi.Integration.Chrome.TracePushTest do
     session = visit(session, "page_1.html")
 
     ops = Ops.new() |> Ops.query(:css, "checkbox:foo") |> Ops.visible(true)
-    result = Wallabidi.CDPClient.find_elements_ops(session, ops, timeout: 2_000, needs_elements: false)
+
+    result =
+      Wallabidi.CDPClient.find_elements_ops(session, ops, timeout: 2_000, needs_elements: false)
 
     IO.puts("  invalid selector result: #{inspect(result)}")
     assert match?({:error, :invalid_selector}, result)
@@ -41,7 +45,13 @@ defmodule Wallabidi.Integration.Chrome.TracePushTest do
     session = visit(session, "stale_nodes.html")
 
     ops = Ops.new() |> Ops.query(:css, ".stale-node") |> Ops.visible(true) |> Ops.text("Stale")
-    {:ok, elements} = Wallabidi.CDPClient.find_elements_ops(session, ops, timeout: 5_000, count: 1, needs_elements: true)
+
+    {:ok, elements} =
+      Wallabidi.CDPClient.find_elements_ops(session, ops,
+        timeout: 5_000,
+        count: 1,
+        needs_elements: true
+      )
 
     IO.puts("  found #{length(elements)} elements (expected 1)")
     assert length(elements) == 1

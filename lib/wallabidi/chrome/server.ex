@@ -143,7 +143,9 @@ defmodule Wallabidi.Chrome.Server do
   end
 
   defp chrome_args(opts) do
-    tmp_dir = System.tmp_dir!() |> Path.join("wallabidi_chrome_#{System.unique_integer([:positive])}")
+    tmp_dir =
+      System.tmp_dir!() |> Path.join("wallabidi_chrome_#{System.unique_integer([:positive])}")
+
     File.mkdir_p!(tmp_dir)
 
     base_args = [
