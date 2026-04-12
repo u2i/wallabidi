@@ -178,6 +178,56 @@ $ mix test  # Just works. Docker container starts and stops automatically.
 
 The container (`erseco/alpine-chromedriver`) is multi-arch (ARM64 + AMD64) and is cleaned up when your test suite finishes. The image is ~750MB (Chromium is large — but this is half the size of the Selenium Grid image). URLs are automatically rewritten so Chrome in the container can reach your local test server.
 
+### CI (GitHub Actions)
+
+```yaml
+steps:
+- uses: actions/checkout@v6
+- uses: erlef/setup-beam@v1
+  with:
+    otp-version: 28.x
+    elixir-version: 1.19.x
+- uses: actions/setup-node@v4
+  with:
+    node-version: 20
+
+- run: mix deps.get
+- run: mix wallabidi.install   # downloads Chrome + chromedriver
+- run: mix test
+```
+
+`mix wallabidi.install` uses `npx @puppeteer/browsers install` to download
+matched Chrome + chromedriver binaries to `.browsers/`. Cache this directory
+for faster subsequent runs:
+
+```yaml
+- uses: actions/cache@v5
+  with:
+    path: .browsers
+    key: ${{ runner.os }}-browsers-${{ hashFiles('.browsers/PATHS') }}
+    restore-keys: ${{ runner.os }}-browsers-
+```
+
+#### Environment variable overrides
+
+For Docker-based CI or remote browsers:
+
+| Variable | Purpose | Example |
+|----------|---------|---------|
+| `WALLABIDI_CHROME_URL` | Connect to remote Chrome (CDP) | `ws://chrome:9222/devtools/browser/...` |
+| `WALLABIDI_CHROMEDRIVER_URL` | Connect to remote chromedriver (BiDi) | `http://chromedriver:9515/` |
+| `WALLABIDI_CHROME_PATH` | Local Chrome binary override | `/usr/bin/google-chrome` |
+| `WALLABIDI_CHROMEDRIVER_PATH` | Local chromedriver override | `/usr/bin/chromedriver` |
+
+If you have Chrome pre-installed on the runner (e.g. GitHub Actions' built-in
+Chrome), set `WALLABIDI_CHROME_PATH` and skip `mix wallabidi.install`:
+
+```yaml
+- run: mix test
+  env:
+    WALLABIDI_CHROME_PATH: /usr/bin/google-chrome-stable
+```
+
 ### Phoenix
 
 ```elixir
