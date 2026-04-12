@@ -275,34 +275,25 @@ defmodule Wallabidi.Element do
 end
 
 defimpl Inspect, for: Wallabidi.Element do
-  import Inspect.Algebra
-
   def inspect(element, opts) do
-    additional_output =
+    base = Inspect.Any.inspect(element, opts)
+
+    suffix =
       try do
         outer_html = Wallabidi.Element.attr(element, "outerHTML")
 
-        [
-          "\n\n",
-          IO.ANSI.cyan() <> "outerHTML:\n\n" <> IO.ANSI.reset(),
+        IO.ANSI.cyan() <> "outerHTML:" <> IO.ANSI.reset() <>
           IO.ANSI.yellow() <> outer_html <> IO.ANSI.reset()
-        ]
       rescue
-        _ -> []
+        _ -> nil
       catch
-        _, _ -> []
+        _, _ -> nil
       end
 
-    element
-    |> Inspect.Any.inspect(opts)
-    |> maybe_concat(additional_output)
-  end
-
-  defp maybe_concat(inspect_result, []), do: inspect_result
-
-  defp maybe_concat(inspect_result, output) do
-    Enum.reduce(output, inspect_result, fn str, acc ->
-      concat(acc, str)
-    end)
+    if suffix do
+      Inspect.Algebra.concat([base, Inspect.Algebra.line(), suffix])
+    else
+      base
+    end
   end
 end
