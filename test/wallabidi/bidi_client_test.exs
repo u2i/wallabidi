@@ -133,6 +133,7 @@ defmodule Wallabidi.BiDiClientTest do
   describe "current_path/1 derivation" do
     # current_path derives from current_url, test the URL parsing logic
     test "module exports current_path/1" do
+      Code.ensure_loaded!(BiDiClient)
       assert function_exported?(BiDiClient, :current_path, 1)
     end
   end
