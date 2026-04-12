@@ -1336,7 +1336,9 @@ defmodule Wallabidi.CDPClient do
 
             {:ok, elements}
           else
-            _ ->
+            grab_error ->
+              require Logger
+              Logger.warning("[wallabidi] grab_elements failed: #{inspect(grab_error, limit: 3)}")
               cleanup_query(session, query_id)
               {:ok, List.duplicate(%Element{parent: parent, driver: session.driver}, found_count)}
           end
