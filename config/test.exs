@@ -6,23 +6,16 @@ config :wallabidi,
   tmp_dir_prefix: "wallabidi_test",
   otp_app: :wallabidi
 
+# Chrome/chromedriver discovery handled by Wallabidi.BrowserPaths.
+# Override with env vars for Docker/CI:
+#   WALLABIDI_CHROME_URL=ws://...        (remote CDP connection)
+#   WALLABIDI_CHROMEDRIVER_URL=http://... (remote chromedriver)
+#   WALLABIDI_CHROME_PATH=/path/to/chrome
+#   WALLABIDI_CHROMEDRIVER_PATH=/path/to/chromedriver
+#
+# For legacy compat, WALLABIDI_CHROMEDRIVER_REMOTE_URL still works:
 if remote_url = System.get_env("WALLABIDI_CHROMEDRIVER_REMOTE_URL") do
-  config :wallabidi,
-    chromedriver: [
-      remote_url: remote_url
-    ]
-else
-  # Use local Chrome for Testing + chromedriver if available
-  chrome_binary = Path.wildcard("chrome/*/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing") |> List.first()
-  chromedriver = Path.wildcard("chromedriver/*/chromedriver-mac-arm64/chromedriver") |> List.first()
-
-  chromedriver_opts = []
-  chromedriver_opts = if chrome_binary, do: Keyword.put(chromedriver_opts, :binary, chrome_binary), else: chromedriver_opts
-  chromedriver_opts = if chromedriver, do: Keyword.put(chromedriver_opts, :path, chromedriver), else: chromedriver_opts
-
-  if chromedriver_opts != [] do
-    config :wallabidi, chromedriver: chromedriver_opts
-  end
+  config :wallabidi, chromedriver: [remote_url: remote_url]
 end
 
 # Test app configuration

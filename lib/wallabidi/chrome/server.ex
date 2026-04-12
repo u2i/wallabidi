@@ -40,10 +40,7 @@ defmodule Wallabidi.Chrome.Server do
   def init(opts) do
     chrome_path =
       Keyword.get_lazy(opts, :chrome_path, fn ->
-        case Wallabidi.Chrome.find_chrome_executable() do
-          {:ok, path} -> path
-          {:error, err} -> raise err
-        end
+        Wallabidi.BrowserPaths.chrome_path!()
       end)
 
     args = chrome_args(opts)

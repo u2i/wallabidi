@@ -73,7 +73,7 @@ defmodule Wallabidi.ChromeCDP do
       true ->
         {:error,
          DependencyError.exception(
-           "Wallabidi can't find Chrome. Install Chrome or configure a remote_url."
+           "Chrome not found. Run `mix wallabidi.install` or set WALLABIDI_CHROME_URL."
          )}
     end
   end
@@ -761,11 +761,11 @@ defmodule Wallabidi.ChromeCDP do
   # --- Internal ---
 
   defp remote_url do
-    config(:remote_url)
+    Wallabidi.BrowserPaths.chrome_url() || config(:remote_url)
   end
 
   defp chrome_available? do
-    match?({:ok, _}, Wallabidi.Chrome.find_chrome_executable())
+    match?({:ok, _}, Wallabidi.BrowserPaths.chrome_path())
   end
 
   defp config(key, default \\ nil) do

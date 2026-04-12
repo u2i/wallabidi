@@ -139,8 +139,7 @@ defmodule Wallabidi.Chrome do
       true ->
         {:error,
          DependencyError.exception(
-           "Wallabidi can't find chromedriver and Docker is not available. " <>
-             "Install chromedriver, configure remote_url, or install Docker."
+           "Chromedriver not found. Run `mix wallabidi.install` or set WALLABIDI_CHROMEDRIVER_URL."
          )}
     end
   end
@@ -198,11 +197,12 @@ defmodule Wallabidi.Chrome do
   end
 
   defp remote_url do
-    Application.get_env(:wallabidi, :chromedriver, []) |> Keyword.get(:remote_url)
+    Wallabidi.BrowserPaths.chromedriver_url() ||
+      Application.get_env(:wallabidi, :chromedriver, []) |> Keyword.get(:remote_url)
   end
 
   defp local_chromedriver_available? do
-    match?({:ok, _}, find_chromedriver_executable())
+    match?({:ok, _}, Wallabidi.BrowserPaths.chromedriver_path())
   end
 
   defp chromedriver_base_url do
@@ -735,7 +735,7 @@ defmodule Wallabidi.Chrome do
       # Don't set local Chrome binary when using remote chromedriver
       chrome_options
     else
-      case find_chrome_executable() do
+      case Wallabidi.BrowserPaths.chrome_path() do
         {:ok, binary} -> Map.put(chrome_options, :binary, binary)
         _ -> chrome_options
       end
