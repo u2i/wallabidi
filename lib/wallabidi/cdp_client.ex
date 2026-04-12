@@ -1340,7 +1340,7 @@ defmodule Wallabidi.CDPClient do
 
             {:ok, elements}
           else
-            grab_error ->
+            _ ->
               cleanup_query(session, query_id)
               {:ok, List.duplicate(%Element{parent: parent, driver: session.driver}, found_count)}
           end
