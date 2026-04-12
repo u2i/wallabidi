@@ -1,40 +1,36 @@
-# Used for ignoring dialyzer errors
+# Dialyzer ignore patterns — each matches a real warning from `mix dialyzer`
 # See: https://github.com/jeremyjh/dialyxir#elixir-term-format
 [
-  # ExUnit/Mix not available in prod — guarded by try/rescue at runtime
-  ~r"Function Mix.env/0 does not exist.",
-  ~r"Function ExUnit",
+  # event_emitter.ex: ExUnit not available outside test
+  ~r"event_emitter.ex.*unknown_function",
+
+  # Mix.Task behaviour not in PLT
+  ~r"callback_info_missing",
+
+  # Mix.shell/Mix.raise not in PLT (mix task helpers)
+  ~r"Function Mix\.(shell|raise)",
 
   # GenServer state flow — dialyzer can't track that commands queue before WS
-  # handshake, and Mint.WebSocket.new succeeds in practice despite dialyzer's
-  # type narrowing from the preceding status/headers handling
-  ~r"websocket_client.ex.*(flush_queued_commands|pattern_match|can never match)",
-  # Same warning in Erlang type format on Elixir 1.19
-  ~r"ok.*_conn.*_websocket.*can never match",
+  # handshake completes
+  ~r"websocket_client.ex.*pattern_match",
+  ~r"websocket_client.ex.*unused_fun",
 
-  # LiveViewDriver narrows element types to {:lv_element, ...} which is correct
-  # but narrower than the Driver behaviour's general Element.t() spec
-  ~r"live_view_driver.ex.*callback_arg_type_mismatch",
-  ~r"live_view_driver.ex.*callback_type_mismatch",
+  # browser.ex: Query method narrowing through compile/validate
+  ~r"browser.ex.*pattern_match",
 
-  # browser.ex: Query method narrowing through compile/validate — false positive
-  ~r"browser.ex.*(pattern_match|can never match)",
-  # Same warning in Erlang type format on Elixir 1.19
-  ~r"method.*text.*can never match",
+  # CDP: await_patch returns :timeout via {:ok, false} path but dialyzer
+  # narrows eval_async return type
+  ~r"cdp_client.ex.*1051.*pattern_match",
 
-  # Mix.Task behaviour and Mix.shell/Mix.raise not in PLT
-  ~r"callback_info_missing",
-  ~r"Function Mix\.(shell|raise|env)",
-
-  # Protocol.subscribe called during session init before SessionProcess
-  # sets pid — dialyzer narrows the session struct type
+  # Protocol.subscribe called during session init before pid is set
   ~r"chrome\.ex:\d+:\d+:call",
   ~r"chrome_cdp\.ex:\d+:\d+:call",
 
-  # await_patch CAN return :timeout ({:ok, false} path) but dialyzer
-  # narrows the eval_async return type and thinks it's unreachable
-  ~r"cdp_client\.ex.*1051.*pattern_match",
+  # LiveViewDriver narrows element types to {:lv_element, ...}
+  ~r"live_view_driver.ex.*callback_arg_type_mismatch",
+  ~r"live_view_driver.ex.*callback_type_mismatch",
+  ~r"live_view_driver.ex.*guard_fail",
 
-  # first_attr returns string|nil but dialyzer narrows to string in some paths
-  ~r"(live_view_driver|native).ex.*(guard_fail|can never succeed)"
+  # native.ex: first_attr returns string|nil, dialyzer narrows to string
+  ~r"native.ex.*guard_fail"
 ]
