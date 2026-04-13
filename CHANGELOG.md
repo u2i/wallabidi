@@ -1,5 +1,13 @@
 # Changelog
 
+## Wallabidi 0.2.3 (2026-04-13)
+
+### Fixed
+
+- **scrollIntoView before click** — all click paths now scroll the
+  element into view before clicking, matching WebDriver/Selenium
+  behavior. Fixes flakes where off-screen elements received no-op clicks.
+
 ## Wallabidi 0.2.2 (2026-04-13)
 
 ### Fixed
