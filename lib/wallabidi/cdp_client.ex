@@ -428,6 +428,11 @@ defmodule Wallabidi.CDPClient do
     {method, params} =
       Commands.call_function_on_value(object_id, """
       function() {
+        // Scroll into view before clicking — mirrors WebDriver behavior.
+        // Without this, clicks on off-screen elements silently miss.
+        if (this.tagName !== 'OPTION') {
+          this.scrollIntoView({block: 'center', inline: 'nearest'});
+        }
         if (this.tagName === 'OPTION') {
           var select = this.closest('select');
           if (select && !select.multiple) {

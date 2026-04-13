@@ -229,7 +229,7 @@ defmodule Wallabidi.BiDiClient do
     {method, params} =
       Commands.call_function(
         context,
-        "(el) => { el.focus(); el.click(); }",
+        "(el) => { el.scrollIntoView({block: 'center', inline: 'nearest'}); el.focus(); el.click(); }",
         [element_arg(shared_id)]
       )
 

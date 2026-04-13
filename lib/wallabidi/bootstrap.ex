@@ -68,6 +68,9 @@ defmodule Wallabidi.Bootstrap do
     // --- Click handler ---
     W.clickEl = function(el) {
       if (!el) return;
+      if (el.tagName !== 'OPTION') {
+        el.scrollIntoView({block: 'center', inline: 'nearest'});
+      }
       if (el.tagName === 'OPTION') {
         var sel = el.closest('select');
         if (sel && !sel.multiple) {

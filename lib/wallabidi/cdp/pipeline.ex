@@ -296,6 +296,9 @@ defmodule Wallabidi.CDP.Pipeline do
   defp click_fn do
     """
     (function() {
+      if (_el.tagName !== 'OPTION') {
+        _el.scrollIntoView({block: 'center', inline: 'nearest'});
+      }
       if (_el.tagName === 'OPTION') {
         var select = _el.closest('select');
         if (select && !select.multiple) {
