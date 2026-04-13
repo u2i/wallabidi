@@ -429,12 +429,6 @@ defmodule Wallabidi.BiDiClient do
         const style = window.getComputedStyle(node);
         if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
         if (node.offsetWidth <= 0 && node.offsetHeight <= 0) return false;
-        // Elements explicitly positioned off-screen are not visible
-        const pos = style.position;
-        if (pos === 'absolute' || pos === 'fixed') {
-          const rect = node.getBoundingClientRect();
-          if (rect.right <= 0 || rect.bottom <= 0) return false;
-        }
         return true;
       }
       return isVisible(el);

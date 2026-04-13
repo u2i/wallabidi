@@ -62,7 +62,7 @@ defmodule Wallabidi.Bootstrap do
       if (st.display === 'none' || st.visibility === 'hidden') return false;
       var r = el.getBoundingClientRect();
       if (r.width === 0 && r.height === 0 && el.offsetParent === null && st.position !== 'fixed') return false;
-      return r.bottom >= 0 && r.right >= 0;
+      return true;
     };
 
     // --- Click handler ---

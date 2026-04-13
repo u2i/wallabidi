@@ -376,6 +376,7 @@ defmodule Wallabidi.Chrome do
   @doc false
   defdelegate dismiss_prompt(session, fun), to: BiDiClient
   @doc false
+  @doc false
   defdelegate parse_log(log), to: Wallabidi.Chrome.Logger
   @doc false
   defdelegate log(session), to: BiDiClient
@@ -671,7 +672,7 @@ defmodule Wallabidi.Chrome do
         {:ok, parse_version(stdout)}
 
       _ ->
-        case find_chrome_executable() do
+        case Wallabidi.BrowserPaths.chrome_path() do
           {:ok, exe} ->
             {stdout, 0} = System.cmd(exe, ["--version"])
             {:ok, parse_version(stdout)}
@@ -684,7 +685,7 @@ defmodule Wallabidi.Chrome do
 
   @doc false
   def get_chromedriver_version do
-    case find_chromedriver_executable() do
+    case Wallabidi.BrowserPaths.chromedriver_path() do
       {:ok, exe} ->
         {stdout, 0} = System.cmd(exe, ["--version"])
         {:ok, parse_version(stdout)}

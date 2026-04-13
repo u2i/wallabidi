@@ -133,4 +133,14 @@ defmodule Wallabidi.Integration.Browser.ClickTest do
              |> click(Query.button("Reset input"))
     end
   end
+
+  describe "click/2 off-screen elements" do
+    @tag :browser
+    test "scrolls element into view before clicking", %{session: session} do
+      session
+      |> visit("scroll_click.html")
+      |> click(Query.css("#below-fold"))
+      |> assert_has(Query.css("#result", text: "clicked"))
+    end
+  end
 end

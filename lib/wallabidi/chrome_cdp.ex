@@ -452,6 +452,7 @@ defmodule Wallabidi.ChromeCDP do
     end
   end
 
+  @doc false
   defdelegate parse_log(log), to: Wallabidi.Chrome.Logger
   def log(_session), do: {:ok, []}
 

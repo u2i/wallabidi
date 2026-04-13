@@ -18,10 +18,14 @@ defmodule Wallabidi.Integration.Browser.VisibleTest do
       |> refute
     end
 
-    test "handles elements that are not on the page", %{page: page} do
-      element = find(page, Query.css("#off-the-page", visible: false))
+    test "elements positioned off-screen are still visible", %{page: page} do
+      # Elements with position:absolute;top:-300px have non-zero dimensions
+      # and aren't display:none — they're "visible" per WebDriver spec,
+      # just not in the viewport. scrollIntoView handles scrolling at
+      # interaction time.
+      element = find(page, Query.css("#off-the-page"))
 
-      assert Element.visible?(element) == false
+      assert Element.visible?(element) == true
     end
   end
 

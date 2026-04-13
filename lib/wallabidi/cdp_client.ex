@@ -560,9 +560,6 @@ defmodule Wallabidi.CDPClient do
         if (rect.width === 0 && rect.height === 0 && this.offsetParent === null && style.position !== 'fixed') {
           return false;
         }
-        // Scrolled off the top or left of the viewport.
-        if (rect.bottom < 0) return false;
-        if (rect.right < 0) return false;
         return true;
       }
       """)

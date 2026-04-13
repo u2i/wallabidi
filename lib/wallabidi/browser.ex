@@ -1767,10 +1767,10 @@ defmodule Wallabidi.Browser do
         cleanup_bidi_query(session, query_id)
         {:error, :invalid_selector}
 
-      {:ok, found_count} when found_count > 0 ->
+      {:ok, found_count, _meta} when found_count > 0 ->
         grab_elements_bidi(session, parent, query_id, found_count)
 
-      {:ok, _} ->
+      {:ok, _, _} ->
         cleanup_bidi_query(session, query_id)
         {:ok, []}
 

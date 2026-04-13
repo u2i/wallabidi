@@ -286,8 +286,6 @@ defmodule Wallabidi.CDP.Pipeline do
       if (style.visibility === 'hidden') return false;
       var rect = el.getBoundingClientRect();
       if (rect.width === 0 && rect.height === 0 && el.offsetParent === null && style.position !== 'fixed') return false;
-      if (rect.bottom < 0) return false;
-      if (rect.right < 0) return false;
       return true;
     }
     """

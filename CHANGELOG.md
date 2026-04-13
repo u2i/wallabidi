@@ -1,5 +1,16 @@
 # Changelog
 
+## Wallabidi 0.2.4 (2026-04-13)
+
+### Fixed
+
+- **Visibility no longer rejects off-viewport elements** — removed
+  `rect.bottom < 0` / `rect.right < 0` checks from `displayed`.
+  Elements scrolled out of view are "visible" per WebDriver spec.
+  Combined with the `scrollIntoView` from 0.2.3, clicks now work
+  on elements anywhere in the page regardless of scroll position.
+- **`@doc false` on `parse_log` delegates** — suppresses ExDoc warnings.
+
 ## Wallabidi 0.2.3 (2026-04-13)
 
 ### Fixed
