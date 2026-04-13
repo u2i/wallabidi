@@ -511,8 +511,9 @@ defmodule Wallabidi.SessionProcess do
       {:ok, %{"id" => query_id, "error" => error}} when is_binary(error) ->
         resolve_find(state, query_id, {:error, :invalid_selector})
 
-      {:ok, %{"id" => query_id, "count" => count}} ->
-        resolve_find(state, query_id, {:ok, count})
+      {:ok, %{"id" => query_id, "count" => count} = msg} ->
+        meta = msg["meta"]
+        resolve_find(state, query_id, {:ok, count, meta})
 
       {:ok, %{"type" => "page_ready", "pageId" => page_id}} ->
         resolve_page_ready(state, page_id)

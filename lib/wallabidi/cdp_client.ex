@@ -1202,75 +1202,77 @@ defmodule Wallabidi.CDPClient do
     count = Keyword.get(opts, :count)
     timeout = Keyword.get(opts, :timeout, 5_000)
 
-    # Extract the query/filter portion of the ops to build a Pipeline
-    # for click_full (which captures return before the click fires).
-    {type, selector} = extract_query(ops)
+    # Step 1: Push-based wait for element (find-only ops, no click).
+    find_only_ops = %{
+      ops
+      | ops:
+          Enum.filter(ops.ops, fn
+            ["query" | _] -> true
+            ["visible" | _] -> true
+            ["text" | _] -> true
+            ["selected" | _] -> true
+            _ -> false
+          end)
+    }
 
-    pipeline =
-      Pipeline.new(parent)
-      |> Pipeline.query_all(type, selector)
+    find_result =
+      find_elements_ops(parent, find_only_ops,
+        timeout: timeout,
+        count: count,
+        needs_elements: false
+      )
 
-    # Apply filters from the ops
-    pipeline =
-      Enum.reduce(ops.ops, pipeline, fn
-        ["visible", true], p -> Pipeline.filter_visible(p)
-        ["visible", false], p -> Pipeline.filter_not_visible(p)
-        ["text", t], p -> Pipeline.filter_text(p, t)
-        ["selected", true], p -> Pipeline.filter_selected(p, true)
-        ["selected", false], p -> Pipeline.filter_selected(p, false)
-        _, p -> p
-      end)
+    element_found? =
+      case find_result do
+        {:ok, c, _meta} when is_integer(c) ->
+          is_nil(count) or c == count
 
-    pipeline = Pipeline.click_full(pipeline, :click)
+        {:ok, elements} when is_list(elements) ->
+          is_nil(count) or length(elements) == count
 
-    retry_find(
-      fn ->
-        case find_elements_pipeline(parent, pipeline) do
-          {:ok, elements, classification, prepared} ->
-            if count && length(elements) != count do
-              {:error, {:not_found, elements}}
-            else
-              {:ok, :clicked, %{classification: classification, prepared: prepared}}
-            end
+        _ ->
+          false
+      end
 
-          {:ok, elements} ->
-            if count && length(elements) != count do
-              {:error, {:not_found, elements}}
-            else
-              {:ok, :clicked, %{classification: "none", prepared: false}}
-            end
+    if element_found? do
+      # Step 2: Element present — click via Pipeline (1 eval).
+      {type, selector} = extract_query(ops)
 
-          error ->
-            error
-        end
-      end,
-      timeout
-    )
+      pipeline =
+        Pipeline.new(parent)
+        |> Pipeline.query_all(type, selector)
+
+      pipeline =
+        Enum.reduce(ops.ops, pipeline, fn
+          ["visible", true], p -> Pipeline.filter_visible(p)
+          ["visible", false], p -> Pipeline.filter_not_visible(p)
+          ["text", t], p -> Pipeline.filter_text(p, t)
+          ["selected", true], p -> Pipeline.filter_selected(p, true)
+          ["selected", false], p -> Pipeline.filter_selected(p, false)
+          _, p -> p
+        end)
+
+      pipeline = Pipeline.click_full(pipeline, :click)
+
+      case find_elements_pipeline(parent, pipeline) do
+        {:ok, _elements, classification, prepared} ->
+          {:ok, :clicked, %{classification: classification, prepared: prepared}}
+
+        {:ok, _elements} ->
+          {:ok, :clicked, %{classification: "none", prepared: false}}
+
+        error ->
+          error
+      end
+    else
+      {:error, {:not_found, []}}
+    end
   end
 
   defp extract_query(%Wallabidi.CDP.Ops{ops: ops}) do
     case Enum.find(ops, fn [cmd | _] -> cmd == "query" end) do
       ["query", type, selector] -> {String.to_existing_atom(type), selector}
       _ -> {:css, "*"}
-    end
-  end
-
-  defp retry_find(fun, timeout, start \\ nil) do
-    start = start || System.monotonic_time(:millisecond)
-
-    case fun.() do
-      {:ok, _, _} = result ->
-        result
-
-      {:error, :invalid_selector} = error ->
-        error
-
-      {:error, _} ->
-        if System.monotonic_time(:millisecond) - start > timeout do
-          {:error, {:not_found, []}}
-        else
-          retry_find(fun, timeout, start)
-        end
     end
   end
 
@@ -1315,38 +1317,47 @@ defmodule Wallabidi.CDPClient do
         cleanup_query(session, query_id)
         {:error, :invalid_selector}
 
-      {:ok, found_count} ->
-        if needs_elements and found_count > 0 do
-          grab_js = "window.__w.queries[#{id_js}].elements"
-          {method, params} = Commands.evaluate(grab_js, return_by_value: false)
-
-          with {:ok, result} <- send_cdp_session(session, method, params),
-               {:ok, array_id} <- ResponseParser.extract_object_id({:ok, result}),
-               {:ok, result} <- send_cdp_raw(session, Commands.get_properties(array_id)),
-               {:ok, ids} <- ResponseParser.extract_element_ids({:ok, result}) do
-            if array_id, do: cast_release(session, array_id)
+      {:ok, found_count, meta} ->
+        cond do
+          not needs_elements ->
+            # Click path: return count + meta for classification
             cleanup_query(session, query_id)
+            {:ok, found_count, meta}
 
-            elements =
-              Enum.map(ids, fn object_id ->
-                %Element{
-                  id: object_id,
-                  bidi_shared_id: object_id,
-                  parent: parent,
-                  driver: session.driver,
-                  url: session.session_url
-                }
-              end)
+          found_count > 0 ->
+            grab_js = "window.__w.queries[#{id_js}].elements"
+            {method, params} = Commands.evaluate(grab_js, return_by_value: false)
 
-            {:ok, elements}
-          else
-            _ ->
+            with {:ok, result} <- send_cdp_session(session, method, params),
+                 {:ok, array_id} <- ResponseParser.extract_object_id({:ok, result}),
+                 {:ok, result} <- send_cdp_raw(session, Commands.get_properties(array_id)),
+                 {:ok, ids} <- ResponseParser.extract_element_ids({:ok, result}) do
+              if array_id, do: cast_release(session, array_id)
               cleanup_query(session, query_id)
-              {:ok, List.duplicate(%Element{parent: parent, driver: session.driver}, found_count)}
-          end
-        else
-          cleanup_query(session, query_id)
-          {:ok, List.duplicate(%Element{parent: parent, driver: session.driver}, found_count)}
+
+              elements =
+                Enum.map(ids, fn object_id ->
+                  %Element{
+                    id: object_id,
+                    bidi_shared_id: object_id,
+                    parent: parent,
+                    driver: session.driver,
+                    url: session.session_url
+                  }
+                end)
+
+              {:ok, elements}
+            else
+              _ ->
+                cleanup_query(session, query_id)
+
+                {:ok,
+                 List.duplicate(%Element{parent: parent, driver: session.driver}, found_count)}
+            end
+
+          true ->
+            cleanup_query(session, query_id)
+            {:ok, List.duplicate(%Element{parent: parent, driver: session.driver}, found_count)}
         end
 
       {:timeout, _} ->
