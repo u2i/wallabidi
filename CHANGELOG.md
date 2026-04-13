@@ -1,5 +1,14 @@
 # Changelog
 
+## Wallabidi 0.2.2 (2026-04-13)
+
+### Fixed
+
+- **CDP click no longer polls** — replaced the tight `retry_find` loop
+  (no backoff, ~2ms per eval, hundreds of round-trips) with push-based
+  find + single click eval. Eliminates shared WebSocket saturation in
+  multi-session tests.
+
 ## Wallabidi 0.2.1 (2026-04-13)
 
 ### Added
