@@ -6,7 +6,7 @@ defmodule Wallabidi.BrowserPaths do
   ## Resolution order
 
   ### Chrome (CDP driver)
-  1. `WALLABIDI_CHROME_URL` — connect to remote Chrome DevTools (`ws://...`)
+  1. `WALLABIDI_CHROME_URL` — connect to remote Chrome (`chrome:9222` or full `ws://` URL)
   2. `WALLABIDI_CHROME_PATH` — local Chrome binary to launch
   3. `.browsers/PATHS` file (written by `mix wallabidi.install`)
   4. System PATH
@@ -23,7 +23,7 @@ defmodule Wallabidi.BrowserPaths do
 
   Or for Docker/CI:
 
-      WALLABIDI_CHROME_URL=ws://chrome:9222/devtools/browser/... mix test.chrome
+      WALLABIDI_CHROME_URL=chrome:9222 mix test.chrome
       WALLABIDI_CHROMEDRIVER_URL=http://chromedriver:9515/ mix test.chrome.bidi
   """
 

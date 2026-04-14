@@ -124,14 +124,21 @@ end
 
 Wallabidi needs ChromeDriver + Chrome to run tests. There are three modes, tried in this order:
 
-#### 1. Remote (explicit `remote_url`)
+#### 1. Remote Chrome (Docker / CI)
 
-When Chrome runs as a service in your Docker Compose stack (e.g. in a devcontainer), point Wallabidi at it:
+When Chrome runs as a service in your Docker Compose stack, just tell Wallabidi where it is:
 
-```elixir
-# config/test.exs
-config :wallabidi,
-  chromedriver: [remote_url: "http://chrome:9515/"]
+```bash
+# .env or CI config — just the host:port, wallabidi handles the rest
+WALLABIDI_CHROME_URL=chrome:9222
+```
+
+Wallabidi auto-discovers the WebSocket URL via `/json/version`. Full `ws://` URLs also work for backward compat.
+
+For chromedriver (BiDi driver):
+
+```bash
+WALLABIDI_CHROMEDRIVER_URL=http://chrome:9515/
 ```
 
 Example `compose.yml`:
@@ -214,7 +221,7 @@ For Docker-based CI or remote browsers:
 
 | Variable | Purpose | Example |
 |----------|---------|---------|
-| `WALLABIDI_CHROME_URL` | Connect to remote Chrome (CDP) | `ws://chrome:9222/devtools/browser/...` |
+| `WALLABIDI_CHROME_URL` | Connect to remote Chrome (CDP) | `chrome:9222` |
 | `WALLABIDI_CHROMEDRIVER_URL` | Connect to remote chromedriver (BiDi) | `http://chromedriver:9515/` |
 | `WALLABIDI_CHROME_PATH` | Local Chrome binary override | `/usr/bin/google-chrome` |
 | `WALLABIDI_CHROMEDRIVER_PATH` | Local chromedriver override | `/usr/bin/chromedriver` |
@@ -599,7 +606,7 @@ config :wallabidi,
     headless: true,                # run Chrome headless
     path: "chromedriver",          # chromedriver binary path
     binary: "/path/to/chrome",     # Chrome binary path
-    remote_url: "http://chrome:9515/"  # for Docker/remote Chrome
+    remote_url: "http://chrome:9515/"  # for Docker/remote chromedriver (BiDi)
   ]
 ```
 

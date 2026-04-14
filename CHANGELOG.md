@@ -1,5 +1,14 @@
 # Changelog
 
+## Wallabidi 0.2.5 (2026-04-14)
+
+### Added
+
+- **Auto-discover Chrome WebSocket URL** — `WALLABIDI_CHROME_URL=chrome:9222`
+  now works. Wallabidi calls `/json/version`, parses `webSocketDebuggerUrl`,
+  and rewrites the host automatically. No more manual `ws://` URL discovery.
+  Full `ws://` URLs still work for backward compat.
+
 ## Wallabidi 0.2.4 (2026-04-13)
 
 ### Fixed
