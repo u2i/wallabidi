@@ -131,9 +131,12 @@ defmodule Wallabidi.ChromeCDP.SharedConnection do
     end
   end
 
-  defp host_header(endpoint) do
-    # Chrome requires the Host header to match. Use the endpoint as-is.
-    endpoint
+  defp host_header(_endpoint) do
+    # Chrome's DevTools HTTP handler rejects requests unless the Host
+    # header is "localhost", an IP address, or "chromium.org". When
+    # connecting via a Docker hostname like "chrome:9222", we must
+    # send Host: localhost to pass the allowlist check.
+    "localhost"
   end
 
   defp rewrite_ws_host(ws_url, endpoint) do
