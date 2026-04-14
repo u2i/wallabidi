@@ -1,5 +1,12 @@
 # Changelog
 
+## Wallabidi 0.2.6 (2026-04-14)
+
+### Fixed
+
+- **Host header fix for Chrome DevTools discovery** — send `Host: localhost`
+  instead of the Docker hostname. Chrome rejects non-localhost Host headers.
+
 ## Wallabidi 0.2.5 (2026-04-14)
 
 ### Added
