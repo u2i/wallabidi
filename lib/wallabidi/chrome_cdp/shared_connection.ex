@@ -34,17 +34,116 @@ defmodule Wallabidi.ChromeCDP.SharedConnection do
 
   defp connect do
     ws_url =
-      if url = remote_url() do
-        url
-      else
-        Wallabidi.Chrome.Server.ws_url(Wallabidi.ChromeCDP.Server)
+      case Wallabidi.BrowserPaths.chrome_url() || legacy_remote_url() do
+        nil ->
+          # Local Chrome — get ws_url from the server we launched
+          Wallabidi.Chrome.Server.ws_url(Wallabidi.ChromeCDP.Server)
+
+        "ws://" <> _ = url ->
+          # Full WebSocket URL — use directly
+          url
+
+        "wss://" <> _ = url ->
+          url
+
+        endpoint ->
+          # DevTools endpoint (host:port) — discover the ws URL
+          discover_ws_url(endpoint)
       end
 
     {:ok, pid} = WebSocketClient.start_link(ws_url)
     {pid, pid}
   end
 
-  defp remote_url do
+  # Discover the browser WebSocket URL from a Chrome DevTools endpoint.
+  # Calls GET /json/version with a Host header workaround (Chrome rejects
+  # requests where the Host doesn't match its expectation).
+  defp discover_ws_url(endpoint) do
+    endpoint = String.trim_trailing(endpoint, "/")
+
+    {:ok, conn} = Mint.HTTP.connect(:http, host(endpoint), port(endpoint))
+
+    {:ok, conn, ref} =
+      Mint.HTTP.request(
+        conn,
+        "GET",
+        "/json/version",
+        [
+          {"host", host_header(endpoint)}
+        ],
+        nil
+      )
+
+    {body, conn} = receive_body!(conn, ref)
+    _ = Mint.HTTP.close(conn)
+
+    case Jason.decode(body) do
+      {:ok, %{"webSocketDebuggerUrl" => ws_url}} ->
+        # Rewrite the host so it's reachable from our perspective
+        # (Chrome reports localhost from its container's perspective)
+        rewrite_ws_host(ws_url, endpoint)
+
+      {:ok, other} ->
+        raise "Chrome /json/version did not include webSocketDebuggerUrl: #{inspect(other)}"
+
+      {:error, _} ->
+        raise "Chrome /json/version returned invalid JSON: #{body}"
+    end
+  end
+
+  defp receive_body!(conn, ref, acc \\ "") do
+    receive do
+      message ->
+        case Mint.HTTP.stream(conn, message) do
+          {:ok, conn, responses} ->
+            {conn, body} =
+              Enum.reduce(responses, {conn, acc}, fn
+                {:data, ^ref, data}, {c, a} -> {c, a <> data}
+                {:done, ^ref}, {c, a} -> {c, a}
+                _, {c, a} -> {c, a}
+              end)
+
+            if Enum.any?(responses, &match?({:done, ^ref}, &1)) do
+              {body, conn}
+            else
+              receive_body!(conn, ref, body)
+            end
+
+          {:error, _conn, reason, _} ->
+            raise "Chrome /json/version request failed: #{inspect(reason)}"
+        end
+    after
+      5_000 -> raise "Chrome /json/version timed out"
+    end
+  end
+
+  defp host(endpoint) do
+    case String.split(endpoint, ":") do
+      [h | _] -> h
+      _ -> endpoint
+    end
+  end
+
+  defp port(endpoint) do
+    case String.split(endpoint, ":") do
+      [_, p] -> String.to_integer(p)
+      _ -> 9222
+    end
+  end
+
+  defp host_header(endpoint) do
+    # Chrome requires the Host header to match. Use the endpoint as-is.
+    endpoint
+  end
+
+  defp rewrite_ws_host(ws_url, endpoint) do
+    uri = URI.parse(ws_url)
+    target_host = host(endpoint)
+    target_port = port(endpoint)
+    URI.to_string(%{uri | host: target_host, port: target_port})
+  end
+
+  defp legacy_remote_url do
     Application.get_env(:wallabidi, :chrome_cdp, []) |> Keyword.get(:remote_url)
   end
 end
