@@ -109,6 +109,12 @@ defmodule Wallabidi.ChromeCDP.SharedConnection do
               receive_body!(conn, ref, body)
             end
 
+          :unknown ->
+            # Message wasn't for this Mint connection — skip and re-receive.
+            # The Agent's mailbox may contain unrelated messages from earlier
+            # test sessions.
+            receive_body!(conn, ref, acc)
+
           {:error, _conn, reason, _} ->
             raise "Chrome /json/version request failed: #{inspect(reason)}"
         end

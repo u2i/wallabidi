@@ -1,5 +1,13 @@
 # Changelog
 
+## Wallabidi 0.2.7 (2026-04-15)
+
+### Fixed
+
+- **Handle `:unknown` from `Mint.HTTP.stream`** in DevTools discovery.
+  The SharedConnection Agent's mailbox can contain unrelated messages
+  from earlier test sessions. Now skips non-Mint messages and retries.
+
 ## Wallabidi 0.2.6 (2026-04-14)
 
 ### Fixed
