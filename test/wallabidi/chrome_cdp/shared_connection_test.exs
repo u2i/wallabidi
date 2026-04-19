@@ -59,6 +59,36 @@ defmodule Wallabidi.ChromeCDP.SharedConnectionTest do
     end
   end
 
+  describe "discover_ws_url/1 — Host header workaround" do
+    # Chrome's DevTools HTTP handler enforces an allowlist on the Host header
+    # (localhost, IP, or chromium.org) as DNS-rebinding protection. When the
+    # caller reaches Chrome via a container hostname like "chrome:9222", the
+    # client MUST send Host: localhost or the request is rejected with a 500.
+    # Regression guard for 0.2.5/0.2.6 where the header was sent incorrectly.
+    #
+    # We can't use the test's mailbox to capture the headers: discover_ws_url
+    # runs a `receive do message -> Mint.HTTP.stream(conn, message) end` loop
+    # that drains any message in the caller's mailbox. The fake server writes
+    # headers to a named :ets table instead.
+
+    test "sends Host: localhost even when endpoint uses a non-localhost hostname" do
+      table = :ets.new(:host_header_capture, [:set, :public])
+      {:ok, port} = start_host_asserting_server(table)
+
+      url = SharedConnection.discover_ws_url("127.0.0.1:#{port}")
+
+      assert url == "ws://127.0.0.1:#{port}/devtools/browser/fake-uuid-123"
+
+      [{:headers, headers}] = :ets.lookup(table, :headers)
+
+      host_line =
+        Enum.find(headers, fn line -> String.starts_with?(String.downcase(line), "host:") end)
+
+      assert host_line, "no Host header in request: #{inspect(headers)}"
+      assert String.downcase(host_line) =~ "localhost"
+    end
+  end
+
   # --- Fake DevTools server ---
 
   # Minimal TCP server that serves a single canned /json/version response
@@ -110,5 +140,69 @@ defmodule Wallabidi.ChromeCDP.SharedConnectionTest do
 
     :gen_tcp.send(client, response)
     :gen_tcp.close(client)
+  end
+
+  # A fake server that captures the incoming request's header lines into
+  # an ETS table. Can't use `send(test_pid, ...)` because discover_ws_url
+  # runs a receive loop that drains the test's mailbox.
+  defp start_host_asserting_server(table) do
+    {:ok, listen} = :gen_tcp.listen(0, [:binary, packet: :raw, active: false])
+    {:ok, port} = :inet.port(listen)
+
+    spawn_link(fn -> host_accept_loop(listen, table) end)
+
+    {:ok, port}
+  end
+
+  defp host_accept_loop(listen, table) do
+    case :gen_tcp.accept(listen) do
+      {:ok, client} ->
+        spawn_link(fn -> handle_host_asserting_request(client, table) end)
+        host_accept_loop(listen, table)
+
+      {:error, :closed} ->
+        :ok
+    end
+  end
+
+  defp handle_host_asserting_request(client, table) do
+    raw = recv_until_headers(client, "")
+    [request_line_block | _] = String.split(raw, "\r\n\r\n", parts: 2)
+    headers = String.split(request_line_block, "\r\n")
+    :ets.insert(table, {:headers, headers})
+
+    body =
+      Jason.encode!(%{
+        "Browser" => "HeadlessChrome/fake",
+        "Protocol-Version" => "1.3",
+        "webSocketDebuggerUrl" => "ws://localhost/devtools/browser/fake-uuid-123"
+      })
+
+    response =
+      [
+        "HTTP/1.1 200 OK\r\n",
+        "Content-Type: application/json\r\n",
+        "Content-Length: #{byte_size(body)}\r\n",
+        "Connection: close\r\n",
+        "\r\n",
+        body
+      ]
+      |> IO.iodata_to_binary()
+
+    :gen_tcp.send(client, response)
+    :gen_tcp.close(client)
+  end
+
+  # Mint may send headers in small chunks. Read until we see the blank line
+  # terminating the header block, then return the accumulated bytes.
+  defp recv_until_headers(client, acc) do
+    if String.contains?(acc, "\r\n\r\n") do
+      acc
+    else
+      case :gen_tcp.recv(client, 0, 1_000) do
+        {:ok, chunk} -> recv_until_headers(client, acc <> chunk)
+        {:error, _} -> acc
+      end
+    end
   end
 end

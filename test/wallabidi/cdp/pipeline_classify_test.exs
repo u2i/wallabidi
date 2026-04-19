@@ -114,6 +114,70 @@ defmodule Wallabidi.CDP.PipelineClassifyTest do
     end
   end
 
+  describe "click classification — anchors and data-phx-link" do
+    @tag :classifier
+    test "anchor with data-phx-link=redirect classifies as navigate" do
+      setup_js = """
+      var link = makeEl({tagName: 'A', attrs: {'data-phx-link': 'redirect'}});
+      var el = makeEl({tagName: 'SPAN', dataPhxLink: link});
+      """
+
+      assert run_classify(setup_js, "el", :click) == "navigate"
+    end
+
+    @tag :classifier
+    test "anchor with data-phx-link=patch classifies as patch" do
+      setup_js = """
+      var link = makeEl({tagName: 'A', attrs: {'data-phx-link': 'patch'}});
+      var el = makeEl({tagName: 'SPAN', dataPhxLink: link});
+      """
+
+      assert run_classify(setup_js, "el", :click) == "patch"
+    end
+
+    @tag :classifier
+    test "plain anchor with absolute href classifies as full_page" do
+      setup_js = """
+      var a = makeEl({tagName: 'A', attrs: {'href': '/x'}});
+      var el = makeEl({tagName: 'SPAN', anchor: a});
+      """
+
+      assert run_classify(setup_js, "el", :click) == "full_page"
+    end
+
+    @tag :classifier
+    test "anchor with fragment-only href classifies as none" do
+      # Fragment links don't navigate the page — no await needed.
+      setup_js = """
+      var a = makeEl({tagName: 'A', attrs: {'href': '#section'}});
+      var el = makeEl({tagName: 'SPAN', anchor: a});
+      """
+
+      assert run_classify(setup_js, "el", :click) == "none"
+    end
+  end
+
+  describe "click classification — forms without phx-submit" do
+    @tag :classifier
+    test "button in plain form with action classifies as full_page" do
+      setup_js = """
+      var form = makeEl({tagName: 'FORM', attrs: {'action': '/submit'}});
+      var btn = makeEl({tagName: 'BUTTON', type: 'submit', form: form});
+      """
+
+      assert run_classify(setup_js, "btn", :click) == "full_page"
+    end
+
+    @tag :classifier
+    test "button outside any form and without phx-click classifies as none" do
+      setup_js = """
+      var btn = makeEl({tagName: 'BUTTON'});
+      """
+
+      assert run_classify(setup_js, "btn", :click) == "none"
+    end
+  end
+
   describe "click classification — phx-click JS commands" do
     @tag :classifier
     test "phx-click with JS.navigate classifies as navigate" do
