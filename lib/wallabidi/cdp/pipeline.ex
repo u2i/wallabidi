@@ -415,9 +415,23 @@ defmodule Wallabidi.CDP.Pipeline do
         var link = el.closest('[data-phx-link]');
         if (link) return link.getAttribute('data-phx-link') === 'redirect' ? 'navigate' : 'patch';
         var phxClick = el.getAttribute('phx-click');
-        if (phxClick) return (phxClick.includes('push') || !phxClick.startsWith('[')) ? 'patch' : 'none';
+        if (phxClick) {
+          if (phxClick.startsWith('[')) {
+            // JS command list — pick the strongest navigation signal present.
+            // JSON-quoted command names are robust enough to string-match.
+            if (phxClick.indexOf('"navigate"') !== -1) return 'navigate';
+            if (phxClick.indexOf('"patch"') !== -1) return 'patch';
+            if (phxClick.indexOf('"push"') !== -1) return 'patch';
+            return 'none';
+          }
+          return 'patch';
+        }
         if (el.type === 'submit' || el.type === 'image' || el.tagName === 'BUTTON') {
           var form = el.closest('form');
+          // phx-trigger-action fires a native form submit after the LV event,
+          // so a full page load is the load-bearing transition — await that,
+          // not the preceding LV patch.
+          if (form && form.hasAttribute('phx-trigger-action')) return 'full_page';
           if (form && form.getAttribute('phx-submit')) return 'patch';
           if (form) return 'full_page';
         }
@@ -431,6 +445,7 @@ defmodule Wallabidi.CDP.Pipeline do
       }
       if (type === 'submit') {
         var f = el.closest('form');
+        if (f && f.hasAttribute('phx-trigger-action')) return 'full_page';
         if (f && f.getAttribute('phx-submit')) return 'patch';
         if (f) return 'full_page';
         return 'none';

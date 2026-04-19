@@ -101,9 +101,18 @@ defmodule Wallabidi.Bootstrap do
         var link = el.closest('[data-phx-link]');
         if (link) return link.getAttribute('data-phx-link') === 'redirect' ? 'navigate' : 'patch';
         var pc = el.getAttribute('phx-click');
-        if (pc) return (pc.includes('push') || !pc.startsWith('[')) ? 'patch' : 'none';
+        if (pc) {
+          if (pc.startsWith('[')) {
+            if (pc.indexOf('"navigate"') !== -1) return 'navigate';
+            if (pc.indexOf('"patch"') !== -1) return 'patch';
+            if (pc.indexOf('"push"') !== -1) return 'patch';
+            return 'none';
+          }
+          return 'patch';
+        }
         if (el.type === 'submit' || el.type === 'image' || el.tagName === 'BUTTON') {
           var f = el.closest('form');
+          if (f && f.hasAttribute('phx-trigger-action')) return 'full_page';
           if (f && f.getAttribute('phx-submit')) return 'patch';
           if (f) return 'full_page';
         }
