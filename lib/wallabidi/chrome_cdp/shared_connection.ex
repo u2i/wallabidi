@@ -47,18 +47,25 @@ defmodule Wallabidi.ChromeCDP.SharedConnection do
           url
 
         endpoint ->
-          # DevTools endpoint (host:port) — discover the ws URL
-          discover_ws_url(endpoint)
+          # DevTools endpoint (host:port) — discover the ws URL.
+          # Run in a fresh process so the HTTP receive loop doesn't contend
+          # with the Agent's own mailbox (which may contain unrelated messages
+          # from prior test sessions, causing Mint.HTTP.stream/2 to return
+          # :unknown repeatedly and exhaust the Agent's call timeout).
+          task = Task.async(fn -> discover_ws_url(endpoint) end)
+          Task.await(task, 10_000)
       end
 
     {:ok, pid} = WebSocketClient.start_link(ws_url)
     {pid, pid}
   end
 
+  @doc false
   # Discover the browser WebSocket URL from a Chrome DevTools endpoint.
   # Calls GET /json/version with a Host header workaround (Chrome rejects
   # requests where the Host doesn't match its expectation).
-  defp discover_ws_url(endpoint) do
+  # Public for testing — not part of the stable API.
+  def discover_ws_url(endpoint) do
     endpoint = String.trim_trailing(endpoint, "/")
 
     {:ok, conn} = Mint.HTTP.connect(:http, host(endpoint), port(endpoint))
