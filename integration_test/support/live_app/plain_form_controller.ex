@@ -17,4 +17,8 @@ defmodule Wallabidi.Integration.LiveApp.PlainFormController do
   def submit(conn, _params) do
     redirect(conn, to: "/full-nav-dest")
   end
+
+  def trigger_action_target(conn, _params) do
+    redirect(conn, to: "/full-nav-dest")
+  end
 end

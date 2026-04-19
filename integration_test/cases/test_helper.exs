@@ -76,6 +76,8 @@ Application.put_env(:wallabidi, Wallabidi.Integration.LiveApp.Endpoint,
   render_errors: [formats: [html: Wallabidi.Integration.LiveApp.ErrorHTML], layout: false]
 )
 
+{:ok, _} = Phoenix.PubSub.Supervisor.start_link(name: Wallabidi.Integration.PubSub)
+
 {:ok, _} = Wallabidi.Integration.LiveApp.Endpoint.start_link()
 
 # LiveView driver needs an endpoint configured

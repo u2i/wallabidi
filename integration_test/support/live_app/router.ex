@@ -22,6 +22,8 @@ defmodule Wallabidi.Integration.LiveApp.Router do
       live("/form-redirect", Wallabidi.Integration.LiveApp.FormRedirectLive)
       live("/js-toggle", Wallabidi.Integration.LiveApp.JsToggleLive)
       live("/form", Wallabidi.Integration.LiveApp.FormLive)
+      live("/trigger-action", Wallabidi.Integration.LiveApp.TriggerActionLive)
+      live("/pubsub", Wallabidi.Integration.LiveApp.PubSubLive)
     end
 
     # Separate live_session — navigating here from :default triggers a full page load
@@ -31,5 +33,6 @@ defmodule Wallabidi.Integration.LiveApp.Router do
 
     get("/plain-form", Wallabidi.Integration.LiveApp.PlainFormController, :show)
     post("/plain-form", Wallabidi.Integration.LiveApp.PlainFormController, :submit)
+    post("/trigger-action-target", Wallabidi.Integration.LiveApp.PlainFormController, :trigger_action_target)
   end
 end
