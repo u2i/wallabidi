@@ -284,13 +284,21 @@ defmodule Wallabidi.LiveViewAware do
   if the page is not a LiveView page (no `data-phx-session` attribute in
   the server-rendered HTML).
 
+  Returns `{:ok, :connected}` when the LiveView mounted, `{:ok, :no_liveview}`
+  when the page isn't a LiveView, or `{:error, :timeout}` when the deadline
+  elapsed without either condition being met. Previously this function
+  discarded the result and always returned `:ok`, which let navigation
+  timeouts silently succeed and surface as confusing downstream assertion
+  failures. See NavigationTimeoutError for the caller-facing mapping.
+
   ## Options
 
   - `:timeout` — maximum wait in ms (default: 5000)
   - `:pre_url` — when waiting post-navigation, poll until URL changes
 
   """
-  @spec await_liveview_connected(Session.t(), keyword()) :: :ok
+  @spec await_liveview_connected(Session.t(), keyword()) ::
+          {:ok, :connected | :no_liveview} | {:error, :timeout}
   def await_liveview_connected(%Session{} = session, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, 5_000)
     pre_url = Keyword.get(opts, :pre_url)
@@ -332,7 +340,10 @@ defmodule Wallabidi.LiveViewAware do
     })
     """
 
-    _ = Protocol.eval_async(session, js, timeout + 1_000)
-    :ok
+    case Protocol.eval_async(session, js, timeout + 1_000) do
+      {:ok, true} -> {:ok, :connected}
+      {:ok, "no-liveview"} -> {:ok, :no_liveview}
+      _ -> {:error, :timeout}
+    end
   end
 end

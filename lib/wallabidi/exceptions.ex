@@ -91,6 +91,27 @@ defmodule Wallabidi.DriverError do
   end
 end
 
+defmodule Wallabidi.NavigationTimeoutError do
+  defexception [:message]
+
+  def exception(%{from: from, to: to, timeout_ms: timeout}) do
+    msg = """
+    Navigation from #{inspect(from)} to #{inspect(to)} did not complete within #{timeout}ms.
+
+    The click was classified as a LiveView navigation (data-phx-link=redirect or a JS.navigate
+    command), but the browser URL did not change and no new LiveView mounted before the deadline.
+
+    Common causes:
+      * The destination route's connected mount is slower than the deadline.
+      * LiveView's click handler never intercepted the synthetic click — try
+        verifying that the click actually dispatched on the anchor element.
+      * The click was classified wrong (see Wallabidi.CDP.Pipeline.classify/2).
+    """
+
+    %__MODULE__{message: msg}
+  end
+end
+
 defmodule Wallabidi.DependencyError do
   defexception [:message]
 

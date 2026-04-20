@@ -885,11 +885,37 @@ defmodule Wallabidi.Browser do
   defp do_post_click(_session, "patch", false, _pre_page_id), do: :ok
 
   defp do_post_click(session, "navigate", _prepared, pre_page_id) do
-    Wallabidi.SessionProcess.await_page_ready_after(session, pre_page_id)
+    case Wallabidi.SessionProcess.await_page_ready_after(session, pre_page_id) do
+      :ok ->
+        :ok
+
+      :timeout ->
+        post =
+          case Wallabidi.Protocol.current_url(session) do
+            {:ok, url} -> url
+            _ -> nil
+          end
+
+        raise Wallabidi.NavigationTimeoutError,
+          %{from: nil, to: post, timeout_ms: 5_000}
+    end
   end
 
   defp do_post_click(session, "full_page", _prepared, pre_page_id) do
-    Wallabidi.SessionProcess.await_page_ready_after(session, pre_page_id)
+    case Wallabidi.SessionProcess.await_page_ready_after(session, pre_page_id) do
+      :ok ->
+        :ok
+
+      :timeout ->
+        post =
+          case Wallabidi.Protocol.current_url(session) do
+            {:ok, url} -> url
+            _ -> nil
+          end
+
+        raise Wallabidi.NavigationTimeoutError,
+          %{from: nil, to: post, timeout_ms: 5_000}
+    end
   end
 
   defp do_post_click(_, _, _, _), do: :ok

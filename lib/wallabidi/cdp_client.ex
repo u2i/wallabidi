@@ -1069,7 +1069,8 @@ defmodule Wallabidi.CDPClient do
           _ -> nil
         end
 
-    Wallabidi.LiveViewAware.await_liveview_connected(session, pre_url: pre)
+    _ = Wallabidi.LiveViewAware.await_liveview_connected(session, pre_url: pre)
+    :ok
   end
 
   def do_post_click(session, "full_page", _prepared, _pre_url) do

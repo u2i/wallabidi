@@ -11,6 +11,7 @@ defmodule Wallabidi.Integration.LiveApp.NavSourceLive do
       <h1>Source Page</h1>
       <.link navigate="/nav-dest" id="go-to-dest">Go to Destination</.link>
       <a href="/full-nav-dest" id="go-full-nav">Full Page Nav</a>
+      <.link navigate="/slow-nav-dest" id="go-slow-dest">Go to Slow Destination</.link>
     </div>
     """
   end
