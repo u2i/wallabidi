@@ -73,12 +73,13 @@ defmodule Wallabidi.CDP.Commands do
     {"Runtime.callFunctionOn", params}
   end
 
-  def call_function_on_value(object_id, function_declaration, arguments \\ []) do
+  def call_function_on_value(object_id, function_declaration, arguments \\ [], opts \\ []) do
     params = %{
       objectId: object_id,
       functionDeclaration: function_declaration,
       arguments: Enum.map(arguments, &encode_argument/1),
-      returnByValue: true
+      returnByValue: true,
+      awaitPromise: Keyword.get(opts, :await_promise, false)
     }
 
     {"Runtime.callFunctionOn", params}

@@ -290,7 +290,10 @@ defmodule Wallabidi.CDPClient do
       :click_full ->
         # Combined classify + prepare_patch + click. Returns
         # {count, classification, prepared} by value. 1 RPC total.
-        result = eval_by_value(session, pipeline, js)
+        # await_promise: true so the click op can wait for LiveView
+        # to finish joining before dispatching the synthetic click —
+        # without this the click can race the LV handler binding.
+        result = eval_by_value(session, pipeline, js, await_promise: true)
 
         with {:ok, raw} <- result,
              {:ok, value} <- ResponseParser.extract_value({:ok, raw}) do
@@ -401,12 +404,20 @@ defmodule Wallabidi.CDPClient do
     end
   end
 
-  defp eval_by_value(session, pipeline, js) do
+  defp eval_by_value(session, pipeline, js, opts \\ []) do
+    await_promise = Keyword.get(opts, :await_promise, false)
+
     if pipeline.parent_id do
-      {method, params} = Commands.call_function_on_value(pipeline.parent_id, js, [])
+      {method, params} =
+        Commands.call_function_on_value(pipeline.parent_id, js, [],
+          await_promise: await_promise
+        )
+
       send_cdp_session(session, method, params)
     else
-      {method, params} = Commands.evaluate(js, return_by_value: true)
+      {method, params} =
+        Commands.evaluate(js, return_by_value: true, await_promise: await_promise)
+
       send_cdp_session(session, method, params)
     end
   end

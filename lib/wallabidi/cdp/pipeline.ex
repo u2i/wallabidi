@@ -248,15 +248,39 @@ defmodule Wallabidi.CDP.Pipeline do
     })();
 
     // 3. Capture return value BEFORE clicking — the click may navigate
-    // the page and destroy the execution context.
-    var _ret = {count: _count, classification: _classification, prepared: _prepared};
+    // the page and destroy the execution context. _ret becomes a
+    // Promise that resolves to the return map once the click has
+    // been dispatched (step 5). evaluate is called with
+    // awaitPromise: true so the RPC response waits for it.
+    var _retValue = {count: _count, classification: _classification, prepared: _prepared};
 
-    // 4. Click (fire-and-forget — if it navigates, we won't get a
-    // response, but Chrome still processes the click).
-    if (els.length > 0) {
-      var _el = els[0];
-      #{click_fn()}
-    }
+    // 4. Wait for the source LiveView to finish joining before
+    // dispatching the click. If the LV is mid-join, Phoenix's
+    // [data-phx-link] handler may not be bound yet and the synthetic
+    // click falls through to the default anchor behaviour — the
+    // teamology u2i/teamology#586 nav-click flake. Bounded by a 5s
+    // deadline so a genuinely-broken LV doesn't hang indefinitely.
+    var _ret = new Promise(function(resolve) {
+      var ls = window.liveSocket;
+      if (!ls || !ls.main || !ls.main.joinPending) return resolve();
+
+      var deadline = Date.now() + 5000;
+      function check() {
+        var ls2 = window.liveSocket;
+        if (!ls2 || !ls2.main || !ls2.main.joinPending) return resolve();
+        if (Date.now() > deadline) return resolve();
+        setTimeout(check, 20);
+      }
+      check();
+    }).then(function() {
+      // 5. Click (fire-and-forget — if it navigates, we won't get a
+      // response, but Chrome still processes the click).
+      if (els.length > 0) {
+        var _el = els[0];
+        #{click_fn()}
+      }
+      return _retValue;
+    });
     """
   end
 
