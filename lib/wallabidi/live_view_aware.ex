@@ -107,6 +107,62 @@ defmodule Wallabidi.LiveViewAware do
   end
 
   @doc """
+  Waits until the LV view has acknowledged every event with ref < pre_ref_next.
+
+  `pre_ref_next` is the value of `liveSocket.main.ref` snapshotted BEFORE
+  the click that should have dispatched an event. The counter increments on
+  each push; the server replies with the same ref, updating `lastAckRef`.
+  So once `lastAckRef >= pre_ref_next` we know the server has finished
+  processing the event our click triggered — regardless of whether the reply
+  was a diff, a redirect, or nothing at all.
+
+  Returns `{:ok, :acked}`, `{:ok, :no_liveview}`, `{:ok, :page_navigated}`
+  (JS context destroyed mid-wait → a full nav happened), or
+  `{:error, :timeout}`.
+  """
+  @spec await_ack(Session.t(), non_neg_integer(), timeout()) ::
+          {:ok, :acked | :no_liveview | :page_navigated} | {:error, :timeout}
+  def await_ack(%Session{} = session, pre_ref_next, timeout \\ 5_000) do
+    js = """
+    new Promise(resolve => {
+      var deadline = Date.now() + #{timeout};
+      var target = #{pre_ref_next};
+
+      function check() {
+        var ls = window.liveSocket;
+        if (!ls || !ls.main) return resolve('no-liveview');
+
+        // `ref` here is the NEXT ref the view will issue. Before the
+        // click we snapshotted it as `target`. The server acks with
+        // the ref it received; lastAckRef is the highest so far. Our
+        // click triggered an event with ref === target, so we wait for
+        // lastAckRef >= target.
+        if (ls.main.lastAckRef !== null && ls.main.lastAckRef >= target) {
+          return resolve('acked');
+        }
+
+        if (Date.now() > deadline) return resolve(false);
+        setTimeout(check, 20);
+      }
+
+      window.addEventListener('beforeunload', function() {
+        resolve('navigated');
+      }, {once: true});
+
+      check();
+    })
+    """
+
+    case Protocol.eval_async(session, js, timeout + 1_000) do
+      {:ok, "acked"} -> {:ok, :acked}
+      {:ok, "no-liveview"} -> {:ok, :no_liveview}
+      {:ok, "navigated"} -> {:ok, :page_navigated}
+      {:ok, false} -> {:error, :timeout}
+      _ -> {:error, :timeout}
+    end
+  end
+
+  @doc """
   Awaits the patch promise installed by `prepare_patch/1`. Returns `:ok`
   when the patch is applied, or `:page_navigated` if a full navigation
   intervened (beforeunload fired or the JS context was destroyed).

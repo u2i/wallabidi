@@ -213,6 +213,7 @@ defmodule Wallabidi.CDP.Pipeline do
     var _prepared = false;
     var _classification = "none";
     var _count = els.length;
+    var _preRef = null;
     (function() {
       // 1. prepare_patch — install onPatchEnd hook + promise
       var ls = window.liveSocket;
@@ -245,6 +246,17 @@ defmodule Wallabidi.CDP.Pipeline do
       if (els.length > 0) {
         _classification = (#{classify_fn()})(els[0], #{Jason.encode!(to_string(interaction))});
       }
+
+      // 2a. Snapshot the LV view's ref counter. Every phx-* event push
+      // grabs `view.ref++` for its server-side reply. After the click,
+      // waiting for `view.lastAckRef >= _preRef` tells us the server has
+      // finished processing whatever event our click triggered — even
+      // if that processing takes longer than patch/load deadlines. This
+      // closes the gap where a slow handle_event + push_navigate
+      // completes AFTER wallabidi's post-click awaits have given up.
+      if (ls && ls.main && typeof ls.main.ref === 'number') {
+        _preRef = ls.main.ref;
+      }
     })();
 
     // 3. Capture return value BEFORE clicking — the click may navigate
@@ -252,7 +264,7 @@ defmodule Wallabidi.CDP.Pipeline do
     // Promise that resolves to the return map once the click has
     // been dispatched (step 5). evaluate is called with
     // awaitPromise: true so the RPC response waits for it.
-    var _retValue = {count: _count, classification: _classification, prepared: _prepared};
+    var _retValue = {count: _count, classification: _classification, prepared: _prepared, preRef: _preRef};
 
     // 4. Wait for the source LiveView to finish joining before
     // dispatching the click. If the LV is mid-join, Phoenix's

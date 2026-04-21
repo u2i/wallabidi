@@ -778,8 +778,8 @@ defmodule Wallabidi.Browser do
             end
 
           case result do
-            {:ok, :clicked, %{classification: c, prepared: p}} ->
-              do_post_click(session, c, p, pre_page_id)
+            {:ok, :clicked, %{classification: c, prepared: p} = meta} ->
+              do_post_click(session, c, p, pre_page_id, meta[:pre_ref])
               parent
 
             {:error, _} ->
@@ -865,9 +865,9 @@ defmodule Wallabidi.Browser do
   # Protocol-agnostic post-click: await patch/navigate/load based on
   # the classification returned by Pipeline.click_full. The push-based
   # page-ready notification (from bootstrap) replaces all polling.
-  defp do_post_click(_session, "none", _prepared, _pre_page_id), do: :ok
+  defp do_post_click(_session, "none", _prepared, _pre_page_id, _pre_ref), do: :ok
 
-  defp do_post_click(session, "patch", true, pre_page_id) do
+  defp do_post_click(session, "patch", true, pre_page_id, pre_ref) do
     case Wallabidi.LiveViewAware.await_patch(session, 1_000) do
       :ok ->
         :ok
@@ -876,15 +876,27 @@ defmodule Wallabidi.Browser do
         Wallabidi.SessionProcess.await_page_ready_after(session, pre_page_id)
 
       :timeout ->
-        # Patch didn't fire — may be a navigation. The bootstrap will fire
-        # page_ready on the new page if so.
+        # Patch didn't fire in 1s. Three possibilities:
+        #   (a) click triggered a nav — bootstrap will fire page_ready
+        #   (b) server handle_event is slow (DB, state transitions) and
+        #       will push_navigate / push_patch / diff shortly
+        #   (c) no LV event at all
+        # If we captured a pre_ref, wait for the LV server to ack that
+        # event — however long handle_event takes. Closes the teamology
+        # slow-handle_event race where wallabidi returned before server
+        # finished processing, leaving downstream assertions racing the
+        # redirect. Then let page_ready pick up any resulting navigation.
+        if is_integer(pre_ref) do
+          _ = Wallabidi.LiveViewAware.await_ack(session, pre_ref, max_wait_time())
+        end
+
         Wallabidi.SessionProcess.await_page_ready_after(session, pre_page_id, 1_000)
     end
   end
 
-  defp do_post_click(_session, "patch", false, _pre_page_id), do: :ok
+  defp do_post_click(_session, "patch", false, _pre_page_id, _pre_ref), do: :ok
 
-  defp do_post_click(session, "navigate", _prepared, pre_page_id) do
+  defp do_post_click(session, "navigate", _prepared, pre_page_id, _pre_ref) do
     case Wallabidi.SessionProcess.await_page_ready_after(session, pre_page_id) do
       :ok ->
         :ok
@@ -901,7 +913,7 @@ defmodule Wallabidi.Browser do
     end
   end
 
-  defp do_post_click(session, "full_page", _prepared, pre_page_id) do
+  defp do_post_click(session, "full_page", _prepared, pre_page_id, _pre_ref) do
     case Wallabidi.SessionProcess.await_page_ready_after(session, pre_page_id) do
       :ok ->
         :ok
@@ -918,7 +930,7 @@ defmodule Wallabidi.Browser do
     end
   end
 
-  defp do_post_click(_, _, _, _), do: :ok
+  defp do_post_click(_, _, _, _, _), do: :ok
 
   defp extract_query_from_ops(%Wallabidi.CDP.Ops{ops: ops}) do
     case Enum.find(ops, fn [cmd | _] -> cmd == "query" end) do

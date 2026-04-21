@@ -300,8 +300,9 @@ defmodule Wallabidi.CDPClient do
           count = if is_map(value), do: value["count"] || 0, else: 0
           classification = if is_map(value), do: value["classification"] || "none", else: "none"
           prepared = if is_map(value), do: value["prepared"] || false, else: false
+          pre_ref = if is_map(value), do: value["preRef"], else: nil
           elements = List.duplicate(%Element{parent: parent, driver: session.driver}, count)
-          {:ok, elements, classification, prepared}
+          {:ok, elements, classification, prepared, pre_ref}
         end
 
       :count ->
@@ -1269,11 +1270,15 @@ defmodule Wallabidi.CDPClient do
       pipeline = Pipeline.click_full(pipeline, :click)
 
       case find_elements_pipeline(parent, pipeline) do
+        {:ok, _elements, classification, prepared, pre_ref} ->
+          {:ok, :clicked,
+           %{classification: classification, prepared: prepared, pre_ref: pre_ref}}
+
         {:ok, _elements, classification, prepared} ->
-          {:ok, :clicked, %{classification: classification, prepared: prepared}}
+          {:ok, :clicked, %{classification: classification, prepared: prepared, pre_ref: nil}}
 
         {:ok, _elements} ->
-          {:ok, :clicked, %{classification: "none", prepared: false}}
+          {:ok, :clicked, %{classification: "none", prepared: false, pre_ref: nil}}
 
         error ->
           error
