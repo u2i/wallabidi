@@ -164,17 +164,24 @@ defmodule Wallabidi.LiveViewAware do
 
   @doc """
   Awaits the patch promise installed by `prepare_patch/1`. Returns `:ok`
-  when the patch is applied, or `:page_navigated` if a full navigation
-  intervened (beforeunload fired or the JS context was destroyed).
+  when the patch is applied, `:page_navigated` if a full navigation
+  intervened (beforeunload fired in JS, signalling navigation), or
+  `:timeout` if neither happened within the deadline.
+
+  Note: a stray `{:error, _}` from eval_async (Elixir-side outer timeout)
+  is treated as `:timeout`, not `:page_navigated`. Conflating the two
+  hides cases where the server is still processing — the caller should
+  fall through to ack-based / page-ready waits rather than assume the
+  page navigated.
   """
-  @spec await_patch(Session.t(), timeout()) :: :ok | :page_navigated
+  @spec await_patch(Session.t(), timeout()) :: :ok | :page_navigated | :timeout
   def await_patch(%Session{} = session, timeout \\ 5_000) do
     case Protocol.eval_async(session, @await_patch_js, timeout) do
       {:ok, "navigated"} -> :page_navigated
       {:ok, true} -> :ok
       {:ok, false} -> :timeout
       {:ok, _} -> :ok
-      {:error, _} -> :page_navigated
+      {:error, _} -> :timeout
     end
   end
 

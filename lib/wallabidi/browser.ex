@@ -890,7 +890,14 @@ defmodule Wallabidi.Browser do
           _ = Wallabidi.LiveViewAware.await_ack(session, pre_ref, max_wait_time())
         end
 
-        Wallabidi.SessionProcess.await_page_ready_after(session, pre_page_id, 1_000)
+        # Use the default 5s page_ready budget (same as the navigate
+        # branch below). The previous 1s was too short when the
+        # destination LV's mount runs Ash queries, scoped DB loads, or
+        # other slow setup — page_ready fires only after that mount
+        # returns, so a 1s budget made the click return before the new
+        # page was actually visible to subsequent non-polling reads
+        # (current_url, attr, text).
+        Wallabidi.SessionProcess.await_page_ready_after(session, pre_page_id)
     end
   end
 
