@@ -462,7 +462,11 @@ defmodule Wallabidi.CDP.Pipeline do
           }
           return 'patch';
         }
-        if (el.type === 'submit' || el.type === 'image' || el.tagName === 'BUTTON') {
+        // Only buttons/inputs that submit a form trigger navigation.
+        // type='reset' and type='button' run JS but never submit/navigate.
+        var submits = (el.type === 'submit' || el.type === 'image') ||
+                      (el.tagName === 'BUTTON' && el.type !== 'reset' && el.type !== 'button');
+        if (submits) {
           var form = el.closest('form');
           // phx-trigger-action fires a native form submit after the LV event,
           // so a full page load is the load-bearing transition — await that,

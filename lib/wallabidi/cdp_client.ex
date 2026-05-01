@@ -900,11 +900,13 @@ defmodule Wallabidi.CDPClient do
     {method, params} = Commands.set_device_metrics(width, height)
     send_cdp_session(session, method, params)
 
-    # Also store in JS as fallback (Lightpanda doesn't implement emulation)
-    evaluate_value(
-      session,
-      "window.__wallabidi_window_size = {width: #{width}, height: #{height}}"
-    )
+    # Also store in JS as fallback (Lightpanda doesn't implement emulation).
+    # Install via addScriptToEvaluateOnNewDocument so the value persists
+    # across navigations — otherwise the size is wiped on the first visit.
+    js = "window.__wallabidi_window_size = {width: #{width}, height: #{height}};"
+    evaluate_value(session, js)
+
+    send_cdp_session(session, "Page.addScriptToEvaluateOnNewDocument", %{source: js})
 
     {:ok, nil}
   end
@@ -1406,7 +1408,7 @@ defmodule Wallabidi.CDPClient do
 
   defp cleanup_query(session, query_id) do
     cast_cdp_command(session, "Runtime.evaluate", %{
-      expression: "delete window.__wallabidi_queries[#{Jason.encode!(query_id)}]",
+      expression: Wallabidi.Bootstrap.cleanup_js(query_id),
       returnByValue: true
     })
   end
