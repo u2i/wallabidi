@@ -51,7 +51,10 @@ defmodule Wallabidi.LiveViewAware do
 
   @await_patch_js """
   (() => {
-    if (!window.__wallabidi_patch_promise) return Promise.resolve(false);
+    // Promise missing means either prepare_patch wasn't called, OR
+    // the page navigated and we're now in a fresh JS context. Tell
+    // Elixir which so it can skip the slow await_ack path on nav.
+    if (!window.__wallabidi_patch_promise) return Promise.resolve('no-promise');
     const p = window.__wallabidi_patch_promise;
     window.__wallabidi_patch_promise = null;
     return Promise.race([
@@ -163,10 +166,13 @@ defmodule Wallabidi.LiveViewAware do
   end
 
   @doc """
-  Awaits the patch promise installed by `prepare_patch/1`. Returns `:ok`
-  when the patch is applied, `:page_navigated` if a full navigation
-  intervened (beforeunload fired in JS, signalling navigation), or
-  `:timeout` if neither happened within the deadline.
+  Awaits the patch promise installed by `prepare_patch/1`. Returns:
+
+    * `:ok` — the patch was applied
+    * `:page_navigated` — a full navigation intervened (beforeunload fired
+      in JS, signalling navigation, OR the JS context was destroyed and
+      the patch promise is gone)
+    * `:timeout` — neither happened within the deadline
 
   Note: a stray `{:error, _}` from eval_async (Elixir-side outer timeout)
   is treated as `:timeout`, not `:page_navigated`. Conflating the two
@@ -178,6 +184,7 @@ defmodule Wallabidi.LiveViewAware do
   def await_patch(%Session{} = session, timeout \\ 5_000) do
     case Protocol.eval_async(session, @await_patch_js, timeout) do
       {:ok, "navigated"} -> :page_navigated
+      {:ok, "no-promise"} -> :page_navigated
       {:ok, true} -> :ok
       {:ok, false} -> :timeout
       {:ok, _} -> :ok

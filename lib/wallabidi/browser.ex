@@ -883,11 +883,12 @@ defmodule Wallabidi.Browser do
         Wallabidi.SessionProcess.await_page_ready_after(session, pre_page_id)
 
       :timeout ->
-        # Patch didn't fire in 1s. Three possibilities:
-        #   (a) click triggered a nav — bootstrap will fire page_ready
-        #   (b) server handle_event is slow (DB, state transitions) and
+        # Patch didn't fire in 1s, but the patch promise was still present
+        # when await_patch ran (otherwise we'd have got :page_navigated).
+        # Two possibilities remain:
+        #   (a) server handle_event is slow (DB, state transitions) and
         #       will push_navigate / push_patch / diff shortly
-        #   (c) no LV event at all
+        #   (b) no LV event at all
         # If we captured a pre_ref, wait for the LV server to ack that
         # event — however long handle_event takes. Closes the teamology
         # slow-handle_event race where wallabidi returned before server
