@@ -2332,6 +2332,11 @@ defmodule Wallabidi.Browser do
       // Check if it's a plain link that will cause a full page navigation
       var anchor = el.closest('a[href]');
       if (anchor && anchor.getAttribute('href') && !anchor.getAttribute('href').startsWith('#')) {
+        // target="_blank" etc. open in a new tab — source page doesn't navigate.
+        var tgt = anchor.getAttribute('target');
+        if (tgt && tgt !== '_self' && tgt !== '_top' && tgt !== '_parent') return 'none';
+        // onclick handler may preventDefault — can't statically tell.
+        if (anchor.hasAttribute('onclick')) return 'none';
         return 'full_page';
       }
       return 'none';

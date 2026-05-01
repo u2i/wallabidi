@@ -125,7 +125,17 @@ defmodule Wallabidi.Bootstrap do
           if (f) return 'full_page';
         }
         var a = el.closest('a[href]');
-        if (a && a.getAttribute('href') && !a.getAttribute('href').startsWith('#')) return 'full_page';
+        if (a && a.getAttribute('href') && !a.getAttribute('href').startsWith('#')) {
+          // target="_blank" / target="newwindow" / etc. open in a new tab —
+          // the source page doesn't navigate, so don't await a load.
+          var tgt = a.getAttribute('target');
+          if (tgt && tgt !== '_self' && tgt !== '_top' && tgt !== '_parent') return 'none';
+          // onclick handler may preventDefault — can't statically tell.
+          // Defer to the JS to decide; if it does navigate, downstream
+          // assertions will retry-with-timeout anyway.
+          if (a.hasAttribute('onclick')) return 'none';
+          return 'full_page';
+        }
         return 'none';
       }
       if (type === 'change') {
