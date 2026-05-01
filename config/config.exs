@@ -8,6 +8,6 @@ config :wallabidi,
   js_errors: true
 
 config :lightpanda,
-  version: "0.2.8"
+  version: "0.2.9"
 
 import_config "#{config_env()}.exs"
