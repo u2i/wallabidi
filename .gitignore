@@ -10,7 +10,7 @@ erl_crash.dump
 /benchmarks/html
 /docs
 .claude/
-chrome/
-chromedriver/
+/chrome/
+/chromedriver/
 .browsers/
 /priv/bidi-server/node_modules/

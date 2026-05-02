@@ -114,8 +114,8 @@ defmodule Wallabidi.Pool do
       waiting: :queue.new()
     }
 
-    # Open slots eagerly. If any fail, the GenServer crashes and the
-    # supervisor surfaces the error — tests can't run without slots.
+    # Open slots eagerly and sequentially (not in parallel) — chromium-bidi
+    # serializes Chrome spawning anyway and concurrent connects can race.
     state =
       Enum.reduce(0..(size - 1), state, fn id, acc ->
         open_slot(acc, id)
@@ -125,7 +125,22 @@ defmodule Wallabidi.Pool do
   end
 
   @impl true
-  def handle_call({:checkout, session_opts}, {pid, _} = from, state) do
+  def handle_call({:checkout, session_opts}, from, state) do
+    do_checkout(from, session_opts, state, 0)
+  end
+
+  # Try slots until prepare_session succeeds or we've exhausted the
+  # pool. A prepare failure recycles the failing slot and retries on
+  # a different one — important when chromium-bidi's WebSocket dies
+  # mid-run, since one bad slot shouldn't cascade into 50 test failures.
+  @max_prepare_attempts 3
+
+  defp do_checkout(_from, _session_opts, state, attempts)
+       when attempts >= @max_prepare_attempts do
+    {:reply, {:error, {:prepare_failed, :exhausted_pool}}, state}
+  end
+
+  defp do_checkout({pid, _} = from, session_opts, state, attempts) do
     case :queue.out(state.available) do
       {{:value, slot_id}, available} ->
         slot = Map.fetch!(state.slots, slot_id)
@@ -138,15 +153,15 @@ defmodule Wallabidi.Pool do
             state = %{state | slots: slots, available: available}
             {:reply, {:ok, slot_id, slot.handle, session_state}, state}
 
-          {:error, reason} ->
+          {:error, _reason} ->
             Process.demonitor(ref, [:flush])
-            # Slot is suspect — reset or recreate before returning to queue
+            # Slot is suspect — recycle it (close + reopen) and try again
             state = recycle_slot(%{state | available: available}, slot_id)
-            {:reply, {:error, {:prepare_failed, reason}}, state}
+            do_checkout(from, session_opts, state, attempts + 1)
         end
 
       {:empty, _} ->
-        # Queue the caller; reply when a slot frees up
+        # No slot free — queue the caller; reply when one frees up
         waiting = :queue.in({from, session_opts}, state.waiting)
         {:noreply, %{state | waiting: waiting}}
     end
@@ -292,38 +307,58 @@ defmodule Wallabidi.Pool do
 
   # If anyone is waiting for a slot, hand them the freshly available one.
   defp dispatch_waiting(state) do
-    case :queue.out(state.available) do
-      {{:value, slot_id}, available} ->
-        case :queue.out(state.waiting) do
-          {{:value, {from, session_opts}}, waiting} ->
-            {pid, _} = from
-            slot = Map.fetch!(state.slots, slot_id)
-
-            case state.impl.prepare_session(slot.handle, session_opts) do
-              {:ok, session_state} ->
-                ref = Process.monitor(pid)
-                slot = %{slot | owner: pid, owner_ref: ref}
-                slots = Map.put(state.slots, slot_id, slot)
-                state = %{state | slots: slots, available: available, waiting: waiting}
-                GenServer.reply(from, {:ok, slot_id, slot.handle, session_state})
-                state
-
-              {:error, reason} ->
-                # Couldn't prepare — recycle the slot, leave the caller waiting.
-                # When the recycled slot becomes available again, dispatch_waiting
-                # will pick the same caller back up.
-                state = %{state | available: available}
-                GenServer.reply(from, {:error, {:prepare_failed, reason}})
-                state = %{state | waiting: waiting}
-                recycle_slot(state, slot_id)
-            end
-
-          {:empty, _} ->
-            state
-        end
+    case :queue.out(state.waiting) do
+      {{:value, {from, session_opts}}, waiting} ->
+        # Promote the waiter to the head of the queue and run checkout
+        # via do_checkout, which retries across slots on prepare failure.
+        do_checkout_waiting(from, session_opts, %{state | waiting: waiting})
 
       {:empty, _} ->
         state
+    end
+  end
+
+  # Same retry logic as do_checkout, but replies to a queued caller
+  # rather than returning a {:reply, ...} tuple from handle_call.
+  defp do_checkout_waiting(from, session_opts, state) do
+    case do_checkout_attempt(from, session_opts, state, 0) do
+      {:ok, reply, state} ->
+        GenServer.reply(from, reply)
+        state
+
+      {:wait, state} ->
+        # No slot free; re-queue caller at the head
+        waiting = :queue.in_r({from, session_opts}, state.waiting)
+        %{state | waiting: waiting}
+    end
+  end
+
+  defp do_checkout_attempt(_from, _session_opts, state, attempts)
+       when attempts >= @max_prepare_attempts do
+    {:ok, {:error, {:prepare_failed, :exhausted_pool}}, state}
+  end
+
+  defp do_checkout_attempt({pid, _}, session_opts, state, attempts) do
+    case :queue.out(state.available) do
+      {{:value, slot_id}, available} ->
+        slot = Map.fetch!(state.slots, slot_id)
+        ref = Process.monitor(pid)
+
+        case state.impl.prepare_session(slot.handle, session_opts) do
+          {:ok, session_state} ->
+            slot = %{slot | owner: pid, owner_ref: ref}
+            slots = Map.put(state.slots, slot_id, slot)
+            state = %{state | slots: slots, available: available}
+            {:ok, {:ok, slot_id, slot.handle, session_state}, state}
+
+          {:error, _reason} ->
+            Process.demonitor(ref, [:flush])
+            state = recycle_slot(%{state | available: available}, slot_id)
+            do_checkout_attempt({pid, nil}, session_opts, state, attempts + 1)
+        end
+
+      {:empty, _} ->
+        {:wait, state}
     end
   end
 end

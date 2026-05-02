@@ -132,11 +132,13 @@ defmodule Wallabidi.PoolTest do
     assert Enum.any?(events, &match?({:finalize, _, _}, &1))
   end
 
-  test "prepare failure recycles the slot" do
+  test "prepare failure retries across slots; gives up after exhaustion" do
     {:ok, pool} = start_supervised({Pool, name: :test_pool_4, impl: TestImpl, size: 1})
 
     TestImpl.fail_prepare(true)
-    assert {:error, {:prepare_failed, :nope}} = Pool.checkout(pool, [])
+    # With prepare always failing, the pool retries up to its limit
+    # then surfaces :exhausted_pool. Each retry recycles the slot.
+    assert {:error, {:prepare_failed, :exhausted_pool}} = Pool.checkout(pool, [])
 
     TestImpl.fail_prepare(false)
     # After recycle, pool is usable again
