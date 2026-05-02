@@ -51,12 +51,24 @@ defmodule Wallabidi.Chrome do
     # The Chrome (BiDi) driver speaks BiDi to a chromium-bidi standalone
     # server (Wallabidi.Chrome.BidiServer), which forwards to Chrome via
     # CDP. No chromedriver involved.
+    #
+    # Test sessions run on a Wallabidi.Pool of N WebSocket connections
+    # (each one = one Chrome + one BiDi Mapper). Pool size caps real
+    # concurrency since chromium-bidi's Mapper is single-threaded.
     children = [
       {Wallabidi.Chrome.BidiServer, [name: Wallabidi.Chrome.BidiServer]},
-      Wallabidi.Chrome.SharedSession
+      {Wallabidi.Pool,
+       name: Wallabidi.Chrome.Pool,
+       impl: Wallabidi.Chrome.PoolImpl,
+       size: pool_size()}
     ]
 
     Supervisor.init(children, strategy: :rest_for_one)
+  end
+
+  defp pool_size do
+    Application.get_env(:wallabidi, :chrome, [])
+    |> Keyword.get(:pool_size, 4)
   end
 
   @doc false
@@ -119,93 +131,46 @@ defmodule Wallabidi.Chrome do
   end
 
   defp do_start_session(opts) do
-    # Reuse the shared BiDi connection (chromium-bidi → CDP → one
-    # Chrome). Each test session creates its own userContext (isolated
-    # cookies/storage) and a new browsingContext (tab) within that
-    # context.
-    bidi_pid = Wallabidi.Chrome.SharedSession.get()
+    # Pool checkout — a slot is one chromium-bidi WebSocket = one Chrome
+    # + one Mapper. Sessions on the same slot run sequentially through
+    # the slot's single Mapper; sessions across slots run in parallel.
+    case Wallabidi.Pool.checkout(Wallabidi.Chrome.Pool, opts) do
+      {:ok, slot_id, %{bidi_pid: bidi_pid},
+       %{user_context_id: uc, browsing_context_id: ctx}} ->
+        user_caps = Keyword.get(opts, :capabilities, %{})
 
-    {:ok, user_context_id} = create_user_context(bidi_pid)
+        unique_id = "chrome-bidi-#{System.unique_integer([:positive])}"
 
-    {:ok, browsing_context_id} = create_browsing_context(bidi_pid, user_context_id)
+        session = %Wallabidi.Session{
+          session_url: "bidi://#{unique_id}",
+          url: "bidi://#{unique_id}",
+          id: unique_id,
+          driver: __MODULE__,
+          protocol: Wallabidi.Protocol.BiDi,
+          server: __MODULE__,
+          bidi_pid: bidi_pid,
+          browsing_context: ctx,
+          capabilities:
+            Map.merge(user_caps, %{
+              user_context_id: uc,
+              pool_slot: slot_id
+            })
+        }
 
-    install_bootstrap!(bidi_pid, browsing_context_id)
+        # Subscribe to console logs so they buffer from session start,
+        # and to page load events so SessionProcess can track navigations.
+        Wallabidi.Protocol.subscribe(session, :log)
+        Wallabidi.Protocol.subscribe(session, :page_load)
+        Wallabidi.Protocol.subscribe(session, :find_binding)
 
-    user_caps = Keyword.get(opts, :capabilities, %{})
+        if window_size = Keyword.get(opts, :window_size),
+          do: {:ok, _} = set_window_size(session, window_size[:width], window_size[:height])
 
-    unique_id = "chrome-bidi-#{System.unique_integer([:positive])}"
+        {:ok, session}
 
-    session = %Wallabidi.Session{
-      session_url: "bidi://#{unique_id}",
-      url: "bidi://#{unique_id}",
-      id: unique_id,
-      driver: __MODULE__,
-      protocol: Wallabidi.Protocol.BiDi,
-      server: __MODULE__,
-      bidi_pid: bidi_pid,
-      browsing_context: browsing_context_id,
-      capabilities:
-        Map.merge(user_caps, %{
-          user_context_id: user_context_id,
-          shared_connection: true
-        })
-    }
-
-    # Subscribe to console logs so they buffer from session start,
-    # and to page load events so SessionProcess can track navigations.
-    Wallabidi.Protocol.subscribe(session, :log)
-    Wallabidi.Protocol.subscribe(session, :page_load)
-    Wallabidi.Protocol.subscribe(session, :find_binding)
-
-    if window_size = Keyword.get(opts, :window_size),
-      do: {:ok, _} = set_window_size(session, window_size[:width], window_size[:height])
-
-    {:ok, session}
-  end
-
-  defp create_user_context(bidi_pid) do
-    {method, params} = Wallabidi.BiDi.Commands.create_user_context()
-
-    case WebSocketClient.send_command(bidi_pid, method, params) do
-      {:ok, %{"result" => %{"userContext" => uc}}} -> {:ok, uc}
-      {:ok, %{"userContext" => uc}} -> {:ok, uc}
-      other -> {:error, {:create_user_context_failed, other}}
+      {:error, reason} ->
+        {:error, reason}
     end
-  end
-
-  defp create_browsing_context(bidi_pid, user_context_id) do
-    {method, params} =
-      Wallabidi.BiDi.Commands.create_context("tab", %{userContext: user_context_id})
-
-    case WebSocketClient.send_command(bidi_pid, method, params) do
-      {:ok, %{"result" => %{"context" => ctx}}} -> {:ok, ctx}
-      {:ok, %{"context" => ctx}} -> {:ok, ctx}
-      other -> {:error, {:create_context_failed, other}}
-    end
-  end
-
-  defp install_bootstrap!(bidi_pid, context_id) do
-    # Install push-based element finding via two paths:
-    #
-    # 1. addPreloadScript — persists across navigations. Each new document
-    #    gets the bootstrap with a fresh channel callback.
-    # 2. callFunction — installs immediately on the current page so finds
-    #    work before the first navigation. The channel argument makes
-    #    __wallabidi callable right away (no about:blank navigate needed).
-    #
-    # The bootstrap guards with `if (window.__w) return;` so the preload
-    # script is a no-op if callFunction already installed it on this page.
-    channel_arg = [%{type: "channel", value: %{channel: "__wallabidi"}}]
-    bootstrap_fn = Wallabidi.Bootstrap.bidi_preload()
-
-    {cmd, params} = Wallabidi.BiDi.Commands.add_preload_script(bootstrap_fn, channel_arg)
-    {:ok, _} = WebSocketClient.send_command(bidi_pid, cmd, params)
-
-    {cmd, params} =
-      Wallabidi.BiDi.Commands.call_function(context_id, bootstrap_fn, channel_arg)
-
-    WebSocketClient.send_command(bidi_pid, cmd, params)
-    :ok
   end
 
   @doc false
@@ -234,35 +199,29 @@ defmodule Wallabidi.Chrome do
   end
 
   @doc false
-  # Releases per-session server-side resources. Sessions share the
-  # underlying chromium-bidi connection / Chrome instance via
-  # Chrome.SharedSession, so this only removes the per-session
-  # userContext (closing its browsingContexts and clearing its
-  # cookies/storage).
+  # Per-session cleanup. The slot's connection stays warm for the next
+  # checkout; we just remove the userContext (which closes its browsing
+  # contexts and clears its cookies/storage) and unsubscribe this
+  # context from the slot's WebSocketClient ETS table.
   def release_server_session(
         %Wallabidi.Session{capabilities: caps, bidi_pid: pid, browsing_context: ctx} = _session
       ) do
-    # Drop the BEAM-side ETS subscriptions for this browsing context so the
-    # shared dispatch table doesn't grow without bound across many sessions.
     if is_pid(pid) and is_binary(ctx) do
       WebSocketClient.unsubscribe_session(pid, ctx)
     end
 
-    case caps do
-      %{user_context_id: uc} when is_binary(uc) and is_pid(pid) ->
-        {method, params} = Wallabidi.BiDi.Commands.remove_user_context(uc)
+    slot_id = caps[:pool_slot]
+    user_context_id = caps[:user_context_id]
 
-        try do
-          WebSocketClient.send_command(pid, method, params, 5_000)
-        rescue
-          _ -> {:ok, %{}}
-        catch
-          :exit, _ -> {:ok, %{}}
-        end
-
-      _ ->
-        {:ok, %{}}
+    if is_integer(slot_id) and is_binary(user_context_id) do
+      Wallabidi.Pool.checkin(
+        Wallabidi.Chrome.Pool,
+        slot_id,
+        %{user_context_id: user_context_id, browsing_context_id: ctx}
+      )
     end
+
+    {:ok, %{}}
   end
 
   @doc false

@@ -224,8 +224,11 @@ defmodule Wallabidi.BiDi.WebSocketClient do
         {:noreply, state}
 
       {:error, conn, reason, _responses} ->
+        # The transport is broken. Reply :session_closed to any pending
+        # callers and terminate so the supervisor / pool can recycle us.
         Logger.debug("BiDi WebSocket error: #{inspect(reason)}")
-        {:noreply, %{state | conn: conn}}
+        reply_all_pending(state, {:error, :session_closed})
+        {:stop, {:transport_error, reason}, %{state | conn: conn}}
 
       :unknown ->
         {:noreply, state}
