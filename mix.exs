@@ -24,11 +24,13 @@ defmodule Wallabidi.Mixfile do
         "test.all": [
           "test",
           "test.live_view",
+          "test.lightpanda",
           "test.chrome",
           "test.chrome.bidi",
           "test.chrome.lifecycle"
         ],
         "test.live_view": fn args -> test_driver("live_view", "LiveView", args) end,
+        "test.lightpanda": fn args -> test_driver("lightpanda", "Lightpanda", args) end,
         "test.chrome": fn args -> test_driver("chrome_cdp", "Chrome (CDP)", args) end,
         "test.chrome.bidi": fn args -> test_driver("chrome", "Chrome (BiDi)", args) end,
         "test.bench": fn args -> test_driver("bench", "Benchmarks", args) end,
@@ -44,6 +46,7 @@ defmodule Wallabidi.Mixfile do
       preferred_envs: [
         "test.all": :test,
         "test.live_view": :test,
+        "test.lightpanda": :test,
         "test.chrome": :test,
         "test.chrome.bidi": :test,
         "test.bench": :test,

@@ -32,11 +32,39 @@ jobs:
     - run: mix deps.get
     - run: mix test
 
-  live_view_tests:
-    name: LiveView Driver
+  integration_tests:
+    # One job per driver. Each row picks the driver-specific test alias
+    # and the max-cases that's been benchmarked as the best
+    # passing/perf tradeoff (see README "Concurrency and performance").
+    name: ${{ matrix.driver.label }}
     runs-on: ubuntu-latest
 
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true)
+
+    strategy:
+      fail-fast: false
+      matrix:
+        driver:
+          - label: LiveView Driver
+            task: test.live_view
+            max_cases: 16
+            needs_node: false
+            needs_browser_install: false
+          - label: Lightpanda
+            task: test.lightpanda
+            max_cases: 16
+            needs_node: false
+            needs_browser_install: false
+          - label: Chrome CDP
+            task: test.chrome
+            max_cases: 4
+            needs_node: true
+            needs_browser_install: true
+          - label: Chrome BiDi
+            task: test.chrome.bidi
+            max_cases: 2
+            needs_node: true
+            needs_browser_install: true
 
     steps:
     - uses: actions/checkout@v6
@@ -45,27 +73,8 @@ jobs:
         otp-version: 28.x
         elixir-version: 1.19.x
 
-    - uses: actions/cache@v5
-      with:
-        path: deps
-        key: ${{ runner.os }}-mix-${{ hashFiles('mix.lock') }}
-
-    - run: mix deps.get
-    - run: mix test.live_view
-
-  chrome_cdp_tests:
-    name: Chrome CDP
-    runs-on: ubuntu-latest
-
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true)
-
-    steps:
-    - uses: actions/checkout@v6
-    - uses: erlef/setup-beam@v1
-      with:
-        otp-version: 28.x
-        elixir-version: 1.19.x
-    - uses: actions/setup-node@v4
+    - if: matrix.driver.needs_node
+      uses: actions/setup-node@v4
       with:
         node-version: 20
 
@@ -74,68 +83,27 @@ jobs:
         path: deps
         key: ${{ runner.os }}-mix-${{ hashFiles('mix.lock') }}
 
-    - run: mix deps.get
-    - run: mix wallabidi.install
-    - run: mix test.chrome --max-cases 4
-
-  chrome_bidi_tests:
-    name: Chrome BiDi
-    runs-on: ubuntu-latest
-
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true)
-
-    steps:
-    - uses: actions/checkout@v6
-    - uses: erlef/setup-beam@v1
+    - if: matrix.driver.needs_browser_install
+      uses: actions/cache@v5
       with:
-        otp-version: 28.x
-        elixir-version: 1.19.x
-    - uses: actions/setup-node@v4
-      with:
-        node-version: 20
+        path: .browsers
+        key: ${{ runner.os }}-browsers-${{ hashFiles('lib/wallabidi/browser_paths.ex') }}
 
-    - uses: actions/cache@v5
+    - if: matrix.driver.task == 'test.chrome.bidi'
+      uses: actions/cache@v5
       with:
-        path: deps
-        key: ${{ runner.os }}-mix-${{ hashFiles('mix.lock') }}
+        path: priv/bidi-server/node_modules
+        key: ${{ runner.os }}-bidi-server-${{ hashFiles('priv/bidi-server/package.json') }}
 
     - run: mix deps.get
-    - run: mix wallabidi.install
-    - run: mix test.chrome.bidi --max-cases 4
 
-  chrome_cdp_sidecar_tests:
-    # Regression coverage for the topology that surfaced 0.2.5/0.2.6
-    # (Host header + WebSocket URL discovery): Chrome running as a
-    # sibling container reached via DNS hostname, not localhost.
-    name: Chrome CDP (sidecar container)
-    runs-on: ubuntu-latest
+    - if: matrix.driver.needs_browser_install
+      # mix wallabidi.install also runs `npm install` in priv/bidi-server/
+      # for the BiDi driver — both Chrome jobs benefit from the cached
+      # browser binary and Node modules.
+      run: mix wallabidi.install
 
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true)
-
-    services:
-      chrome:
-        image: ghcr.io/chromedp/headless-shell:latest
-        ports:
-          - 9222:9222
-        options: --health-cmd="curl -sf http://localhost:9222/json/version || exit 1" --health-interval=5s --health-retries=10
-
-    steps:
-    - uses: actions/checkout@v6
-    - uses: erlef/setup-beam@v1
-      with:
-        otp-version: 28.x
-        elixir-version: 1.19.x
-
-    - uses: actions/cache@v5
-      with:
-        path: deps
-        key: ${{ runner.os }}-mix-${{ hashFiles('mix.lock') }}
-
-    - run: mix deps.get
-    - name: Run CDP tests against sibling Chrome
-      env:
-        WALLABIDI_CHROME_URL: chrome:9222
-      run: mix test.chrome --max-cases 4
+    - run: mix ${{ matrix.driver.task }} --max-cases ${{ matrix.driver.max_cases }}
 
   linting:
     name: Linting

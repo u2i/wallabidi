@@ -1,10 +1,11 @@
 defmodule Mix.Tasks.Wallabidi.Install do
   @moduledoc """
-  Installs Chrome for Testing and chromedriver.
+  Installs Chrome for Testing and the chromium-bidi server's Node deps.
 
-  Uses `npx @puppeteer/browsers install` to download matched versions of
-  Chrome and chromedriver into `.browsers/`. Writes the executable paths
-  to `.browsers/PATHS` so `Wallabidi.BrowserPaths` can find them.
+  Uses `npx @puppeteer/browsers install` to download Chrome into
+  `.browsers/`. Runs `npm install` in `priv/bidi-server/` to fetch the
+  chromium-bidi Node package and its peer deps. Writes the executable
+  path to `.browsers/PATHS` so `Wallabidi.BrowserPaths` can find it.
 
   ## Usage
 
@@ -13,37 +14,60 @@ defmodule Mix.Tasks.Wallabidi.Install do
 
   ## Requirements
 
-  Requires `npx` (Node.js) to be installed. The downloaded binaries are
-  cached — subsequent runs are fast.
+  Requires `npx` and `npm` (Node.js) to be installed. The downloaded
+  binaries and Node modules are cached — subsequent runs are fast.
+
+  ChromeDriver is no longer installed; wallabidi's BiDi driver speaks
+  directly to chromium-bidi.
   """
   use Mix.Task
 
   @install_dir ".browsers"
   @paths_file Path.join(@install_dir, "PATHS")
 
-  @shortdoc "Install Chrome for Testing + chromedriver"
+  @shortdoc "Install Chrome for Testing + chromium-bidi Node deps"
 
   @impl true
   def run(args) do
     version = List.first(args) || "stable"
 
     ensure_npx!()
+    ensure_npm!()
     File.mkdir_p!(@install_dir)
 
     Mix.shell().info("Installing Chrome for Testing @ #{version}...")
     chrome_path = install_browser("chrome", version)
 
-    Mix.shell().info("Installing chromedriver @ #{version}...")
-    chromedriver_path = install_browser("chromedriver", version)
+    write_paths(chrome_path)
 
-    write_paths(chrome_path, chromedriver_path)
+    Mix.shell().info("Installing chromium-bidi server Node deps...")
+    install_bidi_server_deps()
 
     Mix.shell().info("")
     Mix.shell().info("Installed:")
-    Mix.shell().info("  Chrome:      #{chrome_path}")
-    Mix.shell().info("  Chromedriver: #{chromedriver_path}")
+    Mix.shell().info("  Chrome: #{chrome_path}")
     Mix.shell().info("")
     Mix.shell().info("Paths written to #{@paths_file}")
+  end
+
+  defp install_bidi_server_deps do
+    bidi_dir = bidi_server_dir()
+
+    if File.dir?(Path.join(bidi_dir, "node_modules")) and
+         File.exists?(Path.join([bidi_dir, "node_modules", "chromium-bidi"])) do
+      Mix.shell().info("  (cached — node_modules/ already present)")
+    else
+      {_, 0} =
+        System.cmd("npm", ["install"],
+          cd: bidi_dir,
+          stderr_to_stdout: true,
+          into: IO.stream(:stdio, :line)
+        )
+    end
+  end
+
+  defp bidi_server_dir do
+    Path.join(File.cwd!(), "priv/bidi-server")
   end
 
   defp install_browser(browser, version) do
@@ -79,8 +103,8 @@ defmodule Mix.Tasks.Wallabidi.Install do
     abs_path
   end
 
-  defp write_paths(chrome, chromedriver) do
-    content = "CHROME=#{chrome}\nCHROMEDRIVER=#{chromedriver}\n"
+  defp write_paths(chrome) do
+    content = "CHROME=#{chrome}\n"
     File.write!(@paths_file, content)
   end
 
@@ -89,9 +113,17 @@ defmodule Mix.Tasks.Wallabidi.Install do
       Mix.raise("""
       `npx` not found. Install Node.js to use `mix wallabidi.install`.
 
-      Alternatively, set the paths manually:
+      Alternatively, set the path manually:
         WALLABIDI_CHROME_PATH=/path/to/chrome
-        WALLABIDI_CHROMEDRIVER_PATH=/path/to/chromedriver
+      """)
+    end
+  end
+
+  defp ensure_npm! do
+    unless System.find_executable("npm") do
+      Mix.raise("""
+      `npm` not found. Install Node.js to use `mix wallabidi.install`.
+      The chromium-bidi server runs as a small Node process.
       """)
     end
   end
