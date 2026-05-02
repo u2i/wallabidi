@@ -142,10 +142,7 @@ defmodule Wallabidi.BiDi.WebSocketClient do
       {:message_queue_len, qlen} = Process.info(self(), :message_queue_len)
 
       if qlen > 5,
-        do:
-          IO.puts(
-            ">>> SEND #{method} qlen=#{qlen} pending=#{map_size(state.pending)}"
-          )
+        do: IO.puts(">>> SEND #{method} qlen=#{qlen} pending=#{map_size(state.pending)}")
     end
 
     state = do_send_command(state, from, method, params)

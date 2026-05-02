@@ -58,9 +58,7 @@ defmodule Wallabidi.Chrome do
     children = [
       {Wallabidi.Chrome.BidiServer, [name: Wallabidi.Chrome.BidiServer]},
       {Wallabidi.Pool,
-       name: Wallabidi.Chrome.Pool,
-       impl: Wallabidi.Chrome.PoolImpl,
-       size: pool_size()}
+       name: Wallabidi.Chrome.Pool, impl: Wallabidi.Chrome.PoolImpl, size: pool_size()}
     ]
 
     Supervisor.init(children, strategy: :rest_for_one)
@@ -77,9 +75,7 @@ defmodule Wallabidi.Chrome do
     cond do
       not chrome_available?() ->
         {:error,
-         DependencyError.exception(
-           "Chrome binary not found. Run `mix wallabidi.install`."
-         )}
+         DependencyError.exception("Chrome binary not found. Run `mix wallabidi.install`.")}
 
       not node_available?() ->
         {:error,
@@ -135,8 +131,7 @@ defmodule Wallabidi.Chrome do
     # + one Mapper. Sessions on the same slot run sequentially through
     # the slot's single Mapper; sessions across slots run in parallel.
     case Wallabidi.Pool.checkout(Wallabidi.Chrome.Pool, opts) do
-      {:ok, slot_id, %{bidi_pid: bidi_pid},
-       %{user_context_id: uc, browsing_context_id: ctx}} ->
+      {:ok, slot_id, %{bidi_pid: bidi_pid}, %{user_context_id: uc, browsing_context_id: ctx}} ->
         user_caps = Keyword.get(opts, :capabilities, %{})
 
         unique_id = "chrome-bidi-#{System.unique_integer([:positive])}"
@@ -389,5 +384,4 @@ defmodule Wallabidi.Chrome do
   def element_location(element), do: delegate(:element_location, element)
   @doc false
   def take_screenshot(session_or_element), do: delegate(:take_screenshot, session_or_element)
-
 end

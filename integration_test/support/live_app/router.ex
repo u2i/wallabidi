@@ -38,7 +38,13 @@ defmodule Wallabidi.Integration.LiveApp.Router do
 
     get("/plain-form", Wallabidi.Integration.LiveApp.PlainFormController, :show)
     post("/plain-form", Wallabidi.Integration.LiveApp.PlainFormController, :submit)
-    post("/trigger-action-target", Wallabidi.Integration.LiveApp.PlainFormController, :trigger_action_target)
+
+    post(
+      "/trigger-action-target",
+      Wallabidi.Integration.LiveApp.PlainFormController,
+      :trigger_action_target
+    )
+
     get("/join-pending", Wallabidi.Integration.LiveApp.PlainFormController, :join_pending)
   end
 end

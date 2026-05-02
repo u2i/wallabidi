@@ -183,11 +183,21 @@ defmodule Wallabidi.LiveViewAware do
   @spec await_patch(Session.t(), timeout()) :: :ok | :page_navigated | :timeout
   def await_patch(%Session{} = session, timeout \\ 5_000) do
     case Protocol.eval_async(session, @await_patch_js, timeout) do
-      {:ok, "navigated"} -> :page_navigated
-      {:ok, "no-promise"} -> :page_navigated
-      {:ok, true} -> :ok
-      {:ok, false} -> :timeout
-      {:ok, _} -> :ok
+      {:ok, "navigated"} ->
+        :page_navigated
+
+      {:ok, "no-promise"} ->
+        :page_navigated
+
+      {:ok, true} ->
+        :ok
+
+      {:ok, false} ->
+        :timeout
+
+      {:ok, _} ->
+        :ok
+
       # BiDi: chromium-bidi raises "Cannot find context with specified id"
       # when we evaluate against a browsing context whose document was
       # destroyed by a navigation mid-flight. Treat that as :page_navigated

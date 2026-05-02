@@ -73,7 +73,9 @@ defmodule Wallabidi.CDP.PipelineClassifyTest do
     process.stdout.write(result);
     """
 
-    path = Path.join(System.tmp_dir!(), "wallabidi_classify_#{System.unique_integer([:positive])}.js")
+    path =
+      Path.join(System.tmp_dir!(), "wallabidi_classify_#{System.unique_integer([:positive])}.js")
+
     File.write!(path, script)
 
     try do

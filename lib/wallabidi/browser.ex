@@ -852,8 +852,7 @@ defmodule Wallabidi.Browser do
             if count && c != count do
               {:error, {:not_found, []}}
             else
-              {:ok, :clicked,
-               %{classification: cl, prepared: p || false, pre_ref: v["preRef"]}}
+              {:ok, :clicked, %{classification: cl, prepared: p || false, pre_ref: v["preRef"]}}
             end
 
           {:ok, _} ->
@@ -924,7 +923,7 @@ defmodule Wallabidi.Browser do
           end
 
         raise Wallabidi.NavigationTimeoutError,
-          %{from: nil, to: post, timeout_ms: 5_000}
+              %{from: nil, to: post, timeout_ms: 5_000}
     end
   end
 
@@ -941,7 +940,7 @@ defmodule Wallabidi.Browser do
           end
 
         raise Wallabidi.NavigationTimeoutError,
-          %{from: nil, to: post, timeout_ms: 5_000}
+              %{from: nil, to: post, timeout_ms: 5_000}
     end
   end
 

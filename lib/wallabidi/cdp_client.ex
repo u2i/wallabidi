@@ -410,9 +410,7 @@ defmodule Wallabidi.CDPClient do
 
     if pipeline.parent_id do
       {method, params} =
-        Commands.call_function_on_value(pipeline.parent_id, js, [],
-          await_promise: await_promise
-        )
+        Commands.call_function_on_value(pipeline.parent_id, js, [], await_promise: await_promise)
 
       send_cdp_session(session, method, params)
     else
@@ -1273,8 +1271,7 @@ defmodule Wallabidi.CDPClient do
 
       case find_elements_pipeline(parent, pipeline) do
         {:ok, _elements, classification, prepared, pre_ref} ->
-          {:ok, :clicked,
-           %{classification: classification, prepared: prepared, pre_ref: pre_ref}}
+          {:ok, :clicked, %{classification: classification, prepared: prepared, pre_ref: pre_ref}}
 
         {:ok, _elements, classification, prepared} ->
           {:ok, :clicked, %{classification: classification, prepared: prepared, pre_ref: nil}}

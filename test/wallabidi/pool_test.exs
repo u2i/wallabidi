@@ -10,7 +10,10 @@ defmodule Wallabidi.PoolTest do
     # Records all callbacks into an Agent so tests can inspect them.
 
     def start_recorder do
-      {:ok, _} = Agent.start_link(fn -> %{events: [], next_id: 0, fail_prepare: false} end, name: __MODULE__)
+      {:ok, _} =
+        Agent.start_link(fn -> %{events: [], next_id: 0, fail_prepare: false} end,
+          name: __MODULE__
+        )
     end
 
     def events, do: Agent.get(__MODULE__, & &1.events) |> Enum.reverse()
