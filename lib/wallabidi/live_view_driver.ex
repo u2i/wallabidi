@@ -26,6 +26,32 @@ defmodule Wallabidi.LiveViewDriver do
   @lv_test Phoenix.LiveViewTest
   @conn_test Phoenix.ConnTest
 
+  # --- Driver supervisor (no children — LiveViewDriver speaks directly
+  # to the configured Phoenix endpoint, no browser process needed).
+
+  @doc false
+  def child_spec(opts) do
+    %{
+      id: __MODULE__,
+      start: {__MODULE__, :start_link, [opts]},
+      type: :supervisor
+    }
+  end
+
+  @doc false
+  def start_link(opts \\ []) do
+    Supervisor.start_link(__MODULE__, :ok, opts)
+  end
+
+  @doc false
+  def init(_), do: Supervisor.init([], strategy: :one_for_one)
+
+  @doc false
+  def validate, do: :ok
+
+  @doc false
+  def cleanup_stale_sessions, do: :ok
+
   # --- Session lifecycle ---
 
   @impl true

@@ -122,7 +122,7 @@ defmodule Wallabidi do
     case resolve_driver() do
       :lightpanda -> Wallabidi.Lightpanda
       :chrome_cdp -> Wallabidi.ChromeCDP
-      :live_view -> Wallabidi.Chrome
+      :live_view -> Wallabidi.LiveViewDriver
       _ -> Wallabidi.Chrome
     end
   end

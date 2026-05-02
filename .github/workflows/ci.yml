@@ -55,6 +55,7 @@ jobs:
             max_cases: 16
             needs_node: false
             needs_browser_install: false
+            needs_lightpanda_install: true
           - label: Chrome CDP
             task: test.chrome
             max_cases: 4
@@ -102,6 +103,9 @@ jobs:
       # for the BiDi driver — both Chrome jobs benefit from the cached
       # browser binary and Node modules.
       run: mix wallabidi.install
+
+    - if: matrix.driver.needs_lightpanda_install
+      run: mix lightpanda.install
 
     - run: mix ${{ matrix.driver.task }} --max-cases ${{ matrix.driver.max_cases }}
 

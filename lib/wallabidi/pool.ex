@@ -243,12 +243,20 @@ defmodule Wallabidi.Pool do
   # --- Internal ---
 
   defp open_slot(state, id) do
+    open_slot_with_retry(state, id, 5)
+  end
+
+  defp open_slot_with_retry(state, id, attempts_left) do
     case state.impl.open_slot(state.open_opts) do
       {:ok, handle} ->
         slot = %Slot{id: id, handle: handle}
         slots = Map.put(state.slots, id, slot)
         available = :queue.in(id, state.available)
         %{state | slots: slots, available: available}
+
+      {:error, _reason} when attempts_left > 1 ->
+        Process.sleep(500)
+        open_slot_with_retry(state, id, attempts_left - 1)
 
       {:error, reason} ->
         raise "Wallabidi.Pool failed to open slot #{id} (#{inspect(state.impl)}): #{inspect(reason)}"
