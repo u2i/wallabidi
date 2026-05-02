@@ -128,7 +128,9 @@ defmodule Wallabidi.Pool do
   # pool. A prepare failure recycles the failing slot and retries on
   # a different one — important when chromium-bidi's WebSocket dies
   # mid-run, since one bad slot shouldn't cascade into 50 test failures.
-  @max_prepare_attempts 3
+  # Limit is generous because a transient hiccup shouldn't bubble up to
+  # the test as a hard failure.
+  @max_prepare_attempts 8
 
   @impl true
   def handle_call({:checkout, session_opts}, from, state) do
