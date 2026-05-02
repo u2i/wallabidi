@@ -105,7 +105,7 @@ jobs:
       run: mix wallabidi.install
 
     - if: matrix.driver.needs_lightpanda_install
-      run: mix lightpanda.install
+      run: MIX_ENV=test mix lightpanda.install
 
     - run: mix ${{ matrix.driver.task }} --max-cases ${{ matrix.driver.max_cases }}
 

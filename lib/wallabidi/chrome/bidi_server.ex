@@ -137,25 +137,23 @@ defmodule Wallabidi.Chrome.BidiServer do
           state
       end
 
-    cond do
-      String.contains?(buffer, "wallabidi-bidi-server: ready on port=") ->
-        case Regex.run(~r/wallabidi-bidi-server: ready on port=(\d+)/, buffer) do
-          [_, p] ->
-            tcp_port = String.to_integer(p)
-            state = %{state | tcp_port: tcp_port, ready?: true, buffer: ""}
+    if String.contains?(buffer, "wallabidi-bidi-server: ready on port=") do
+      case Regex.run(~r/wallabidi-bidi-server: ready on port=(\d+)/, buffer) do
+        [_, p] ->
+          tcp_port = String.to_integer(p)
+          state = %{state | tcp_port: tcp_port, ready?: true, buffer: ""}
 
-            for caller <- state.calls_awaiting_readiness do
-              GenServer.reply(caller, "ws://localhost:#{tcp_port}/session")
-            end
+          for caller <- state.calls_awaiting_readiness do
+            GenServer.reply(caller, "ws://localhost:#{tcp_port}/session")
+          end
 
-            %{state | calls_awaiting_readiness: []}
+          %{state | calls_awaiting_readiness: []}
 
-          nil ->
-            %{state | buffer: buffer}
-        end
-
-      true ->
-        %{state | buffer: buffer}
+        nil ->
+          %{state | buffer: buffer}
+      end
+    else
+      %{state | buffer: buffer}
     end
   end
 
