@@ -24,7 +24,7 @@ jobs:
         elixir-version: ${{matrix.elixir-otp.elixir}}
         version-type: ${{matrix.elixir-otp.version_type || 'loose'}}
 
-    - uses: actions/setup-node@v4
+    - uses: actions/setup-node@v6
       with:
         node-version: 20
 
@@ -89,7 +89,7 @@ jobs:
         elixir-version: 1.19.x
 
     - if: matrix.driver.needs_node
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v6
       with:
         node-version: 20
 
