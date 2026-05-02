@@ -124,16 +124,46 @@ defmodule Wallabidi.Pool do
     {:ok, state}
   end
 
-  @impl true
-  def handle_call({:checkout, session_opts}, from, state) do
-    do_checkout(from, session_opts, state, 0)
-  end
-
   # Try slots until prepare_session succeeds or we've exhausted the
   # pool. A prepare failure recycles the failing slot and retries on
   # a different one — important when chromium-bidi's WebSocket dies
   # mid-run, since one bad slot shouldn't cascade into 50 test failures.
   @max_prepare_attempts 3
+
+  @impl true
+  def handle_call({:checkout, session_opts}, from, state) do
+    do_checkout(from, session_opts, state, 0)
+  end
+
+  def handle_call({:checkin, slot_id, session_state}, _from, state) do
+    case Map.fetch(state.slots, slot_id) do
+      {:ok, %Slot{owner_ref: ref} = slot} when not is_nil(ref) ->
+        Process.demonitor(ref, [:flush])
+
+        # finalize_session must be safe to call on partially-prepared
+        # state (in case the caller died between prepare and a real
+        # checkin). The driver is responsible for graceful handling.
+        try do
+          state.impl.finalize_session(slot.handle, session_state)
+        rescue
+          e -> Logger.warning("Pool finalize_session raised: #{inspect(e)}")
+        catch
+          :exit, reason ->
+            Logger.warning("Pool finalize_session exited: #{inspect(reason)}")
+        end
+
+        slot = %{slot | owner: nil, owner_ref: nil}
+        slots = Map.put(state.slots, slot_id, slot)
+        state = %{state | slots: slots}
+
+        state = release_slot(state, slot_id)
+        {:reply, :ok, state}
+
+      _ ->
+        # Unknown slot or already checked in — be lenient
+        {:reply, :ok, state}
+    end
+  end
 
   defp do_checkout(_from, _session_opts, state, attempts)
        when attempts >= @max_prepare_attempts do
@@ -164,36 +194,6 @@ defmodule Wallabidi.Pool do
         # No slot free — queue the caller; reply when one frees up
         waiting = :queue.in({from, session_opts}, state.waiting)
         {:noreply, %{state | waiting: waiting}}
-    end
-  end
-
-  def handle_call({:checkin, slot_id, session_state}, _from, state) do
-    case Map.fetch(state.slots, slot_id) do
-      {:ok, %Slot{owner_ref: ref} = slot} when not is_nil(ref) ->
-        Process.demonitor(ref, [:flush])
-
-        # finalize_session must be safe to call on partially-prepared
-        # state (in case the caller died between prepare and a real
-        # checkin). The driver is responsible for graceful handling.
-        try do
-          state.impl.finalize_session(slot.handle, session_state)
-        rescue
-          e -> Logger.warning("Pool finalize_session raised: #{inspect(e)}")
-        catch
-          :exit, reason ->
-            Logger.warning("Pool finalize_session exited: #{inspect(reason)}")
-        end
-
-        slot = %{slot | owner: nil, owner_ref: nil}
-        slots = Map.put(state.slots, slot_id, slot)
-        state = %{state | slots: slots}
-
-        state = release_slot(state, slot_id)
-        {:reply, :ok, state}
-
-      _ ->
-        # Unknown slot or already checked in — be lenient
-        {:reply, :ok, state}
     end
   end
 
