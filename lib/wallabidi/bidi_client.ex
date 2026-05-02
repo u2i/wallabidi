@@ -650,9 +650,11 @@ defmodule Wallabidi.BiDiClient do
 
   def window_handles(session) do
     {method, params} = Commands.get_tree()
+    sess = session(session)
+    user_context = sess.capabilities[:user_context_id]
 
     case send_bidi(session, method, params) do
-      {:ok, result} -> ResponseParser.extract_all_contexts(result)
+      {:ok, result} -> ResponseParser.extract_all_contexts(result, user_context)
       error -> error
     end
   end
@@ -1243,8 +1245,10 @@ defmodule Wallabidi.BiDiClient do
     context = browsing_context(session)
     caller = self()
 
-    # Subscribe at BiDi protocol level and register to receive events
-    {method, params} = Commands.subscribe(["browsingContext.userPromptOpened"])
+    # Subscribe at BiDi protocol level and register to receive events.
+    # Scope to this browsing context so a sibling test's dialog doesn't
+    # land in our handler (shared-Chrome / multi-userContext mode).
+    {method, params} = Commands.subscribe(["browsingContext.userPromptOpened"], [context])
     WebSocketClient.send_command(pid, method, params)
 
     # Spawn a handler that listens for the dialog event and handles it.
@@ -1252,7 +1256,7 @@ defmodule Wallabidi.BiDiClient do
     # is handled (which happens with some chromedriver implementations).
     handler =
       spawn_link(fn ->
-        WebSocketClient.subscribe(pid, "browsingContext.userPromptOpened")
+        WebSocketClient.subscribe(pid, "browsingContext.userPromptOpened", self(), context)
 
         {message, default_value} =
           receive do
@@ -1313,10 +1317,11 @@ defmodule Wallabidi.BiDiClient do
 
   def settle(session, timeout, idle_time) do
     pid = bidi_pid(session)
+    context = browsing_context(session)
 
-    {method, params} = Commands.subscribe(["network.beforeRequestSent"])
+    {method, params} = Commands.subscribe(["network.beforeRequestSent"], [context])
     WebSocketClient.send_command(pid, method, params)
-    WebSocketClient.subscribe(pid, "network.beforeRequestSent")
+    WebSocketClient.subscribe(pid, "network.beforeRequestSent", self(), context)
 
     deadline = System.monotonic_time(:millisecond) + timeout
     do_settle(session, idle_time, deadline)
@@ -1535,13 +1540,16 @@ defmodule Wallabidi.BiDiClient do
   @doc false
   def prepare_page_load(session) do
     pid = bidi_pid(session)
+    context = browsing_context(session)
 
-    # Subscribe to browsingContext.load at the BiDi protocol level
-    {method, params} = Commands.subscribe(["browsingContext.load"])
+    # Subscribe to browsingContext.load at the BiDi protocol level,
+    # scoped to this browsing context so sibling sessions on the same
+    # shared Chrome don't fan in.
+    {method, params} = Commands.subscribe(["browsingContext.load"], [context])
     WebSocketClient.send_command(pid, method, params)
 
     # Register this process to receive the event
-    WebSocketClient.subscribe(pid, "browsingContext.load")
+    WebSocketClient.subscribe(pid, "browsingContext.load", self(), context)
     :ok
   end
 
@@ -1594,17 +1602,19 @@ defmodule Wallabidi.BiDiClient do
 
   def on_console(session, callback) do
     pid = bidi_pid(session)
+    context = browsing_context(session)
 
-    # Subscribe to log events at the BiDi protocol level (idempotent)
-    {method, params} = Commands.subscribe(["log.entryAdded"])
+    # Subscribe to log events at the BiDi protocol level, scoped to
+    # this browsing context (idempotent).
+    {method, params} = Commands.subscribe(["log.entryAdded"], [context])
     WebSocketClient.send_command(pid, method, params)
 
     # Spawn a listener process that subscribes itself and calls the callback
     caller = self()
 
     spawn_link(fn ->
-      # Subscribe this spawned process to receive log events
-      WebSocketClient.subscribe(pid, "log.entryAdded")
+      # Subscribe this spawned process to receive log events for this context
+      WebSocketClient.subscribe(pid, "log.entryAdded", self(), context)
       console_listener_loop(caller, callback)
     end)
 
@@ -1635,9 +1645,11 @@ defmodule Wallabidi.BiDiClient do
 
   def intercept_request(session, url_pattern, response) do
     pid = bidi_pid(session)
+    context = browsing_context(session)
 
-    # Subscribe to network events at the BiDi protocol level
-    {sub_method, sub_params} = Commands.subscribe(["network.beforeRequestSent"])
+    # Subscribe to network events at the BiDi protocol level, scoped
+    # to this browsing context.
+    {sub_method, sub_params} = Commands.subscribe(["network.beforeRequestSent"], [context])
     WebSocketClient.send_command(pid, sub_method, sub_params)
 
     # Add the intercept
@@ -1649,7 +1661,7 @@ defmodule Wallabidi.BiDiClient do
         caller = self()
 
         spawn_link(fn ->
-          WebSocketClient.subscribe(pid, "network.beforeRequestSent")
+          WebSocketClient.subscribe(pid, "network.beforeRequestSent", self(), context)
           intercept_handler_loop(caller, session, response)
         end)
 
@@ -1700,11 +1712,12 @@ defmodule Wallabidi.BiDiClient do
 
   def log(session) do
     pid = bidi_pid(session)
+    context = browsing_context(session)
 
-    # Subscribe to log events (idempotent)
-    {method, params} = Commands.subscribe(["log.entryAdded"])
+    # Subscribe to log events scoped to this browsing context (idempotent)
+    {method, params} = Commands.subscribe(["log.entryAdded"], [context])
     WebSocketClient.send_command(pid, method, params)
-    WebSocketClient.subscribe(pid, "log.entryAdded")
+    WebSocketClient.subscribe(pid, "log.entryAdded", self(), context)
 
     # Drain any buffered log events
     logs = drain_log_events()

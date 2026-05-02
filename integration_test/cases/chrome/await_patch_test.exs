@@ -144,15 +144,15 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
       session: session,
       live_url: url
     } do
+      session = visit(session, "#{url}/nav-source")
+
+      # Time only the click — the visit's wallclock varies with load.
+      # The bug we're guarding against is await_patch over-waiting after
+      # a navigation; that surfaces as click() taking >1s, not visit().
       start = System.monotonic_time(:millisecond)
-
-      session
-      |> visit("#{url}/nav-source")
-      # click triggers push_navigate — await_patch should bail on URL change
-      |> click(Query.css("#go-to-dest"))
-
+      click(session, Query.css("#go-to-dest"))
       elapsed = System.monotonic_time(:millisecond) - start
-      # click itself should return fast — not wait 5s for a patch
+
       assert elapsed < 3_000
     end
 
@@ -195,10 +195,12 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
       session: session,
       live_url: url
     } do
+      session = visit(session, "#{url}/nav-source")
+
+      # Time only the click+assert — visit wallclock varies with load.
       start = System.monotonic_time(:millisecond)
 
       session
-      |> visit("#{url}/nav-source")
       |> click(Query.css("#go-to-dest"))
       |> assert_has(Query.css("#dest-status", text: "arrived"))
 
@@ -295,10 +297,12 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
       session: session,
       live_url: url
     } do
+      session = visit(session, "#{url}/form-redirect")
+
+      # Time only the click+assert — visit wallclock varies with load.
       start = System.monotonic_time(:millisecond)
 
       session
-      |> visit("#{url}/form-redirect")
       |> click(Query.css("#submit-btn"))
       |> assert_has(Query.css("#full-dest-title", text: "Full Nav Destination"))
 
@@ -334,10 +338,12 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
       # Button has id="#menu-btn" and phx-click={JS.toggle(...)}.
       # Query.button compiles to XPath. The # in the ID can break
       # XPath resolution, and JS-only phx-click should be :none.
+      session = visit(session, "#{url}/js-toggle")
+
+      # Time only the click+assert — visit wallclock varies with load.
       start = System.monotonic_time(:millisecond)
 
       session
-      |> visit("#{url}/js-toggle")
       |> click(Query.button("#menu-btn"))
       |> assert_has(Query.css("#menu-content", text: "Menu is open"))
 
@@ -348,10 +354,11 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
 
     test "CSS selector with # in ID works correctly", %{session: session, live_url: url} do
       # Workaround from the issue — CSS attribute selector handles # fine
+      session = visit(session, "#{url}/js-toggle")
+
       start = System.monotonic_time(:millisecond)
 
       session
-      |> visit("#{url}/js-toggle")
       |> click(Query.css("[id='#menu-btn']"))
       |> assert_has(Query.css("#menu-content", text: "Menu is open"))
 

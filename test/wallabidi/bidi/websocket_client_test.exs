@@ -22,7 +22,7 @@ defmodule Wallabidi.BiDi.WebSocketClientTest do
       state = %WebSocketClient{}
       assert state.next_id == 1
       assert state.pending == %{}
-      assert state.subscribers == %{}
+      assert state.subscribers_table == nil
       assert state.queued_commands == []
       assert state.websocket == nil
       assert state.status == nil

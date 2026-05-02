@@ -1740,16 +1740,18 @@ defmodule Wallabidi.Browser do
     session = get_session(parent)
 
     with {:ok, ops, validated} <- Ops.from_wallaby(parent, query) do
+      timeout = query_timeout(validated)
+
       result =
         if session.protocol == Wallabidi.Protocol.CDP do
           Wallabidi.CDPClient.execute_ops(parent, ops,
-            timeout: max_wait_time(),
+            timeout: timeout,
             count: Query.count(validated),
             needs_elements: true
           )
         else
           find_elements_ops_bidi(parent, session, ops,
-            timeout: max_wait_time(),
+            timeout: timeout,
             count: Query.count(validated)
           )
         end
@@ -2020,6 +2022,16 @@ defmodule Wallabidi.Browser do
 
   defp max_wait_time do
     Application.get_env(:wallabidi, :max_wait_time, @default_max_wait_time)
+  end
+
+  # `all/2` and similar snapshot queries set `minimum: 0`. They want the
+  # current matches now, not "wait until something appears." Skip the
+  # full max_wait_time budget for those — fall through to the inline
+  # sync-count branch quickly.
+  defp query_timeout(%Wallabidi.Query{conditions: conditions}) do
+    if Keyword.get(conditions, :minimum) == 0,
+      do: 50,
+      else: max_wait_time()
   end
 
   defp request_url(path) do

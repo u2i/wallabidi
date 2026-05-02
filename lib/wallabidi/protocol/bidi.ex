@@ -40,7 +40,7 @@ defmodule Wallabidi.Protocol.BiDi do
   end
 
   @impl true
-  def subscribe(%Session{bidi_pid: pid}, semantic) do
+  def subscribe(%Session{bidi_pid: pid, browsing_context: context_id} = session, semantic) do
     methods = wire_methods(semantic)
 
     # Session-scoped events go to the SessionProcess router; owner-scoped
@@ -58,10 +58,17 @@ defmodule Wallabidi.Protocol.BiDi do
           Process.get(:wallabidi_session_owner, self())
       end
 
-    {cmd, params} = Commands.subscribe(methods)
-    WebSocketClient.send_command(pid, cmd, params)
+    # When the underlying WebSocket is shared (Chrome.SharedSession),
+    # subscriptions at the BiDi protocol level happen once globally.
+    # Otherwise, each session must call session.subscribe itself.
+    unless session.capabilities[:shared_connection] do
+      contexts = if is_binary(context_id), do: [context_id], else: nil
+      {cmd, params} = Commands.subscribe(methods, contexts)
+      WebSocketClient.send_command(pid, cmd, params)
+    end
 
-    Enum.each(methods, &WebSocketClient.subscribe(pid, &1, subscriber))
+    session_key = if is_binary(context_id), do: context_id, else: :global
+    Enum.each(methods, &WebSocketClient.subscribe(pid, &1, subscriber, session_key))
     :ok
   end
 
