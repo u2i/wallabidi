@@ -819,6 +819,11 @@ defmodule Wallabidi.Browser do
     {js, parent_id, _mode} = Pipeline.to_js(pipeline)
     context = session.browsing_context
 
+    # click_full returns a Promise (see Pipeline.compile_op({:click_full, _})).
+    # await_promise: true so the BiDi response carries the resolved value
+    # instead of the promise handle.
+    opts = %{await_promise: true}
+
     # For scoped queries, wrap the function via .call() since BiDi
     # callFunction doesn't bind `this` like CDP's callFunctionOn.
     {method, params} =
@@ -831,34 +836,36 @@ defmodule Wallabidi.Browser do
 
         if shared_id do
           wrapper = "function(_el) { return (#{js}).call(_el); }"
-          Wallabidi.BiDi.Commands.call_function(context, wrapper, [%{sharedId: shared_id}])
+          Wallabidi.BiDi.Commands.call_function(context, wrapper, [%{sharedId: shared_id}], opts)
         else
-          Wallabidi.BiDi.Commands.evaluate(context, js)
+          Wallabidi.BiDi.Commands.evaluate(context, js, opts)
         end
       else
-        Wallabidi.BiDi.Commands.evaluate(context, js)
+        Wallabidi.BiDi.Commands.evaluate(context, js, opts)
       end
 
     case Wallabidi.BiDi.WebSocketClient.send_command(session.bidi_pid, method, params, 10_000) do
       {:ok, response} ->
         case Wallabidi.BiDi.ResponseParser.extract_value(response) do
-          {:ok, %{"count" => c, "classification" => cl, "prepared" => p}} when is_integer(c) ->
+          {:ok, %{"count" => c, "classification" => cl, "prepared" => p} = v}
+          when is_integer(c) ->
             if count && c != count do
               {:error, {:not_found, []}}
             else
-              {:ok, :clicked, %{classification: cl, prepared: p || false}}
+              {:ok, :clicked,
+               %{classification: cl, prepared: p || false, pre_ref: v["preRef"]}}
             end
 
           {:ok, _} ->
-            {:ok, :clicked, %{classification: "none", prepared: false}}
+            {:ok, :clicked, %{classification: "none", prepared: false, pre_ref: nil}}
 
           {:error, _} ->
-            {:ok, :clicked, %{classification: "full_page", prepared: false}}
+            {:ok, :clicked, %{classification: "full_page", prepared: false, pre_ref: nil}}
         end
 
       {:error, _} ->
         # Context destroyed — click likely navigated the page
-        {:ok, :clicked, %{classification: "full_page", prepared: false}}
+        {:ok, :clicked, %{classification: "full_page", prepared: false, pre_ref: nil}}
     end
   end
 
@@ -876,11 +883,12 @@ defmodule Wallabidi.Browser do
         Wallabidi.SessionProcess.await_page_ready_after(session, pre_page_id)
 
       :timeout ->
-        # Patch didn't fire in 1s. Three possibilities:
-        #   (a) click triggered a nav — bootstrap will fire page_ready
-        #   (b) server handle_event is slow (DB, state transitions) and
+        # Patch didn't fire in 1s, but the patch promise was still present
+        # when await_patch ran (otherwise we'd have got :page_navigated).
+        # Two possibilities remain:
+        #   (a) server handle_event is slow (DB, state transitions) and
         #       will push_navigate / push_patch / diff shortly
-        #   (c) no LV event at all
+        #   (b) no LV event at all
         # If we captured a pre_ref, wait for the LV server to ack that
         # event — however long handle_event takes. Closes the teamology
         # slow-handle_event race where wallabidi returned before server
@@ -2324,6 +2332,11 @@ defmodule Wallabidi.Browser do
       // Check if it's a plain link that will cause a full page navigation
       var anchor = el.closest('a[href]');
       if (anchor && anchor.getAttribute('href') && !anchor.getAttribute('href').startsWith('#')) {
+        // target="_blank" etc. open in a new tab — source page doesn't navigate.
+        var tgt = anchor.getAttribute('target');
+        if (tgt && tgt !== '_self' && tgt !== '_top' && tgt !== '_parent') return 'none';
+        // onclick handler may preventDefault — can't statically tell.
+        if (anchor.hasAttribute('onclick')) return 'none';
         return 'full_page';
       }
       return 'none';

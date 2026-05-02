@@ -52,6 +52,10 @@ defmodule Wallabidi.Bootstrap do
     // --- Visibility check ---
     W.isVisible = function(el) {
       if (!el.isConnected) return false;
+      // Head and its descendants are never user-visible regardless of CSS
+      // (real browsers enforce this via UA stylesheet; some headless engines
+      // like Lightpanda don't, so check explicitly).
+      if (el.ownerDocument && el.ownerDocument.head && el.ownerDocument.head.contains(el)) return false;
       if (el.tagName === 'OPTION') {
         var s = el.closest('select');
         if (!s) return true;
@@ -110,14 +114,28 @@ defmodule Wallabidi.Bootstrap do
           }
           return 'patch';
         }
-        if (el.type === 'submit' || el.type === 'image' || el.tagName === 'BUTTON') {
+        // Only buttons/inputs that submit a form trigger navigation.
+        // type='reset' and type='button' run JS but never submit/navigate.
+        var submits = (el.type === 'submit' || el.type === 'image') ||
+                      (el.tagName === 'BUTTON' && el.type !== 'reset' && el.type !== 'button');
+        if (submits) {
           var f = el.closest('form');
           if (f && f.hasAttribute('phx-trigger-action')) return 'full_page';
           if (f && f.getAttribute('phx-submit')) return 'patch';
           if (f) return 'full_page';
         }
         var a = el.closest('a[href]');
-        if (a && a.getAttribute('href') && !a.getAttribute('href').startsWith('#')) return 'full_page';
+        if (a && a.getAttribute('href') && !a.getAttribute('href').startsWith('#')) {
+          // target="_blank" / target="newwindow" / etc. open in a new tab —
+          // the source page doesn't navigate, so don't await a load.
+          var tgt = a.getAttribute('target');
+          if (tgt && tgt !== '_self' && tgt !== '_top' && tgt !== '_parent') return 'none';
+          // onclick handler may preventDefault — can't statically tell.
+          // Defer to the JS to decide; if it does navigate, downstream
+          // assertions will retry-with-timeout anyway.
+          if (a.hasAttribute('onclick')) return 'none';
+          return 'full_page';
+        }
         return 'none';
       }
       if (type === 'change') {
