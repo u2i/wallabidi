@@ -1,6 +1,13 @@
 defmodule Wallabidi.Chrome do
   @moduledoc """
-  The Chrome driver uses chromedriver and WebDriver BiDi to control Chrome.
+  The Chrome driver speaks WebDriver BiDi to a chromium-bidi standalone
+  server (`Wallabidi.Chrome.BidiServer`), which forwards to Chrome over
+  CDP. No chromedriver is involved.
+
+  All test sessions multiplex over one shared Chrome instance via BiDi
+  `userContext`s — each test gets its own isolated profile (cookies,
+  localStorage, etc.) and a fresh `browsingContext` (tab) within it.
+  This matches Playwright's "one browser, many contexts" model.
 
   ## Usage
 
@@ -10,83 +17,27 @@ defmodule Wallabidi.Chrome do
 
   ## Configuration
 
-  ### Headless
-
-  Chrome will run in headless mode by default.
-
-  ```elixir
-  config :wallabidi,
-    chromedriver: [
-      headless: false
-    ]
-  ```
-
-  ### Capabilities
-
-  ```elixir
-  config :wallabidi,
-    chromedriver: [
-      capabilities: %{
-        "goog:chromeOptions": %{args: ["--headless"]}
-      }
-    ]
-  ```
-
-  ### ChromeDriver binary
-
-  ```elixir
-  config :wallabidi,
-    chromedriver: [
-      path: "path/to/chromedriver"
-    ]
-  ```
-
-  ### Chrome binary
-
-  ```elixir
-  config :wallabidi,
-    chromedriver: [
-      binary: "path/to/chrome"
-    ]
-  ```
-
-  ### Remote ChromeDriver
-
-  To connect to a ChromeDriver running in a separate container (e.g. Docker):
-
-  ```elixir
-  config :wallabidi,
-    chromedriver: [
-      remote_url: "http://chrome:4444/"
-    ]
-  ```
-
-  When `remote_url` is set, Wallabidi will not start a local ChromeDriver process
-  and will instead connect to the remote instance.
+  Chrome runs headless by default. Pass `[window_size: [width: W, height: H]]`
+  to `start_session/1` to override the viewport.
   """
   use Supervisor
 
-  @default_readiness_timeout 10_000
-
-  alias Wallabidi.BiDi.{ResponseParser, WebSocketClient}
-  alias Wallabidi.{BiDiClient, DependencyError, Metadata}
-  alias Wallabidi.Chrome.Chromedriver
+  alias Wallabidi.BiDi.WebSocketClient
+  alias Wallabidi.{BiDiClient, DependencyError}
   alias Wallabidi.Driver.SessionLifecycle
   import Wallabidi.Driver.LogChecker
 
   @typedoc """
   Options to pass to Wallabidi.start_session/1
 
-  * `:capabilities` - capabilities to pass to chromedriver on session startup
-  * `:readiness_timeout` - milliseconds to wait for chromedriver to be ready (default: #{@default_readiness_timeout})
-  * `:window_size` - initial window size as `[width: w, height: h]`
-  * `:metadata` - beam metadata to append to user-agent
+  * `:capabilities` — extra capabilities to merge into the session struct
+  * `:window_size` — initial viewport size as `[width: w, height: h]`
+  * `:metadata` — beam metadata appended to the user-agent (Ecto sandbox)
   """
   @behaviour Wallabidi.Driver
 
   @type start_session_opts ::
           {:capabilities, map}
-          | {:readiness_timeout, timeout()}
           | {:window_size, keyword()}
           | {:metadata, map()}
 
@@ -97,50 +48,66 @@ defmodule Wallabidi.Chrome do
 
   @doc false
   def init(_) do
-    # remote_url is set either by config or by Docker.start in validate()
-    children =
-      if remote_url() do
-        []
-      else
-        [Wallabidi.Chrome.Chromedriver]
-      end
+    # The Chrome (BiDi) driver speaks BiDi to a chromium-bidi standalone
+    # server (Wallabidi.Chrome.BidiServer), which forwards to Chrome via
+    # CDP. No chromedriver involved.
+    children = [
+      {Wallabidi.Chrome.BidiServer, [name: Wallabidi.Chrome.BidiServer]},
+      Wallabidi.Chrome.SharedSession
+    ]
 
-    Supervisor.init(children, strategy: :one_for_one)
+    Supervisor.init(children, strategy: :rest_for_one)
   end
 
   @doc false
   @spec validate() :: :ok | {:error, DependencyError.t()}
   def validate do
     cond do
-      remote_url() ->
-        :ok
-
-      local_chromedriver_available?() ->
-        with {:ok, chromedriver_version} <- get_chromedriver_version(),
-             {:ok, chrome_version} <- get_chrome_version(),
-             :ok <- minimum_version_check(chromedriver_version) do
-          version_compare(chrome_version, chromedriver_version)
-        end
-
-      Wallabidi.Chrome.Docker.available?() ->
-        case Wallabidi.Chrome.Docker.start() do
-          {:ok, _url} ->
-            :ok
-
-          {:error, reason} ->
-            {:error,
-             DependencyError.exception(
-               "Failed to start Chrome via Docker: #{inspect(reason)}. " <>
-                 "Install chromedriver locally, configure a remote_url, or install Docker."
-             )}
-        end
-
-      true ->
+      not chrome_available?() ->
         {:error,
          DependencyError.exception(
-           "Chromedriver not found. Run `mix wallabidi.install` or set WALLABIDI_CHROMEDRIVER_URL."
+           "Chrome binary not found. Run `mix wallabidi.install`."
          )}
+
+      not node_available?() ->
+        {:error,
+         DependencyError.exception(
+           "Node.js not found. Wallabidi's BiDi driver runs the chromium-bidi server " <>
+             "(a small Node process). Install Node 20+ to use the Chrome BiDi driver."
+         )}
+
+      not bidi_server_installed?() ->
+        {:error,
+         DependencyError.exception(
+           "chromium-bidi server dependencies not installed. " <>
+             "Run `cd #{bidi_server_dir()} && npm install`."
+         )}
+
+      true ->
+        :ok
     end
+  end
+
+  defp chrome_available? do
+    case Wallabidi.BrowserPaths.chrome_path() do
+      {:ok, _} -> true
+      _ -> false
+    end
+  end
+
+  defp node_available? do
+    case System.find_executable("node") do
+      nil -> false
+      _ -> true
+    end
+  end
+
+  defp bidi_server_installed? do
+    File.exists?(Path.join([bidi_server_dir(), "node_modules", "chromium-bidi"]))
+  end
+
+  defp bidi_server_dir do
+    Path.absname("priv/bidi-server", Application.app_dir(:wallabidi))
   end
 
   @doc false
@@ -152,127 +119,72 @@ defmodule Wallabidi.Chrome do
   end
 
   defp do_start_session(opts) do
-    timeout = Keyword.get(opts, :readiness_timeout, @default_readiness_timeout)
-    base_url = chromedriver_base_url()
+    # Reuse the shared BiDi connection (chromium-bidi → CDP → one
+    # Chrome). Each test session creates its own userContext (isolated
+    # cookies/storage) and a new browsingContext (tab) within that
+    # context.
+    bidi_pid = Wallabidi.Chrome.SharedSession.get()
 
-    wait_for_chromedriver!(base_url, timeout)
+    {:ok, user_context_id} = create_user_context(bidi_pid)
 
-    capabilities =
-      opts
-      |> Keyword.get_lazy(:capabilities, fn -> capabilities_from_config(opts) end)
-      |> put_beam_metadata(opts)
-      |> Map.put(:webSocketUrl, true)
+    {:ok, browsing_context_id} = create_browsing_context(bidi_pid, user_context_id)
 
-    with {:ok, response} <- create_session(base_url, capabilities) do
-      # W3C format nests under "value", legacy puts sessionId at top level
-      id =
-        get_in(response, ["value", "sessionId"]) ||
-          response["sessionId"] ||
-          raise "chromedriver did not return a sessionId"
+    install_bootstrap!(bidi_pid, browsing_context_id)
 
-      session = %Wallabidi.Session{
-        session_url: base_url <> "session/#{id}",
-        url: base_url <> "session/#{id}",
-        id: id,
-        driver: __MODULE__,
-        protocol: Wallabidi.Protocol.BiDi,
-        server: Chromedriver,
-        capabilities: capabilities
-      }
+    user_caps = Keyword.get(opts, :capabilities, %{})
 
-      session = connect_bidi!(session, response, base_url)
+    unique_id = "chrome-bidi-#{System.unique_integer([:positive])}"
 
-      # Subscribe to console logs so they buffer from session start,
-      # and to page load events so SessionProcess can track navigations.
-      Wallabidi.Protocol.subscribe(session, :log)
-      Wallabidi.Protocol.subscribe(session, :page_load)
-      Wallabidi.Protocol.subscribe(session, :find_binding)
+    session = %Wallabidi.Session{
+      session_url: "bidi://#{unique_id}",
+      url: "bidi://#{unique_id}",
+      id: unique_id,
+      driver: __MODULE__,
+      protocol: Wallabidi.Protocol.BiDi,
+      server: __MODULE__,
+      bidi_pid: bidi_pid,
+      browsing_context: browsing_context_id,
+      capabilities:
+        Map.merge(user_caps, %{
+          user_context_id: user_context_id,
+          shared_connection: true
+        })
+    }
 
-      if window_size = Keyword.get(opts, :window_size),
-        do: {:ok, _} = set_window_size(session, window_size[:width], window_size[:height])
+    # Subscribe to console logs so they buffer from session start,
+    # and to page load events so SessionProcess can track navigations.
+    Wallabidi.Protocol.subscribe(session, :log)
+    Wallabidi.Protocol.subscribe(session, :page_load)
+    Wallabidi.Protocol.subscribe(session, :find_binding)
 
-      {:ok, session}
+    if window_size = Keyword.get(opts, :window_size),
+      do: {:ok, _} = set_window_size(session, window_size[:width], window_size[:height])
+
+    {:ok, session}
+  end
+
+  defp create_user_context(bidi_pid) do
+    {method, params} = Wallabidi.BiDi.Commands.create_user_context()
+
+    case WebSocketClient.send_command(bidi_pid, method, params) do
+      {:ok, %{"result" => %{"userContext" => uc}}} -> {:ok, uc}
+      {:ok, %{"userContext" => uc}} -> {:ok, uc}
+      other -> {:error, {:create_user_context_failed, other}}
     end
   end
 
-  defp remote_url do
-    Wallabidi.BrowserPaths.chromedriver_url() ||
-      Application.get_env(:wallabidi, :chromedriver, []) |> Keyword.get(:remote_url)
-  end
+  defp create_browsing_context(bidi_pid, user_context_id) do
+    {method, params} =
+      Wallabidi.BiDi.Commands.create_context("tab", %{userContext: user_context_id})
 
-  defp local_chromedriver_available? do
-    match?({:ok, _}, Wallabidi.BrowserPaths.chromedriver_path())
-  end
-
-  defp chromedriver_base_url do
-    remote_url() || Chromedriver.base_url()
-  end
-
-  # When connecting to a remote chromedriver, the webSocketUrl it returns
-  # uses localhost (from its perspective). Rewrite the host to match the
-  # remote_url so we connect to the right machine.
-  defp rewrite_ws_host(ws_url, base_url) do
-    if remote_url() do
-      ws_uri = URI.parse(ws_url)
-      base_uri = URI.parse(base_url)
-
-      URI.to_string(%{ws_uri | host: base_uri.host})
-    else
-      ws_url
+    case WebSocketClient.send_command(bidi_pid, method, params) do
+      {:ok, %{"result" => %{"context" => ctx}}} -> {:ok, ctx}
+      {:ok, %{"context" => ctx}} -> {:ok, ctx}
+      other -> {:error, {:create_context_failed, other}}
     end
   end
 
-  defp wait_for_chromedriver!(base_url, timeout) do
-    if remote_url() do
-      # Poll the remote /status endpoint with a timeout
-      task =
-        Task.async(fn ->
-          Wallabidi.Chrome.Chromedriver.ReadinessChecker.wait_until_ready(base_url)
-        end)
-
-      case Task.yield(task, timeout) || Task.shutdown(task) do
-        {:ok, :ok} -> :ok
-        _ -> raise "timeout waiting for remote chromedriver at #{base_url}"
-      end
-    else
-      wait_until_ready!(timeout)
-    end
-  end
-
-  defp create_session(base_url, capabilities) do
-    params =
-      Jason.encode!(%{
-        capabilities: %{alwaysMatch: capabilities}
-      })
-
-    url = "#{base_url}session"
-
-    case mint_request(:post, url, params) do
-      {:ok, body} ->
-        {:ok, body}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  defp connect_bidi!(session, response, base_url) do
-    ws_url =
-      get_in(response, ["value", "capabilities", "webSocketUrl"]) ||
-        get_in(response, ["capabilities", "webSocketUrl"]) ||
-        raise "chromedriver did not return a webSocketUrl — upgrade chromedriver"
-
-    ws_url = rewrite_ws_host(ws_url, base_url)
-
-    {:ok, bidi_pid} = WebSocketClient.start_link(ws_url)
-    # Detach from test process so WebSocket survives into on_exit cleanup
-    SessionLifecycle.detach(bidi_pid)
-
-    {:ok, result} =
-      WebSocketClient.send_command(bidi_pid, "browsingContext.getTree", %{})
-
-    {:ok, context_id} = ResponseParser.extract_context(result)
-
+  defp install_bootstrap!(bidi_pid, context_id) do
     # Install push-based element finding via two paths:
     #
     # 1. addPreloadScript — persists across navigations. Each new document
@@ -290,15 +202,10 @@ defmodule Wallabidi.Chrome do
     {:ok, _} = WebSocketClient.send_command(bidi_pid, cmd, params)
 
     {cmd, params} =
-      Wallabidi.BiDi.Commands.call_function(
-        context_id,
-        bootstrap_fn,
-        channel_arg
-      )
+      Wallabidi.BiDi.Commands.call_function(context_id, bootstrap_fn, channel_arg)
 
     WebSocketClient.send_command(bidi_pid, cmd, params)
-
-    %{session | bidi_pid: bidi_pid, browsing_context: context_id}
+    :ok
   end
 
   @doc false
@@ -313,40 +220,57 @@ defmodule Wallabidi.Chrome do
     SessionLifecycle.teardown(session)
   end
 
-  @doc false
-  # HTTP DELETE tells chromedriver to kill Chrome and remove the session
-  # record. Must run before the WebSocket close (which SessionLifecycle
-  # handles next) — reversing the order leaves chromedriver without a
-  # handle, orphaning the Chrome process.
-  def release_server_session(session), do: delete_session(session)
-
-  defp delete_session(session) do
-    mint_request(:delete, session.session_url, "")
-  rescue
-    _ -> {:ok, %{}}
+  @doc """
+  Returns the default BiDi capabilities used by Wallabidi-managed
+  sessions. Mostly a starting point for users who want to merge in
+  their own capabilities — the chromium-bidi server applies its own
+  Chrome launch args independently.
+  """
+  def default_capabilities do
+    %{
+      browserName: "chrome",
+      unhandledPromptBehavior: "ignore"
+    }
   end
 
   @doc false
-  def cleanup_stale_sessions do
-    base_url = chromedriver_base_url()
-    wait_for_chromedriver!(base_url, @default_readiness_timeout)
+  # Releases per-session server-side resources. Sessions share the
+  # underlying chromium-bidi connection / Chrome instance via
+  # Chrome.SharedSession, so this only removes the per-session
+  # userContext (closing its browsingContexts and clearing its
+  # cookies/storage).
+  def release_server_session(
+        %Wallabidi.Session{capabilities: caps, bidi_pid: pid, browsing_context: ctx} = _session
+      ) do
+    # Drop the BEAM-side ETS subscriptions for this browsing context so the
+    # shared dispatch table doesn't grow without bound across many sessions.
+    if is_pid(pid) and is_binary(ctx) do
+      WebSocketClient.unsubscribe_session(pid, ctx)
+    end
 
-    case mint_request(:get, "#{base_url}sessions", "") do
-      {:ok, %{"value" => sessions}} when is_list(sessions) and sessions != [] ->
-        require Logger
+    case caps do
+      %{user_context_id: uc} when is_binary(uc) and is_pid(pid) ->
+        {method, params} = Wallabidi.BiDi.Commands.remove_user_context(uc)
 
-        Logger.debug("Wallabidi: cleaning up #{length(sessions)} stale ChromeDriver session(s)")
-
-        for %{"id" => id} <- sessions do
-          mint_request(:delete, "#{base_url}session/#{id}", "")
+        try do
+          WebSocketClient.send_command(pid, method, params, 5_000)
+        rescue
+          _ -> {:ok, %{}}
+        catch
+          :exit, _ -> {:ok, %{}}
         end
 
       _ ->
-        :ok
+        {:ok, %{}}
     end
-  rescue
-    _ -> :ok
   end
+
+  @doc false
+  # No stale-session cleanup needed: with chromium-bidi, session state
+  # lives in the Node subprocess. When wallabidi (and the BidiServer
+  # GenServer) shuts down, the Node subprocess gets killed and Chrome
+  # goes with it.
+  def cleanup_stale_sessions, do: :ok
 
   @doc false
   def blank_page?(session) do
@@ -375,7 +299,6 @@ defmodule Wallabidi.Chrome do
   defdelegate accept_prompt(session, input, fun), to: BiDiClient
   @doc false
   defdelegate dismiss_prompt(session, fun), to: BiDiClient
-  @doc false
   @doc false
   defdelegate parse_log(log), to: Wallabidi.Chrome.Logger
   @doc false
@@ -508,296 +431,4 @@ defmodule Wallabidi.Chrome do
   @doc false
   def take_screenshot(session_or_element), do: delegate(:take_screenshot, session_or_element)
 
-  @doc false
-  def default_capabilities do
-    chrome_options =
-      maybe_put_chrome_executable(%{
-        args: [
-          "--no-sandbox",
-          "window-size=1280,800",
-          "--disable-gpu",
-          "--headless",
-          "--fullscreen",
-          "--user-agent=Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36"
-        ]
-      })
-
-    %{
-      unhandledPromptBehavior: "ignore",
-      "goog:chromeOptions": chrome_options,
-      "goog:loggingPrefs": %{
-        browser: "ALL"
-      }
-    }
-  end
-
-  # HTTP helpers using Mint (for session create/delete only)
-
-  defp mint_request(method, url, body) do
-    uri = URI.parse(url)
-    port = uri.port || 80
-
-    with {:ok, conn} <- Mint.HTTP.connect(:http, uri.host, port),
-         {:ok, conn, ref} <-
-           Mint.HTTP.request(conn, String.upcase(to_string(method)), uri.path, headers(), body) do
-      receive_response(conn, ref, "")
-    end
-  end
-
-  defp receive_response(conn, ref, acc, deferred \\ []) do
-    receive do
-      message ->
-        case Mint.HTTP.stream(conn, message) do
-          {:ok, conn, responses} ->
-            {done?, acc} =
-              Enum.reduce(responses, {false, acc}, fn
-                {:data, ^ref, data}, {_, a} -> {false, a <> data}
-                {:done, ^ref}, {_, a} -> {true, a}
-                _, acc -> acc
-              end)
-
-            if done? do
-              Mint.HTTP.close(conn)
-              # Put non-Mint messages back in the mailbox in original order
-              Enum.each(Enum.reverse(deferred), &send(self(), &1))
-
-              case Jason.decode(acc) do
-                {:ok, decoded} -> check_for_errors(decoded)
-                {:error, _} -> {:ok, %{}}
-              end
-            else
-              receive_response(conn, ref, acc, deferred)
-            end
-
-          {:error, _, reason, _} ->
-            Enum.each(Enum.reverse(deferred), &send(self(), &1))
-            {:error, reason}
-
-          :unknown ->
-            # Not our message — defer it and keep looking for our response.
-            receive_response(conn, ref, acc, [message | deferred])
-        end
-    after
-      10_000 ->
-        Enum.each(Enum.reverse(deferred), &send(self(), &1))
-        {:error, :timeout}
-    end
-  end
-
-  defp check_for_errors(%{"value" => %{"message" => "stale element reference" <> _}}),
-    do: {:error, :stale_reference}
-
-  defp check_for_errors(%{"value" => %{"error" => _, "message" => msg}}),
-    do: raise(msg)
-
-  defp check_for_errors(response), do: {:ok, response}
-
-  defp headers do
-    [{"accept", "application/json"}, {"content-type", "application/json;charset=UTF-8"}]
-  end
-
-  # Chrome/chromedriver discovery and version checking
-
-  @doc false
-  def find_chrome_executable(opts \\ []) do
-    default_chrome_paths =
-      case :os.type() do
-        {:unix, :darwin} ->
-          [
-            "/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome",
-            "/Applications/Chromium.app/Contents/MacOS/Chromium"
-          ]
-
-        {:unix, :linux} ->
-          ["google-chrome", "chromium", "chromium-browser"]
-
-        {:win32, :nt} ->
-          ["C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"]
-      end
-
-    chrome_path =
-      Keyword.get_lazy(opts, :binary, fn ->
-        :wallabidi
-        |> Application.get_env(:chromedriver, [])
-        |> Keyword.get(:binary, [])
-      end)
-
-    [Path.expand(chrome_path) | default_chrome_paths]
-    |> Enum.find_value(&System.find_executable/1)
-    |> case do
-      path when is_binary(path) ->
-        {:ok, path}
-
-      nil ->
-        {:error,
-         DependencyError.exception(
-           "Wallabidi can't find Chrome. Make sure you have chrome installed and included in your path."
-         )}
-    end
-  end
-
-  @doc false
-  def find_chromedriver_executable(opts \\ []) do
-    chromedriver_path =
-      Keyword.get_lazy(opts, :path, fn ->
-        :wallabidi
-        |> Application.get_env(:chromedriver, [])
-        |> Keyword.get(:path, "chromedriver")
-      end)
-
-    [Path.expand(chromedriver_path), chromedriver_path]
-    |> Enum.find_value(&System.find_executable/1)
-    |> case do
-      path when is_binary(path) ->
-        {:ok, path}
-
-      nil ->
-        {:error,
-         DependencyError.exception(
-           "Wallabidi can't find chromedriver. Make sure you have chromedriver installed and included in your path."
-         )}
-    end
-  end
-
-  @doc false
-  def get_chrome_version do
-    case :os.type() do
-      {:win32, :nt} ->
-        {stdout, 0} =
-          System.cmd("reg", [
-            "query",
-            "HKLM\\SOFTWARE\\Wow6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Google Chrome"
-          ])
-
-        {:ok, parse_version(stdout)}
-
-      _ ->
-        case Wallabidi.BrowserPaths.chrome_path() do
-          {:ok, exe} ->
-            {stdout, 0} = System.cmd(exe, ["--version"])
-            {:ok, parse_version(stdout)}
-
-          error ->
-            error
-        end
-    end
-  end
-
-  @doc false
-  def get_chromedriver_version do
-    case Wallabidi.BrowserPaths.chromedriver_path() do
-      {:ok, exe} ->
-        {stdout, 0} = System.cmd(exe, ["--version"])
-        {:ok, parse_version(stdout)}
-
-      error ->
-        error
-    end
-  end
-
-  defp parse_version(body) do
-    case Regex.run(~r/.*?(\d+\.\d+(\.\d+)?)/, body) do
-      [_, version, _] -> String.split(version, ".") |> Enum.map(&String.to_integer/1)
-      [_, version] -> String.split(version, ".") |> Enum.map(&String.to_integer/1)
-    end
-  end
-
-  defp version_compare(chrome, chromedriver) when chrome == chromedriver, do: :ok
-
-  defp version_compare(chrome, chromedriver) do
-    IO.warn(
-      "Chrome version #{Enum.join(chrome, ".")} and chromedriver version #{Enum.join(chromedriver, ".")} don't match."
-    )
-
-    :ok
-  end
-
-  defp minimum_version_check([major | _]) when major > 2, do: :ok
-  defp minimum_version_check([2, minor | _]) when minor >= 30, do: :ok
-
-  defp minimum_version_check(_) do
-    {:error,
-     DependencyError.exception("Wallabidi needs at least chromedriver 2.30 to run correctly.")}
-  end
-
-  defp wait_until_ready!(timeout) do
-    case Chromedriver.wait_until_ready(timeout) do
-      :ok -> :ok
-      {:error, :timeout} -> raise "timeout waiting for chromedriver to be ready"
-    end
-  end
-
-  defp capabilities_from_config(opts) do
-    :wallabidi
-    |> Application.get_env(:chromedriver, [])
-    |> Keyword.get_lazy(:capabilities, &default_capabilities/0)
-    |> put_headless_config(opts)
-    |> put_binary_config(opts)
-  end
-
-  defp maybe_put_chrome_executable(chrome_options) do
-    if remote_url() do
-      # Don't set local Chrome binary when using remote chromedriver
-      chrome_options
-    else
-      case Wallabidi.BrowserPaths.chrome_path() do
-        {:ok, binary} -> Map.put(chrome_options, :binary, binary)
-        _ -> chrome_options
-      end
-    end
-  end
-
-  defp put_headless_config(capabilities, opts) do
-    case resolve_opt(opts, :headless) do
-      nil ->
-        capabilities
-
-      true ->
-        update_in(
-          capabilities,
-          [Access.key(:"goog:chromeOptions", %{}), Access.key(:args, [])],
-          fn args -> Enum.uniq((args || []) ++ ["--headless"]) end
-        )
-
-      false ->
-        update_in(
-          capabilities,
-          [Access.key(:"goog:chromeOptions", %{}), Access.key(:args, [])],
-          fn args -> (args || []) -- ["--headless"] end
-        )
-    end
-  end
-
-  defp put_binary_config(capabilities, opts) do
-    case resolve_opt(opts, :binary) do
-      nil ->
-        capabilities
-
-      path ->
-        put_in(capabilities, [Access.key(:"goog:chromeOptions", %{}), Access.key(:binary)], path)
-    end
-  end
-
-  defp put_beam_metadata(capabilities, opts) do
-    update_in(capabilities, [Access.key(:"goog:chromeOptions", %{}), Access.key(:args, [])], fn
-      args when is_list(args) ->
-        Enum.map(args, fn
-          "--user-agent=" <> ua ->
-            "--user-agent=#{Metadata.append(ua, opts[:metadata])}"
-
-          arg ->
-            arg
-        end)
-
-      other ->
-        other
-    end)
-  end
-
-  defp resolve_opt(opts, key) do
-    case Keyword.fetch(opts, key) do
-      {:ok, value} -> value
-      :error -> Application.get_env(:wallabidi, :chromedriver, []) |> Keyword.get(key)
-    end
-  end
 end

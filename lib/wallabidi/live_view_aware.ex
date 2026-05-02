@@ -188,7 +188,16 @@ defmodule Wallabidi.LiveViewAware do
       {:ok, true} -> :ok
       {:ok, false} -> :timeout
       {:ok, _} -> :ok
-      {:error, _} -> :timeout
+      # BiDi: chromium-bidi raises "Cannot find context with specified id"
+      # when we evaluate against a browsing context whose document was
+      # destroyed by a navigation mid-flight. Treat that as :page_navigated
+      # — the patch promise is gone with the old context, but we know
+      # navigation happened.
+      {:error, {_, msg}} when is_binary(msg) ->
+        if msg =~ "Cannot find context", do: :page_navigated, else: :timeout
+
+      {:error, _} ->
+        :timeout
     end
   end
 

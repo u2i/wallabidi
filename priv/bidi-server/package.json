@@ -1,0 +1,17 @@
+{
+  "name": "wallabidi-bidi-server",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Bundled chromium-bidi server for Wallabidi BiDi driver. Starts a WebSocket server (default port 8080) that translates BiDi to CDP, talking directly to a Chrome/Chromium instance — no chromedriver in the loop.",
+  "type": "module",
+  "scripts": {
+    "start": "node run.mjs"
+  },
+  "dependencies": {
+    "@puppeteer/browsers": "^2.0.0",
+    "chromium-bidi": "^15.0.0",
+    "debug": "^4.3.4",
+    "websocket": "^1.0.34",
+    "yargs": "^17.7.2"
+  }
+}

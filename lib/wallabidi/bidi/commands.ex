@@ -12,6 +12,18 @@ defmodule Wallabidi.BiDi.Commands do
     {"browsingContext.getTree", opts}
   end
 
+  def create_context(type, opts \\ %{}) when type in ["tab", "window"] do
+    {"browsingContext.create", Map.merge(%{type: type}, opts)}
+  end
+
+  def create_user_context(opts \\ %{}) do
+    {"browser.createUserContext", opts}
+  end
+
+  def remove_user_context(user_context_id) do
+    {"browser.removeUserContext", %{userContext: user_context_id}}
+  end
+
   def capture_screenshot(context) do
     {"browsingContext.captureScreenshot", %{context: context}}
   end

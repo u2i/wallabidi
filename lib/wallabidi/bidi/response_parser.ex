@@ -143,13 +143,30 @@ defmodule Wallabidi.BiDi.ResponseParser do
 
   @doc """
   Extracts all context IDs from a getTree response (for window_handles).
+
+  When `user_context` is given, only contexts in that userContext are
+  returned. This is needed when multiple wallabidi sessions share a
+  Chrome instance and each session has its own userContext — without
+  filtering, `window_handles` would leak sibling sessions' tabs.
   """
-  def extract_all_contexts(%{"contexts" => contexts}) do
+  def extract_all_contexts(response, user_context \\ nil)
+
+  def extract_all_contexts(%{"contexts" => contexts}, nil) do
     ids = Enum.map(contexts, fn ctx -> ctx["context"] end)
     {:ok, ids}
   end
 
-  def extract_all_contexts(other), do: {:error, {:unexpected_tree_response, other}}
+  def extract_all_contexts(%{"contexts" => contexts}, user_context)
+      when is_binary(user_context) do
+    ids =
+      contexts
+      |> Enum.filter(fn ctx -> ctx["userContext"] == user_context end)
+      |> Enum.map(fn ctx -> ctx["context"] end)
+
+    {:ok, ids}
+  end
+
+  def extract_all_contexts(other, _), do: {:error, {:unexpected_tree_response, other}}
 
   @doc """
   Extracts the screenshot data from a captureScreenshot response.

@@ -11,9 +11,9 @@ defmodule Wallabidi.BiDi.WebSocketClient do
     :conn,
     :websocket,
     :ref,
+    :subscribers_table,
     next_id: 1,
     pending: %{},
-    subscribers: %{},
     buffer: "",
     status: nil,
     queued_commands: []
@@ -78,6 +78,17 @@ defmodule Wallabidi.BiDi.WebSocketClient do
     :exit, _ -> :ok
   end
 
+  @doc """
+  Remove every subscription whose key has the given session_id (any method).
+  Cheap O(N) sweep — used at session-end to keep the dispatch table small
+  when many ephemeral sessions share one connection.
+  """
+  def unsubscribe_session(pid, session_id) do
+    GenServer.call(pid, {:unsubscribe_session, session_id})
+  catch
+    :exit, _ -> :ok
+  end
+
   def close(pid) do
     GenServer.call(pid, :close)
   catch
@@ -94,9 +105,21 @@ defmodule Wallabidi.BiDi.WebSocketClient do
     port = uri.port || if(http_scheme == :https, do: 443, else: 80)
     path = (uri.path || "/") <> if(uri.query, do: "?#{uri.query}", else: "")
 
+    # Subscribers live in a public ETS table so the receive loop can
+    # dispatch events with a single :ets.lookup + send/2, no GenServer
+    # round-trip. Each WebSocketClient owns its own table; when the
+    # process dies, the table dies with it.
+    table =
+      :ets.new(:wallabidi_bidi_subscribers, [
+        :set,
+        :public,
+        read_concurrency: true,
+        write_concurrency: true
+      ])
+
     with {:ok, conn} <- Mint.HTTP.connect(http_scheme, uri.host, port),
          {:ok, conn, ref} <- Mint.WebSocket.upgrade(ws_scheme, conn, path, []) do
-      {:ok, %__MODULE__{conn: conn, ref: ref}}
+      {:ok, %__MODULE__{conn: conn, ref: ref, subscribers_table: table}}
     else
       {:error, reason} ->
         {:stop, {:connection_failed, reason}}
@@ -115,6 +138,16 @@ defmodule Wallabidi.BiDi.WebSocketClient do
   end
 
   def handle_call({:send_command, method, params}, from, state) do
+    if System.get_env("WALLABIDI_TRACE_QUEUE") == "1" do
+      {:message_queue_len, qlen} = Process.info(self(), :message_queue_len)
+
+      if qlen > 5,
+        do:
+          IO.puts(
+            ">>> SEND #{method} qlen=#{qlen} pending=#{map_size(state.pending)}"
+          )
+    end
+
     state = do_send_command(state, from, method, params)
     {:noreply, state}
   end
@@ -136,14 +169,26 @@ defmodule Wallabidi.BiDi.WebSocketClient do
   def handle_call({:subscribe, event_method, subscriber, session_id}, {caller, _}, state) do
     target = subscriber || caller
     key = {event_method, session_id}
-    subs = Map.update(state.subscribers, key, [target], &[target | &1])
-    {:reply, :ok, %{state | subscribers: subs}}
+    existing = lookup_subs(state.subscribers_table, key)
+    :ets.insert(state.subscribers_table, {key, [target | List.delete(existing, target)]})
+    {:reply, :ok, state}
   end
 
   def handle_call({:unsubscribe, event_method, subscriber, session_id}, _from, state) do
     key = {event_method, session_id}
-    subs = Map.update(state.subscribers, key, [], &List.delete(&1, subscriber))
-    {:reply, :ok, %{state | subscribers: subs}}
+    existing = lookup_subs(state.subscribers_table, key)
+
+    case List.delete(existing, subscriber) do
+      [] -> :ets.delete(state.subscribers_table, key)
+      list -> :ets.insert(state.subscribers_table, {key, list})
+    end
+
+    {:reply, :ok, state}
+  end
+
+  def handle_call({:unsubscribe_session, session_id}, _from, state) do
+    :ets.match_delete(state.subscribers_table, {{:_, session_id}, :_})
+    {:reply, :ok, state}
   end
 
   def handle_call(:close, _from, state) do
@@ -239,18 +284,29 @@ defmodule Wallabidi.BiDi.WebSocketClient do
   defp process_response(_response, state), do: state
 
   defp process_frame({:text, text}, state) do
-    case Jason.decode(text) do
-      {:ok, %{"id" => id} = response} ->
-        handle_command_response(state, id, response)
+    trace? = System.get_env("WALLABIDI_TRACE_FRAME") == "1"
+    t0 = if trace?, do: System.monotonic_time(:microsecond), else: 0
 
-      {:ok, %{"method" => method} = event} ->
-        broadcast_event(state, method, event)
-        state
+    new_state =
+      case Jason.decode(text) do
+        {:ok, %{"id" => id} = response} ->
+          handle_command_response(state, id, response)
 
-      {:error, _} ->
-        Logger.warning("BiDi WebSocket received invalid JSON: #{text}")
-        state
+        {:ok, %{"method" => method} = event} ->
+          broadcast_event(state, method, event)
+          state
+
+        {:error, _} ->
+          Logger.warning("BiDi WebSocket received invalid JSON: #{text}")
+          state
+      end
+
+    if trace? do
+      dt = System.monotonic_time(:microsecond) - t0
+      if dt > 1000, do: IO.puts(">>> FRAME #{div(dt, 1000)}ms #{String.slice(text, 0, 100)}")
     end
+
+    new_state
   end
 
   defp process_frame({:close, _code, _reason}, state) do
@@ -263,18 +319,38 @@ defmodule Wallabidi.BiDi.WebSocketClient do
   defp broadcast_event(state, method, event) do
     # Session-scoped subscribers receive only events for their session.
     # Global subscribers (:global) receive all events regardless of session.
-    session_id = event["sessionId"]
+    #
+    # CDP carries a flat sessionId at the top level. BiDi events vary —
+    # most browsing-context-scoped events carry their context id under
+    # `params.context` (or `params.source.context` for log entries). We
+    # accept any of those as a session key.
+    keys =
+      [
+        event["sessionId"],
+        get_in(event, ["params", "context"]),
+        get_in(event, ["params", "source", "context"])
+      ]
+      |> Enum.filter(&is_binary/1)
+      |> Enum.uniq()
+
+    table = state.subscribers_table
 
     session_pids =
-      if is_binary(session_id),
-        do: Map.get(state.subscribers, {method, session_id}, []),
-        else: []
+      keys
+      |> Enum.flat_map(fn k -> lookup_subs(table, {method, k}) end)
 
-    global_pids = Map.get(state.subscribers, {method, :global}, [])
+    global_pids = lookup_subs(table, {method, :global})
 
     Enum.each(session_pids ++ global_pids, fn pid ->
       send(pid, {:bidi_event, method, event})
     end)
+  end
+
+  defp lookup_subs(table, key) do
+    case :ets.lookup(table, key) do
+      [{^key, list}] -> list
+      [] -> []
+    end
   end
 
   defp reply_all_pending(state, reply) do

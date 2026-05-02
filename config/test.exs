@@ -4,7 +4,12 @@ config :logger, level: :warning
 
 config :wallabidi,
   tmp_dir_prefix: "wallabidi_test",
-  otp_app: :wallabidi
+  otp_app: :wallabidi,
+  # Slightly tighter than the default 5000ms — negative-path tests
+  # (`assert_raise Wallabidi.QueryError`) burn the full budget per
+  # missing element. 3500ms still covers the stale_nodes_test 3s
+  # mutation timer with margin.
+  max_wait_time: 3_500
 
 # Chrome/chromedriver discovery handled by Wallabidi.BrowserPaths.
 # Override with env vars for Docker/CI:
