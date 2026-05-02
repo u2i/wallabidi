@@ -24,12 +24,26 @@ jobs:
         elixir-version: ${{matrix.elixir-otp.elixir}}
         version-type: ${{matrix.elixir-otp.version_type || 'loose'}}
 
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 20
+
     - uses: actions/cache@v5
       with:
         path: deps
         key: ${{ runner.os }}-mix-${{ hashFiles('mix.lock') }}
 
+    - uses: actions/cache@v5
+      with:
+        path: .browsers
+        key: ${{ runner.os }}-browsers-${{ hashFiles('lib/wallabidi/browser_paths.ex') }}
+
     - run: mix deps.get
+    # SandboxIntegrationTest hits the default :chrome_cdp driver, which
+    # spawns Chrome locally — install a known-good Chrome for Testing
+    # binary so the unit suite isn't at the mercy of whichever
+    # ubuntu-latest chromium happens to ship.
+    - run: mix wallabidi.install
     - run: mix test
 
   integration_tests:
