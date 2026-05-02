@@ -35,7 +35,7 @@ defmodule Wallabidi.Protocol do
   alias Wallabidi.Session
 
   @type result :: {:ok, any} | {:error, any}
-  @type semantic_event :: :log | :dialog | :network_request | :page_load
+  @type semantic_event :: :log | :dialog | :network_request | :page_load | :binding
 
   @doc """
   Evaluates a JavaScript expression and returns its value (serialized to

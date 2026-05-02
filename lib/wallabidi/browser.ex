@@ -1886,6 +1886,23 @@ defmodule Wallabidi.Browser do
     end
   end
 
+  defp parse_bidi_nodes(items, parent, session) do
+    items
+    |> Enum.filter(fn item -> item["type"] == "node" end)
+    |> Enum.map(fn node ->
+      shared_id = node["sharedId"]
+      Process.put({:wallabidi_element_shared_id, shared_id}, shared_id)
+
+      %Wallabidi.Element{
+        id: shared_id,
+        bidi_shared_id: shared_id,
+        parent: parent,
+        driver: session.driver,
+        url: session.session_url
+      }
+    end)
+  end
+
   # Final synchronous check after timeout — re-run the ops inline (not
   # from W.queries) so this works even if the register_js eval hasn't
   # completed yet (fire-and-forget registration). Mirrors CDP's final_js.
@@ -1920,25 +1937,6 @@ defmodule Wallabidi.Browser do
     :ok
   rescue
     _ -> :ok
-  end
-
-  defp parse_bidi_nodes(items, parent, session) do
-    items
-    |> Enum.filter(fn item -> item["type"] == "node" end)
-    |> Enum.map(fn node ->
-      shared_id = node["sharedId"]
-      # Store the id→sharedId mapping so execute_script can resolve
-      # WebDriver-style element refs back to BiDi shared references.
-      Process.put({:wallabidi_element_shared_id, shared_id}, shared_id)
-
-      %Wallabidi.Element{
-        id: shared_id,
-        bidi_shared_id: shared_id,
-        parent: parent,
-        driver: session.driver,
-        url: session.session_url
-      }
-    end)
   end
 
   defp execute_query_legacy(parent, driver, query) do

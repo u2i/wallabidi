@@ -8,13 +8,14 @@ defmodule Wallabidi.Session do
           pid: pid() | nil,
           session_url: String.t(),
           url: String.t(),
-          server: pid | :none,
+          server: pid | :none | module,
           screenshots: list,
           driver: module,
           protocol: module | nil,
           capabilities: map(),
           bidi_pid: pid() | nil,
-          browsing_context: String.t() | nil
+          browsing_context: String.t() | nil,
+          metadata: map() | nil
         }
 
   defstruct [

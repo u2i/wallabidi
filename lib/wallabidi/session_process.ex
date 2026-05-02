@@ -183,7 +183,10 @@ defmodule Wallabidi.SessionProcess do
   binding fires, or `{:timeout, 0}` on timeout.
   """
   @spec await_find_result(Session.t(), String.t(), timeout()) ::
-          {:ok, non_neg_integer()} | {:error, :invalid_selector} | {:timeout, non_neg_integer()}
+          {:ok, non_neg_integer(), map()}
+          | {:ok, [String.t()]}
+          | {:error, :invalid_selector}
+          | {:timeout, non_neg_integer()}
   def await_find_result(%Session{pid: pid}, query_id, timeout_ms)
       when is_pid(pid) and is_binary(query_id) do
     GenServer.call(pid, {:await_find_result, query_id}, timeout_ms + 2_000)
