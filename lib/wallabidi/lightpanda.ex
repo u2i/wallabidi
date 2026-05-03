@@ -278,11 +278,10 @@ defmodule Wallabidi.Lightpanda do
   end
 
   defp lightpanda_available? do
-    mod = Module.concat([Lightpanda])
-
-    Code.ensure_loaded?(mod) and
-      is_binary(apply(mod, :bin_path, [])) and
-      File.exists?(apply(mod, :bin_path, []))
+    # The Lightpanda module from the Hex dep ships a lazy installer
+    # (`Lightpanda.ensure_installed!/0`); the binary is downloaded on
+    # first session start, so the dep being loaded is enough.
+    Code.ensure_loaded?(Lightpanda)
   rescue
     _ -> false
   end
