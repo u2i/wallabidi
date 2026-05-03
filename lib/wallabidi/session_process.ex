@@ -418,6 +418,12 @@ defmodule Wallabidi.SessionProcess do
   end
 
   def handle_call({:await_page_ready_after, pre_page_id, timeout_ms}, from, state) do
+    require Logger
+
+    Logger.warning(
+      "[wallabidi_diag] await_page_ready_after sess=#{inspect(self())} pre=#{String.slice(pre_page_id || "nil", 0, 12)} last=#{String.slice(state.last_page_id || "nil", 0, 12)} early_return=#{state.last_page_id != nil and state.last_page_id != pre_page_id}"
+    )
+
     if state.last_page_id != nil and state.last_page_id != pre_page_id do
       # Already received a notification with a different pageId
       {:reply, :ok, state}
@@ -548,6 +554,15 @@ defmodule Wallabidi.SessionProcess do
       {:ok, %{"type" => "page_ready", "pageId" => page_id} = msg} ->
         state = update_page_state_machine(state, msg)
         resolve_page_ready(state, page_id)
+
+      {:ok, %{"type" => "diag"} = msg} ->
+        require Logger
+
+        Logger.warning(
+          "[wallabidi_diag] sess=#{inspect(self())} path=#{msg["path"]} reason=#{msg["reason"]} state=#{msg["state"]} dom=#{inspect(msg["dom"])} docId=#{String.slice(msg["docId"] || "?", 0, 12)} last_page_id=#{String.slice(state.last_page_id || "nil", 0, 12)} pageId=#{String.slice(msg["pageId"] || "?", 0, 12)} waiter?=#{not is_nil(state.page_ready_waiter)}"
+        )
+
+        state
 
       _ ->
         state
