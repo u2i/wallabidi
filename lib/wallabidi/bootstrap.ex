@@ -296,14 +296,14 @@ defmodule Wallabidi.Bootstrap do
 
     function notify(reason) {
       try {
-        // Targeted diagnostic for plain-form-submit flake — only the
-        // /full-nav-dest URL prints lifecycle. Strip after the bug
-        // is identified.
-        if (location.pathname === '/full-nav-dest') {
-          var el = document.getElementById('full-lv-connected');
-          var dom = el ? el.textContent : 'absent';
-          console.log('[wallabidi_diag] notify reason=' + reason + ' state=' + W.state + ' dom=' + JSON.stringify(dom) + ' observedPatch=' + W.observedPatch);
-        }
+        // Diagnostic for the plain-form-submit flake. Print location +
+        // dom-of-#full-lv-connected (when present) for every notify so
+        // we can correlate which test hit which page and what the DOM
+        // looked like at notify time. Strip after the bug is identified.
+        var el = document.getElementById('full-lv-connected');
+        var dom = el ? el.textContent : 'absent';
+        var path = location.pathname;
+        console.log('[wallabidi_diag] notify path=' + path + ' reason=' + reason + ' state=' + W.state + ' dom=' + JSON.stringify(dom) + ' docId=' + (W.docId || '?').slice(0, 12));
         __wallabidi(JSON.stringify({
           type: 'page_ready',
           pageId: W.pageId,
