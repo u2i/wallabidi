@@ -1,5 +1,37 @@
 # Changelog
 
+## Wallabidi 0.2.14 (2026-05-03)
+
+### Fixed
+
+- **Concurrent-navigation flakes across CDP and BiDi.** Three related races
+  caused `~1-in-4` BiDi job failures and intermittent `FunctionClauseError`
+  crashes on CDP:
+  - `await_page_ready_after` could early-return `:ok` when `pre_page_id` was
+    captured as `nil` (before the SessionProcess processed its first
+    `page_ready` notification) but `last_page_id` had since been set —
+    falsely signalling the destination was ready before the click had even
+    issued. Now requires non-nil `pre_page_id` for the early-return.
+  - `CDPClient.find_elements_ops` returned `%Element{id: nil}` placeholders
+    when the secondary fetch (`window.__w.queries[id].elements`) raced a
+    concurrent navigation that cleared `__w`. The placeholders crashed
+    `attribute/2`. Now surfaces `:stale_reference`; the timeout fallback
+    fetches real `objectId`s instead of placeholders.
+  - `BiDiClient.execute_script` returned `{:error, ..., "Cannot find context
+    with specified id"}` immediately after navigation when chromium-bidi
+    hadn't yet bound the new realm. Retries (5× with 50ms backoff) on that
+    specific error.
+- **`Browser.find/2` retries on `:stale_reference`** within the query
+  timeout budget, matching the behaviour of the legacy path.
+
+### Added
+
+- **Page-ready state machine** in the bootstrap (`Initial → AwaitingHook →
+  HookInstalled → LVReady` or `→ NonLVReady`) with invalid-transition
+  raising on the Elixir side. Maintains a 32-entry ring buffer per session;
+  `NavigationTimeoutError` dumps the recent transitions on timeout for
+  diagnostic visibility.
+
 ## Wallabidi 0.2.7 (2026-04-15)
 
 ### Fixed
