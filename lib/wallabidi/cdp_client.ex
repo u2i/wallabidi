@@ -1396,31 +1396,42 @@ defmodule Wallabidi.CDPClient do
             end
 
           true ->
+            # found_count == 0 — genuinely empty result, no elements to fetch.
             cleanup_query(session, query_id)
-            {:ok, List.duplicate(%Element{parent: parent, driver: session.driver}, found_count)}
+            {:ok, []}
         end
 
       {:timeout, _} ->
         cleanup_query(session, query_id)
-        # Final sync check for count: 0 queries
-        final_js =
-          "(function(){var W=window.__w;if(!W)return 0;var r=W.exec(#{ops_json},null);return r.els.length;})()"
+        # Final sync check: re-run ops inline AND fetch real refs in
+        # one eval so we never return placeholder %Element{id: nil}.
+        # The W.exec call returns the array of matched elements; we
+        # then go through the same getProperties dance as the success
+        # path to extract real objectIds.
+        final_js = "(window.__w && window.__w.exec(#{ops_json}, null).els) || []"
+        {method, params} = Commands.evaluate(final_js, return_by_value: false)
 
-        case send_cdp_session(session, "Runtime.evaluate", %{
-               expression: final_js,
-               returnByValue: true
-             }) do
-          {:ok, result} ->
-            case ResponseParser.extract_value({:ok, result}) do
-              {:ok, n} when is_integer(n) ->
-                {:ok, List.duplicate(%Element{parent: parent, driver: session.driver}, n)}
+        with {:ok, result} <- send_cdp_session(session, method, params),
+             {:ok, array_id} <- ResponseParser.extract_object_id({:ok, result}),
+             true <- not is_nil(array_id),
+             {:ok, gp_result} <- send_cdp_raw(session, Commands.get_properties(array_id)),
+             {:ok, ids} <- ResponseParser.extract_element_ids({:ok, gp_result}) do
+          if array_id, do: cast_release(session, array_id)
 
-              _ ->
-                {:ok, []}
-            end
+          elements =
+            Enum.map(ids, fn object_id ->
+              %Element{
+                id: object_id,
+                bidi_shared_id: object_id,
+                parent: parent,
+                driver: session.driver,
+                url: session.session_url
+              }
+            end)
 
-          _ ->
-            {:ok, []}
+          {:ok, elements}
+        else
+          _ -> {:ok, []}
         end
     end
   end
