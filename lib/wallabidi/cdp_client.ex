@@ -1000,100 +1000,14 @@ defmodule Wallabidi.CDPClient do
     end
   end
 
-  # Auto-flush pending ops before any blocking RPC. Drains from
-  # SessionProcess and executes them (including post-click await).
-  # Uses process dict to prevent recursive flushing.
-  defp maybe_flush_pending(%Session{pid: pid} = session) when is_pid(pid) do
-    if Process.get(:wallabidi_flushing) do
-      :ok
-    else
-      case Wallabidi.SessionProcess.drain_ops(session) do
-        [] -> :ok
-        pending -> flush_pending(session, pending)
-      end
-    end
-  end
-
-  defp maybe_flush_pending(_), do: :ok
-
-  defp flush_pending(session, pending) do
-    # Guard against re-entrant flushing (execute_ops calls send_cdp_session)
-    Process.put(:wallabidi_flushing, true)
-
-    try do
-      Enum.each(pending, fn {_query_id, ops, action, opts} ->
-        case action do
-          :click ->
-            case execute_ops(session, ops, opts) do
-              {:ok, :clicked, %{classification: c, prepared: p}} ->
-                do_post_click(session, c, p)
-
-              _ ->
-                :ok
-            end
-
-          _ ->
-            execute_ops(session, ops, opts)
-        end
-      end)
-    after
-      Process.delete(:wallabidi_flushing)
-    end
-  end
-
-  # Post-click await — same logic as Browser.post_pipeline_click but
-  # called from within the flush so it runs between the click and the
-  # next operation.
-  @doc false
-  def do_post_click(session, classification, prepared, pre_url \\ nil)
-
-  def do_post_click(_session, "none", _prepared, _pre_url), do: :ok
-
-  def do_post_click(session, "patch", true, _pre_url) do
-    # Short timeout: patches resolve in <100ms. If await_patch doesn't
-    # resolve in 1s, the click likely caused a redirect (not a patch).
-    # The 5s default wastes time on redirects that await_patch can't
-    # detect (beforeunload fires before the listener is installed).
-    case Wallabidi.LiveViewAware.await_patch(session, 1_000) do
-      :ok ->
-        :ok
-
-      :page_navigated ->
-        Wallabidi.SessionProcess.await_next_page_load(session)
-        Wallabidi.LiveViewAware.await_liveview_connected(session)
-
-      :timeout ->
-        # Patch didn't resolve in 1s. The click may have caused a
-        # redirect that await_patch couldn't detect. Check by reading
-        # the current page — if the context changed or LV marker is
-        # absent, the page navigated.
-        Wallabidi.LiveViewAware.await_liveview_connected(session)
-    end
-  end
-
-  def do_post_click(_session, "patch", false, _pre_url), do: :ok
-
-  def do_post_click(session, "navigate", _prepared, pre_url) do
-    pre =
-      pre_url ||
-        case Wallabidi.Protocol.current_url(session) do
-          {:ok, url} -> url
-          _ -> nil
-        end
-
-    _ = Wallabidi.LiveViewAware.await_liveview_connected(session, pre_url: pre)
-    :ok
-  end
-
-  def do_post_click(session, "full_page", _prepared, _pre_url) do
-    Wallabidi.SessionProcess.await_next_page_load(session)
-    Wallabidi.LiveViewAware.await_liveview_connected(session)
-  end
-
-  def do_post_click(_, _, _, _), do: :ok
-
   defp send_cdp_session(%Session{} = session, method, params) do
-    maybe_flush_pending(session)
+    # Mailbox barrier on the SessionProcess: drains any pending
+    # binding events / page_ready notifications BEFORE we issue the
+    # next CDP RPC, preserving causal ordering. Previously this
+    # ordering was supplied as a side-effect of the lazy-ops queue's
+    # `drain_ops` call; with the queue gone we keep the barrier
+    # explicit. See SessionProcess.sync_barrier/1 for rationale.
+    Wallabidi.SessionProcess.sync_barrier(session)
 
     pid = bidi_pid(session)
     session_id = effective_session_id(session)
