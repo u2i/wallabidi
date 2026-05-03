@@ -11,6 +11,5 @@ erl_crash.dump
 /docs
 .claude/
 /chrome/
-/chromedriver/
 .browsers/
 /priv/bidi-server/node_modules/

@@ -2,14 +2,11 @@ defmodule Wallabidi.Chrome.BidiServer do
   @moduledoc false
 
   # Manages a chromium-bidi Node process that exposes a BiDi WebSocket
-  # server. Replaces chromedriver in the Wallabidi.Chrome (BiDi) driver
-  # path.
+  # server for the Wallabidi.Chrome (BiDi) driver path.
   #
   # The Node runner lives at `priv/bidi-server/run.mjs` and depends on
   # the `chromium-bidi` npm package (installed via `npm install` in that
-  # directory). It speaks BiDi natively to a Chrome instance via CDP —
-  # the same architecture chromedriver uses internally, but without
-  # chromedriver's single-threaded Java event loop in the way.
+  # directory). It speaks BiDi natively to a Chrome instance via CDP.
   #
   # Lifecycle:
   #   - Spawns Node via `priv/run_command.sh` so the OS-level process

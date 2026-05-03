@@ -5,7 +5,7 @@ defmodule Wallabidi.Protocol do
   #
   # Wallabidi currently supports two wire protocols over WebSocket:
   #
-  # - **BiDi** (Chrome) — W3C WebDriver BiDi via chromedriver
+  # - **BiDi** (Chrome) — W3C WebDriver BiDi via chromium-bidi
   # - **CDP** (Chrome CDP, Lightpanda) — Chrome DevTools Protocol
   #
   # Higher-level features (LiveView patch awaiting, navigation lifecycle,

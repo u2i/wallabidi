@@ -177,7 +177,7 @@ defmodule Wallabidi.Browser do
 
   ### Note
 
-  Currently, ChromeDriver only supports [BMP Unicode](http://www.unicode.org/roadmaps/bmp/) characters. Emojis are [SMP](https://www.unicode.org/roadmaps/smp/) characters and will be ignored by ChromeDriver.
+  Currently, Chrome only supports [BMP Unicode](http://www.unicode.org/roadmaps/bmp/) characters via the WebDriver `send_keys` action. Emojis are [SMP](https://www.unicode.org/roadmaps/smp/) characters and will be ignored.
 
   Using JavaScript is a known workaround for filling in fields with Emojis and other non-BMP characters.
   """
@@ -666,7 +666,7 @@ defmodule Wallabidi.Browser do
 
   ### Note
 
-  Currently, ChromeDriver only supports [BMP Unicode](http://www.unicode.org/roadmaps/bmp/) characters. Emojis are [SMP](https://www.unicode.org/roadmaps/smp/) characters and will be ignored by ChromeDriver.
+  Currently, Chrome only supports [BMP Unicode](http://www.unicode.org/roadmaps/bmp/) characters via the WebDriver `send_keys` action. Emojis are [SMP](https://www.unicode.org/roadmaps/smp/) characters and will be ignored.
 
   Using JavaScript is a known workaround for filling in fields with Emojis and other non-BMP characters.
   """
@@ -2039,15 +2039,7 @@ defmodule Wallabidi.Browser do
   end
 
   defp base_url do
-    url = Application.get_env(:wallabidi, :base_url) || ""
-
-    # When using Docker, rewrite localhost URLs so Chrome in the
-    # container can reach the host's test server
-    if Application.get_env(:wallabidi, :chromedriver, []) |> Keyword.get(:remote_url) do
-      Wallabidi.Chrome.Docker.rewrite_base_url(url)
-    else
-      url
-    end
+    Application.get_env(:wallabidi, :base_url) || ""
   end
 
   defp path_for_screenshot(name) do
@@ -2236,8 +2228,8 @@ defmodule Wallabidi.Browser do
 
         :full_page ->
           if bidi_session?(session) do
-            # BiDi: use the old prepare/await path which handles
-            # context changes correctly via chromedriver.
+            # BiDi: use the prepare/await path which handles
+            # browsing-context changes correctly via the BiDi mapper.
             Wallabidi.BiDiClient.prepare_page_load(session)
             result = fun.()
             Wallabidi.BiDiClient.await_page_load(session)

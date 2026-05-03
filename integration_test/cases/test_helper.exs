@@ -87,11 +87,4 @@ Application.put_env(:wallabidi, :endpoint, Wallabidi.Integration.LiveApp.Endpoin
 {:ok, server} = Wallabidi.Integration.TestServer.start()
 Application.put_env(:wallabidi, :base_url, server.base_url)
 
-# Chrome in Docker can't reach localhost
-live_host =
-  if driver not in [:chrome_cdp, :live_view] &&
-       Application.get_env(:wallabidi, :chromedriver, []) |> Keyword.get(:remote_url),
-     do: "host.docker.internal",
-     else: "localhost"
-
-Application.put_env(:wallabidi, :live_app_url, "http://#{live_host}:4321")
+Application.put_env(:wallabidi, :live_app_url, "http://localhost:4321")

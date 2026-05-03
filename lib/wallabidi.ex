@@ -112,8 +112,6 @@ defmodule Wallabidi do
 
   @doc false
   def stop(_state) do
-    # Clean up Docker container if we started one
-    Wallabidi.Chrome.Docker.stop()
     :ok
   end
 

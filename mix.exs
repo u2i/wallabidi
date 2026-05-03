@@ -26,15 +26,13 @@ defmodule Wallabidi.Mixfile do
           "test.live_view",
           "test.lightpanda",
           "test.chrome",
-          "test.chrome.bidi",
-          "test.chrome.lifecycle"
+          "test.chrome.bidi"
         ],
         "test.live_view": fn args -> test_driver("live_view", "LiveView", args) end,
         "test.lightpanda": fn args -> test_driver("lightpanda", "Lightpanda", args) end,
         "test.chrome": fn args -> test_driver("chrome_cdp", "Chrome (CDP)", args) end,
         "test.chrome.bidi": fn args -> test_driver("chrome", "Chrome (BiDi)", args) end,
-        "test.bench": fn args -> test_driver("bench", "Benchmarks", args) end,
-        "test.chrome.lifecycle": &test_chrome_lifecycle/1
+        "test.bench": fn args -> test_driver("bench", "Benchmarks", args) end
       ],
       test_paths: test_paths(System.get_env("WALLABIDI_DRIVER")),
       dialyzer: dialyzer()
@@ -49,8 +47,7 @@ defmodule Wallabidi.Mixfile do
         "test.lightpanda": :test,
         "test.chrome": :test,
         "test.chrome.bidi": :test,
-        "test.bench": :test,
-        "test.chrome.lifecycle": :test
+        "test.bench": :test
       ]
     ]
   end
@@ -125,7 +122,6 @@ defmodule Wallabidi.Mixfile do
   defp test_paths("lightpanda"), do: ["integration_test/cases"]
   defp test_paths("chrome"), do: ["integration_test/cases"]
   defp test_paths("chrome_cdp"), do: ["integration_test/cases"]
-  defp test_paths("chrome_lifecycle"), do: ["integration_test/lifecycle/chrome"]
   defp test_paths("bench"), do: ["bench"]
   defp test_paths(_), do: ["test"]
 
@@ -137,25 +133,6 @@ defmodule Wallabidi.Mixfile do
       System.cmd("mix", ["test", "--no-start" | args],
         into: IO.binstream(:stdio, :line),
         env: [{"WALLABIDI_DRIVER", driver}]
-      )
-
-    if res > 0 do
-      System.at_exit(fn _ -> exit({:shutdown, 1}) end)
-    end
-  end
-
-  defp test_chrome_lifecycle(args) do
-    args = if IO.ANSI.enabled?(), do: ["--color" | args], else: ["--no-color" | args]
-
-    IO.puts("==> Running lifecycle tests for chrome (subprocess)")
-
-    {_, res} =
-      System.cmd("mix", ["test" | args],
-        into: IO.binstream(:stdio, :line),
-        env: [
-          {"WALLABIDI_DRIVER", "chrome_lifecycle"},
-          {"WALLABIDI_NO_DOCKER", "1"}
-        ]
       )
 
     if res > 0 do

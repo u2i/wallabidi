@@ -25,7 +25,7 @@ defmodule Wallabidi.Driver do
   Invoked by `SessionLifecycle.teardown/1` to release server-side
   session state before the transport is closed.
 
-  Drivers implement this to tell their server (chromedriver, Chrome,
+  Drivers implement this to tell their server (chromium-bidi, Chrome,
   Lightpanda, etc.) to drop the session. The transport close itself
   is handled by `SessionLifecycle.teardown/1` and must not be done here.
 

@@ -706,7 +706,7 @@ defmodule Wallabidi.BiDiClient do
         # target a still-valid context.
         Process.delete({:wallabidi_focused_context, sess.id})
 
-        # Give chromedriver a moment to reconcile its context list
+        # Give the BiDi mapper a moment to reconcile its context list
         Process.sleep(50)
         {:ok, nil}
 
@@ -715,7 +715,7 @@ defmodule Wallabidi.BiDiClient do
     end
   end
 
-  # Window size and position (via JavaScript — no chromedriver needed)
+  # Window size and position (via JavaScript)
 
   def set_window_size(session, width, height) do
     context = browsing_context(session)
@@ -1253,7 +1253,7 @@ defmodule Wallabidi.BiDiClient do
 
     # Spawn a handler that listens for the dialog event and handles it.
     # This avoids deadlocking when the click action blocks until the dialog
-    # is handled (which happens with some chromedriver implementations).
+    # is handled (which happens with some BiDi implementations).
     handler =
       spawn_link(fn ->
         WebSocketClient.subscribe(pid, "browsingContext.userPromptOpened", self(), context)
@@ -1737,7 +1737,7 @@ defmodule Wallabidi.BiDiClient do
     end
   end
 
-  # Filter out chromedriver internal messages (BiDi mapper noise)
+  # Filter out chromium-bidi mapper internal messages (BiDi mapper noise)
   @internal_log_patterns ["Launching Mapper instance"]
 
   defp translate_log_entry(event) do

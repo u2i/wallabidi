@@ -1,20 +1,13 @@
 defmodule Wallabidi.BrowserPaths do
   @moduledoc """
-  Finds Chrome and chromedriver — either local binaries to launch or
-  remote URLs to connect to.
+  Finds Chrome — either a local binary to launch or a remote URL
+  to connect to.
 
   ## Resolution order
 
-  ### Chrome (CDP driver)
   1. `WALLABIDI_CHROME_URL` — connect to remote Chrome (`chrome:9222` or full `ws://` URL)
   2. `WALLABIDI_CHROME_PATH` — local Chrome binary to launch
   3. `.browsers/PATHS` file (written by `mix wallabidi.install`)
-  4. System PATH
-
-  ### Chromedriver (BiDi driver)
-  1. `WALLABIDI_CHROMEDRIVER_URL` — connect to remote chromedriver (`http://...`)
-  2. `WALLABIDI_CHROMEDRIVER_PATH` — local chromedriver binary to launch
-  3. `.browsers/PATHS` file
   4. System PATH
 
   ## Setup
@@ -24,7 +17,6 @@ defmodule Wallabidi.BrowserPaths do
   Or for Docker/CI:
 
       WALLABIDI_CHROME_URL=chrome:9222 mix test.chrome
-      WALLABIDI_CHROMEDRIVER_URL=http://chromedriver:9515/ mix test.chrome.bidi
   """
 
   @paths_file ".browsers/PATHS"
@@ -37,18 +29,6 @@ defmodule Wallabidi.BrowserPaths do
          :skip <- from_path("WALLABIDI_CHROME_PATH"),
          :skip <- from_paths_file("CHROME"),
          :skip <- from_system(["google-chrome", "chromium", "chromium-browser"]) do
-      :error
-    end
-  end
-
-  @doc """
-  Returns `{:url, url}` for remote, `{:path, path}` for local, or `:error`.
-  """
-  def chromedriver do
-    with :skip <- from_url("WALLABIDI_CHROMEDRIVER_URL"),
-         :skip <- from_path("WALLABIDI_CHROMEDRIVER_PATH"),
-         :skip <- from_paths_file("CHROMEDRIVER"),
-         :skip <- from_system(["chromedriver"]) do
       :error
     end
   end
@@ -67,20 +47,6 @@ defmodule Wallabidi.BrowserPaths do
     end
   end
 
-  @doc "Returns the local chromedriver binary path or raises."
-  def chromedriver_path! do
-    case chromedriver() do
-      {:path, path} ->
-        path
-
-      {:url, _} ->
-        raise "WALLABIDI_CHROMEDRIVER_URL is set — use chromedriver_url/0 instead"
-
-      :error ->
-        raise "Chromedriver not found. Run `mix wallabidi.install` or set WALLABIDI_CHROMEDRIVER_PATH."
-    end
-  end
-
   @doc "Returns the remote Chrome URL or nil."
   def chrome_url do
     case chrome() do
@@ -89,25 +55,9 @@ defmodule Wallabidi.BrowserPaths do
     end
   end
 
-  @doc "Returns the remote chromedriver URL or nil."
-  def chromedriver_url do
-    case chromedriver() do
-      {:url, url} -> url
-      _ -> nil
-    end
-  end
-
   @doc "Returns `{:ok, path}` for local Chrome, or `:error`. Ignores URLs."
   def chrome_path do
     case chrome() do
-      {:path, path} -> {:ok, path}
-      _ -> :error
-    end
-  end
-
-  @doc "Returns `{:ok, path}` for local chromedriver, or `:error`. Ignores URLs."
-  def chromedriver_path do
-    case chromedriver() do
       {:path, path} -> {:ok, path}
       _ -> :error
     end

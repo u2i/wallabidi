@@ -11,17 +11,10 @@ config :wallabidi,
   # mutation timer with margin.
   max_wait_time: 3_500
 
-# Chrome/chromedriver discovery handled by Wallabidi.BrowserPaths.
+# Chrome discovery handled by Wallabidi.BrowserPaths.
 # Override with env vars for Docker/CI:
 #   WALLABIDI_CHROME_URL=ws://...        (remote CDP connection)
-#   WALLABIDI_CHROMEDRIVER_URL=http://... (remote chromedriver)
 #   WALLABIDI_CHROME_PATH=/path/to/chrome
-#   WALLABIDI_CHROMEDRIVER_PATH=/path/to/chromedriver
-#
-# For legacy compat, WALLABIDI_CHROMEDRIVER_REMOTE_URL still works:
-if remote_url = System.get_env("WALLABIDI_CHROMEDRIVER_REMOTE_URL") do
-  config :wallabidi, chromedriver: [remote_url: remote_url]
-end
 
 # Test app configuration
 config :wallabidi, Wallabidi.TestApp.Repo,

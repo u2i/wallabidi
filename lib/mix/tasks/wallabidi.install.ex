@@ -16,9 +16,6 @@ defmodule Mix.Tasks.Wallabidi.Install do
 
   Requires `npx` and `npm` (Node.js) to be installed. The downloaded
   binaries and Node modules are cached — subsequent runs are fast.
-
-  ChromeDriver is no longer installed; wallabidi's BiDi driver speaks
-  directly to chromium-bidi.
   """
   use Mix.Task
 
