@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 420" width="720" height="420" font-family="-apple-system, system-ui, sans-serif">
 <rect width="720" height="420" fill="white"/>
-<text x="70" y="20" font-size="14" font-weight="600" fill="#111">Per-test wall time vs --max-cases</text>
+<text x="70" y="20" font-size="14" font-weight="600" fill="#111">Per-test wall time vs --max-cases (LV-runnable subset, 124 tests)</text>
 <line x1="70" y1="30" x2="70" y2="370" stroke="#999" stroke-width="1"/>
 <line x1="70" y1="370" x2="540" y2="370" stroke="#999" stroke-width="1"/>
 <line x1="70.0" y1="370" x2="70.0" y2="375" stroke="#999"/>
@@ -17,35 +17,36 @@
 <line x1="65" y1="370.0" x2="70" y2="370.0" stroke="#999"/>
 <text x="62" y="374.0" text-anchor="end" font-size="11" fill="#444">0.00s</text>
 <line x1="65" y1="285.0" x2="70" y2="285.0" stroke="#999"/>
-<text x="62" y="289.0" text-anchor="end" font-size="11" fill="#444">0.85s</text>
+<text x="62" y="289.0" text-anchor="end" font-size="11" fill="#444">0.75s</text>
 <line x1="65" y1="200.0" x2="70" y2="200.0" stroke="#999"/>
-<text x="62" y="204.0" text-anchor="end" font-size="11" fill="#444">1.70s</text>
+<text x="62" y="204.0" text-anchor="end" font-size="11" fill="#444">1.50s</text>
 <line x1="65" y1="115.0" x2="70" y2="115.0" stroke="#999"/>
-<text x="62" y="119.0" text-anchor="end" font-size="11" fill="#444">2.54s</text>
+<text x="62" y="119.0" text-anchor="end" font-size="11" fill="#444">2.25s</text>
 <line x1="65" y1="30.0" x2="70" y2="30.0" stroke="#999"/>
-<text x="62" y="34.0" text-anchor="end" font-size="11" fill="#444">3.39s</text>
+<text x="62" y="34.0" text-anchor="end" font-size="11" fill="#444">3.00s</text>
 <text x="20" y="200.0" text-anchor="middle" font-size="12" fill="#222" transform="rotate(-90 20 200.0)">seconds per test</text>
-<path d="M70.0,47.05014749262534 L187.5,127.28613569321536" stroke="#7c3aed" stroke-width="2" fill="none"/>
-<circle cx="70.0" cy="47.05014749262534" r="3.5" fill="#7c3aed"/>
-<circle cx="187.5" cy="127.28613569321536" r="3.5" fill="#7c3aed"/>
-<path d="M70.0,223.56932153392333 L187.5,286.7551622418879 L305.0,308.8200589970501 L422.5,318.8495575221239 L540.0,319.8525073746313" stroke="#2563eb" stroke-width="2" fill="none"/>
-<circle cx="70.0" cy="223.56932153392333" r="3.5" fill="#2563eb"/>
-<circle cx="187.5" cy="286.7551622418879" r="3.5" fill="#2563eb"/>
-<circle cx="305.0" cy="308.8200589970501" r="3.5" fill="#2563eb"/>
-<circle cx="422.5" cy="318.8495575221239" r="3.5" fill="#2563eb"/>
-<circle cx="540.0" cy="319.8525073746313" r="3.5" fill="#2563eb"/>
-<path d="M70.0,277.7286135693215 L187.5,314.83775811209443 L305.0,337.905604719764 L422.5,347.93510324483776 L540.0,349.94100294985253" stroke="#10b981" stroke-width="2" fill="none"/>
-<circle cx="70.0" cy="277.7286135693215" r="3.5" fill="#10b981"/>
-<circle cx="187.5" cy="314.83775811209443" r="3.5" fill="#10b981"/>
-<circle cx="305.0" cy="337.905604719764" r="3.5" fill="#10b981"/>
-<circle cx="422.5" cy="347.93510324483776" r="3.5" fill="#10b981"/>
-<circle cx="540.0" cy="349.94100294985253" r="3.5" fill="#10b981"/>
-<path d="M70.0,271.71091445427726 L187.5,306.8141592920354 L305.0,335.89970501474926 L422.5,346.9321533923304 L540.0,349.94100294985253" stroke="#f59e0b" stroke-width="2" fill="none"/>
-<circle cx="70.0" cy="271.71091445427726" r="3.5" fill="#f59e0b"/>
-<circle cx="187.5" cy="306.8141592920354" r="3.5" fill="#f59e0b"/>
-<circle cx="305.0" cy="335.89970501474926" r="3.5" fill="#f59e0b"/>
-<circle cx="422.5" cy="346.9321533923304" r="3.5" fill="#f59e0b"/>
-<circle cx="540.0" cy="349.94100294985253" r="3.5" fill="#f59e0b"/>
+<path d="M70.0,39.17999999999999 L187.5,135.9666666666667 L305.0,151.60666666666665" stroke="#7c3aed" stroke-width="2" fill="none"/>
+<circle cx="70.0" cy="39.17999999999999" r="3.5" fill="#7c3aed"/>
+<circle cx="187.5" cy="135.9666666666667" r="3.5" fill="#7c3aed"/>
+<circle cx="305.0" cy="151.60666666666665" r="3.5" fill="#7c3aed"/>
+<path d="M70.0,222.89333333333335 L187.5,285.0 L305.0,311.52 L422.5,327.0466666666667 L540.0,326.14" stroke="#2563eb" stroke-width="2" fill="none"/>
+<circle cx="70.0" cy="222.89333333333335" r="3.5" fill="#2563eb"/>
+<circle cx="187.5" cy="285.0" r="3.5" fill="#2563eb"/>
+<circle cx="305.0" cy="311.52" r="3.5" fill="#2563eb"/>
+<circle cx="422.5" cy="327.0466666666667" r="3.5" fill="#2563eb"/>
+<circle cx="540.0" cy="326.14" r="3.5" fill="#2563eb"/>
+<path d="M70.0,253.04000000000002 L187.5,301.43333333333334 L305.0,324.32666666666665 L422.5,343.48 L540.0,343.48" stroke="#10b981" stroke-width="2" fill="none"/>
+<circle cx="70.0" cy="253.04000000000002" r="3.5" fill="#10b981"/>
+<circle cx="187.5" cy="301.43333333333334" r="3.5" fill="#10b981"/>
+<circle cx="305.0" cy="324.32666666666665" r="3.5" fill="#10b981"/>
+<circle cx="422.5" cy="343.48" r="3.5" fill="#10b981"/>
+<circle cx="540.0" cy="343.48" r="3.5" fill="#10b981"/>
+<path d="M70.0,267.65999999999997 L187.5,312.4266666666667 L305.0,340.76 L422.5,350.84666666666664 L540.0,353.56666666666666" stroke="#f59e0b" stroke-width="2" fill="none"/>
+<circle cx="70.0" cy="267.65999999999997" r="3.5" fill="#f59e0b"/>
+<circle cx="187.5" cy="312.4266666666667" r="3.5" fill="#f59e0b"/>
+<circle cx="305.0" cy="340.76" r="3.5" fill="#f59e0b"/>
+<circle cx="422.5" cy="350.84666666666664" r="3.5" fill="#f59e0b"/>
+<circle cx="540.0" cy="353.56666666666666" r="3.5" fill="#f59e0b"/>
 <line x1="558" y1="40" x2="578" y2="40" stroke="#7c3aed" stroke-width="2"/>
 <circle cx="568" cy="40" r="3.5" fill="#7c3aed"/>
 <text x="584" y="44" font-size="11" fill="#222">BiDi (Chrome)</text>

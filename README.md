@@ -14,12 +14,14 @@ Wallabidi is a fork of [Wallaby](https://github.com/elixir-wallaby/wallaby) with
 
 ## Drivers
 
-| Driver | Speed | What it does | When to use |
-|--------|-------|-------------|-------------|
-| **LiveView** | ~0ms/test | Renders pages in-process via Phoenix.ConnTest. No browser. | Default for local dev — instant feedback |
-| **Lightpanda** | ~50ms/test | Headless JS-capable browser via CDP. No CSS rendering. | Fast path for full functional suites — nearly LiveView speed |
-| **Chrome (CDP)** | ~200ms/test | Full browser via Chrome DevTools Protocol. Real multi-threading via Chrome's per-target threads. | Full fidelity (CSS, screenshots, mouse). Best concurrent throughput today. |
-| **Chrome (BiDi)** | ~600ms/test | Full browser via WebDriver BiDi (chromium-bidi → Chrome). Cross-engine portable. | Future-proof choice as BiDi matures; aspirationally replaces CDP. |
+| Driver | Per-test (peak concurrency) | What it does | When to use |
+|--------|-----------------------------|-------------|-------------|
+| **LiveView** | ~145ms | Renders pages in-process via Phoenix.ConnTest. No browser. | Default for local dev — fastest feedback |
+| **Lightpanda** | ~234ms | Headless JS-capable browser via CDP. No CSS rendering. | Full functional suites — close to LiveView once parallelized |
+| **Chrome (CDP)** | ~379ms | Full browser via Chrome DevTools Protocol. Real multi-threading via Chrome's per-target threads. | Full fidelity (CSS, screenshots, mouse). Best concurrent throughput today. |
+| **Chrome (BiDi)** | ~2.07s | Full browser via WebDriver BiDi (chromium-bidi → Chrome). Cross-engine portable. | Future-proof choice as BiDi matures; aspirationally replaces CDP. |
+
+Numbers are wall-time per test on a 16-thread M-series Mac, running the LV-runnable subset (124 tests) so each driver runs the same workload. Each driver was benchmarked at its recommended `--max-cases` (LV/LP=mc8, CDP=mc8, BiDi=mc2). See [the concurrency-and-performance section](#concurrency-and-performance) for the full matrix.
 
 Tests declare their minimum requirement with tags:
 
@@ -46,35 +48,35 @@ Each test runs on the **cheapest driver** that supports it. No env vars, no alia
 
 ## Concurrency and performance
 
-Each driver scales differently with `--max-cases`. The values below come from running the integration suite end-to-end on a 16-thread Mac laptop (M-series, all suites passing at the listed concurrency).
+Each driver scales differently with `--max-cases`. The values below come from running the LV-runnable subset of the integration suite (124 tests, the same workload on every driver) end-to-end on a 16-thread M-series Mac. All four drivers passed cleanly.
 
 ![per-test wall time vs max-cases](priv/perf-matrix.svg)
 
-Wall time in seconds for the full integration suite at each `--max-cases`:
+Wall time in seconds at each `--max-cases`, with each driver running the same 124-test workload:
 
-| Driver         | mc1   | mc2   | mc4   | mc8     | mc16    | Tests |
-|----------------|-------|-------|-------|---------|---------|-------|
-| **BiDi** (Chrome)  | 917s  | 690s  | —     | —       | —       | 285   |
-| **CDP** (Chrome)   | 421s  | 240s  | **175s** | 148s ⚠ | 144s ⚠ | 289   |
-| **Lightpanda**     | 140s  | 84s   | 49s   | 34s     | **30s** | 153   |
-| **LiveView**       | 122s  | 78s   | 42s   | 28s     | **25s** | 124   |
+| Driver           | mc1  | mc2  | mc4   | mc8     | mc16    |
+|------------------|------|------|-------|---------|---------|
+| **BiDi** (Chrome)    | 362s | 256s | 239s  | —       | —       |
+| **CDP** (Chrome)     | 161s | 93s  | 64s   | **47s** | 48s     |
+| **Lightpanda**       | 128s | 75s  | 50s   | **29s** | 29s     |
+| **LiveView**         | 112s | 63s  | 32s   | 21s     | **18s** |
 
-⚠ = passes mostly but introduces 1–2 flaky failures from concurrency contention.
+Each driver also runs tests that the others skip — Lightpanda runs `:headless`-tagged tests, Chrome runs `:browser`-tagged ones (screenshots, file uploads, etc.). The full per-driver workload is larger; numbers above are the apples-to-apples subset.
 
 **Recommended `--max-cases` per driver:**
 
 | Driver | Recommended | Why |
 |--------|-------------|-----|
-| **BiDi** | `2` | chromium-bidi's BiDi Mapper is single-threaded JS in one Chrome tab. Each pool slot adds another Chrome+Mapper, so concurrency = pool size. Benchmarked up to 2; higher is possible. |
-| **CDP** | `4` | CDP's flat-session protocol multiplexes parallel work across Chrome's per-target threads. mc4 is the sweet spot — beyond it you save ~30s and pick up flakes. |
-| **Lightpanda** | `16` | In-process, scales near-linearly with BEAM concurrency. |
+| **BiDi** | `2` | chromium-bidi's BiDi Mapper is single-threaded JS in one Chrome tab. Each pool slot adds another Chrome+Mapper, so concurrency = pool size. mc4 only buys ~7% over mc2. |
+| **CDP** | `8` | CDP's flat-session protocol multiplexes parallel work across Chrome's per-target threads. mc8 is the sweet spot — past it the cost stops dropping. |
+| **Lightpanda** | `8` | Per-session WebSocket server overhead means in-process advantages plateau at mc8. |
 | **LiveView** | `16` | No external process; just BEAM. Use as much concurrency as ExUnit allows. |
 
 **When to pick which driver in CI:**
 
-- *Default:* let wallabidi route each test to the cheapest driver that supports it. Most LiveView-app tests run on the LiveView driver and are nearly free.
-- *JS-heavy app:* Lightpanda at mc16 — fastest real headless option.
-- *Need full browser fidelity (CSS, screenshots, mouse events):* CDP at mc4.
+- *Default:* let wallabidi route each test to the cheapest driver that supports it. LV-supported tests run on the LiveView driver and are the cheapest.
+- *JS-heavy app:* Lightpanda at mc8 — fastest real headless option.
+- *Need full browser fidelity (CSS, screenshots, mouse events):* CDP at mc8.
 - *Cross-browser portability or BiDi spec features:* BiDi at mc2. Slower than CDP today because the BiDi protocol serializes through a single Mapper per Chrome; will improve as chromium-bidi or successor implementations add parallel mapping.
 
 ## Why fork?
