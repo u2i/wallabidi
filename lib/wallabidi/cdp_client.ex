@@ -1128,11 +1128,8 @@ defmodule Wallabidi.CDPClient do
     end
   end
 
-  defp bidi_pid(%Session{bidi_pid: pid}), do: pid
-  defp bidi_pid(%Element{parent: parent}), do: bidi_pid(parent)
-
-  defp root_session(%Session{} = s), do: s
-  defp root_session(%Element{parent: p}), do: root_session(p)
+  defp bidi_pid(parent), do: Element.bidi_pid(parent)
+  defp root_session(parent), do: Element.root_session(parent)
 
   defp wrap_script(script, args) do
     encoded_args = Jason.encode!(args)

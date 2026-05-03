@@ -32,7 +32,7 @@ defmodule Wallabidi.ChromeCDP do
   @behaviour Wallabidi.Driver
 
   alias Wallabidi.BiDi.WebSocketClient
-  alias Wallabidi.{CDPClient, DependencyError, Metadata, Session}
+  alias Wallabidi.{CDPClient, DependencyError, Element, Metadata, Session}
   alias Wallabidi.Chrome.Server, as: ChromeServer
   alias Wallabidi.Driver.SessionLifecycle
   import Wallabidi.Driver.LogChecker
@@ -681,8 +681,7 @@ defmodule Wallabidi.ChromeCDP do
 
   # --- Element helpers ---
 
-  defp root_session(%Session{} = s), do: s
-  defp root_session(%Wallabidi.Element{parent: p}), do: root_session(p)
+  defp root_session(parent), do: Element.root_session(parent)
 
   defp get_element_topleft(%Wallabidi.Element{bidi_shared_id: object_id} = element) do
     session = root_session(element)

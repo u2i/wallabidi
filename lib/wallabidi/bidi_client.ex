@@ -10,8 +10,7 @@ defmodule Wallabidi.BiDiClient do
 
   # Session helpers
 
-  defp bidi_pid(%Session{bidi_pid: pid}), do: pid
-  defp bidi_pid(%Element{parent: parent}), do: bidi_pid(parent)
+  defp bidi_pid(parent), do: Element.bidi_pid(parent)
 
   defp browsing_context(%Session{browsing_context: ctx} = session) do
     # Frame-focused context overrides window-focused context which overrides session default
@@ -23,8 +22,7 @@ defmodule Wallabidi.BiDiClient do
 
   defp browsing_context(%Element{parent: parent}), do: browsing_context(parent)
 
-  defp session(%Session{} = s), do: s
-  defp session(%Element{parent: parent}), do: session(parent)
+  defp session(parent), do: Element.root_session(parent)
 
   defp send_bidi(parent, method, params) do
     pid = bidi_pid(parent)
