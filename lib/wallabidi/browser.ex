@@ -916,14 +916,7 @@ defmodule Wallabidi.Browser do
         :ok
 
       :timeout ->
-        post =
-          case Wallabidi.Protocol.current_url(session) do
-            {:ok, url} -> url
-            _ -> nil
-          end
-
-        raise Wallabidi.NavigationTimeoutError,
-              %{from: nil, to: post, timeout_ms: 5_000}
+        raise_navigation_timeout(session, 5_000)
     end
   end
 
@@ -933,18 +926,29 @@ defmodule Wallabidi.Browser do
         :ok
 
       :timeout ->
-        post =
-          case Wallabidi.Protocol.current_url(session) do
-            {:ok, url} -> url
-            _ -> nil
-          end
-
-        raise Wallabidi.NavigationTimeoutError,
-              %{from: nil, to: post, timeout_ms: 5_000}
+        raise_navigation_timeout(session, 5_000)
     end
   end
 
   defp do_post_click(_, _, _, _, _), do: :ok
+
+  defp raise_navigation_timeout(session, timeout_ms) do
+    post =
+      case Wallabidi.Protocol.current_url(session) do
+        {:ok, url} -> url
+        _ -> nil
+      end
+
+    {page_state, page_state_history} = Wallabidi.SessionProcess.get_page_state(session)
+
+    raise Wallabidi.NavigationTimeoutError, %{
+      from: nil,
+      to: post,
+      timeout_ms: timeout_ms,
+      page_state: page_state,
+      page_state_history: page_state_history
+    }
+  end
 
   defp extract_query_from_ops(%Wallabidi.CDP.Ops{ops: ops}) do
     case Enum.find(ops, fn [cmd | _] -> cmd == "query" end) do

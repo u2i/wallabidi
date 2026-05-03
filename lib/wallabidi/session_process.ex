@@ -69,6 +69,14 @@ defmodule Wallabidi.SessionProcess do
     # has finished joining. Captures pageId per page.
     last_page_id: nil,
     page_ready_waiter: nil,
+    # State machine for the bootstrap's lifecycle. Each new document
+    # gets a fresh `docId`. We validate state transitions per docId
+    # and maintain a ring buffer of the last 32 transitions for
+    # diagnostic dumps on timeout.
+    page_state: :initial,
+    page_state_doc_id: nil,
+    page_state_started_at: nil,
+    page_state_history: [],
     # Lazy ops queue. Side-effect ops (click) append here; the next
     # blocking RPC auto-flushes them via CDPClient.maybe_flush_pending.
     pending_ops: []
@@ -222,6 +230,21 @@ defmodule Wallabidi.SessionProcess do
     GenServer.call(pid, :get_page_id)
   catch
     :exit, _ -> nil
+  end
+
+  @doc """
+  Returns `{state, history}` for the bootstrap's page-ready state
+  machine. `state` is one of `:initial | :non_lv_ready |
+  :awaiting_hook | :hook_installed | :lv_ready`. `history` is a list
+  of the last 32 transitions (most recent first), each shaped as
+  `%{state: atom, doc_id: String.t() | nil, reason: String.t(),
+  at_ms: integer()}`. Used by NavigationTimeoutError to enrich
+  diagnostic messages.
+  """
+  def get_page_state(%Session{pid: pid}) when is_pid(pid) do
+    GenServer.call(pid, :get_page_state)
+  catch
+    :exit, _ -> {:initial, []}
   end
 
   @doc """
@@ -390,6 +413,10 @@ defmodule Wallabidi.SessionProcess do
     {:reply, state.last_page_id, state}
   end
 
+  def handle_call(:get_page_state, _from, state) do
+    {:reply, {state.page_state, state.page_state_history}, state}
+  end
+
   def handle_call({:await_page_ready_after, pre_page_id, timeout_ms}, from, state) do
     if state.last_page_id != nil and state.last_page_id != pre_page_id do
       # Already received a notification with a different pageId
@@ -518,13 +545,105 @@ defmodule Wallabidi.SessionProcess do
         meta = msg["meta"]
         resolve_find(state, query_id, {:ok, count, meta})
 
-      {:ok, %{"type" => "page_ready", "pageId" => page_id}} ->
+      {:ok, %{"type" => "page_ready", "pageId" => page_id} = msg} ->
+        state = update_page_state_machine(state, msg)
         resolve_page_ready(state, page_id)
 
       _ ->
         state
     end
   end
+
+  # State machine update. Bootstrap notifications from a new document
+  # carry a fresh `docId` — that resets the state to whatever the
+  # bootstrap reports (Initial → AwaitingHook → ... ). For an
+  # already-known docId we validate that the transition is allowed and
+  # raise on anomalies (LVReady → AwaitingHook on the same doc means
+  # something rebuilt the bootstrap state mid-flight).
+  defp update_page_state_machine(state, msg) do
+    new_state = parse_state_atom(msg["state"])
+    doc_id = msg["docId"]
+    reason = msg["reason"] || "unknown"
+
+    {next_machine, transitioned?} =
+      cond do
+        is_nil(new_state) ->
+          {state.page_state, false}
+
+        doc_id != state.page_state_doc_id ->
+          # New document — reset machine. No transition validation.
+          {new_state, true}
+
+        new_state == state.page_state ->
+          # Idempotent (same state reported again) — common for
+          # subsequent onPatchEnd in LVReady.
+          {new_state, false}
+
+        valid_transition?(state.page_state, new_state) ->
+          {new_state, true}
+
+        true ->
+          raise """
+          Wallabidi: invalid page-ready state transition.
+            doc_id: #{inspect(doc_id)}
+            from:   #{inspect(state.page_state)}
+            to:     #{inspect(new_state)}
+            reason: #{inspect(reason)}
+
+          Recent transitions:
+            #{format_history(state.page_state_history)}
+          """
+      end
+
+    history =
+      if transitioned? do
+        entry = %{
+          state: next_machine,
+          doc_id: doc_id,
+          reason: reason,
+          at_ms: monotonic_ms()
+        }
+
+        Enum.take([entry | state.page_state_history], 32)
+      else
+        state.page_state_history
+      end
+
+    %{
+      state
+      | page_state: next_machine,
+        page_state_doc_id: doc_id,
+        page_state_history: history
+    }
+  end
+
+  defp parse_state_atom("Initial"), do: :initial
+  defp parse_state_atom("NonLVReady"), do: :non_lv_ready
+  defp parse_state_atom("AwaitingHook"), do: :awaiting_hook
+  defp parse_state_atom("HookInstalled"), do: :hook_installed
+  defp parse_state_atom("LVReady"), do: :lv_ready
+  defp parse_state_atom(_), do: nil
+
+  # Allowed transitions inside a single document.
+  # Cross-document jumps (handled separately above) are always allowed.
+  defp valid_transition?(:initial, :non_lv_ready), do: true
+  defp valid_transition?(:initial, :awaiting_hook), do: true
+  defp valid_transition?(:initial, :hook_installed), do: true
+  defp valid_transition?(:initial, :lv_ready), do: true
+  defp valid_transition?(:awaiting_hook, :hook_installed), do: true
+  defp valid_transition?(:awaiting_hook, :lv_ready), do: true
+  defp valid_transition?(:hook_installed, :lv_ready), do: true
+  defp valid_transition?(_, _), do: false
+
+  defp format_history([]), do: "(empty)"
+
+  defp format_history(history) do
+    Enum.map_join(history, "\n  ", fn %{state: s, doc_id: d, reason: r, at_ms: ms} ->
+      "+#{ms}ms  #{s}  doc=#{String.slice(d || "?", 0, 12)}  reason=#{r}"
+    end)
+  end
+
+  defp monotonic_ms, do: System.monotonic_time(:millisecond)
 
   defp resolve_page_ready(state, page_id) do
     state = %{state | last_page_id: page_id}

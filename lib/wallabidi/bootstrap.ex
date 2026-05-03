@@ -261,23 +261,55 @@ defmodule Wallabidi.Bootstrap do
     // (DOM parsed + LV connected mount applied, OR non-LV detected),
     // we set pageReady and fire a channel notification. Elixir captures
     // the pre-click pageId, then waits for a page_ready notification
-    // with a new pageId. Zero polling.
+    // with a new pageId.
     //
-    // For LV pages we wait for `observedPatch` — set by the patch hook
-    // on the first onPatchEnd. That's the strict signal that the
-    // *connected* mount's diff has been applied. Don't trust
-    // joinPending alone; it's undefined-falsy before the join begins,
-    // so a check that runs before app.js has constructed liveSocket
-    // would fire markReady against the disconnected server render.
+    // State machine (each page_ready carries its current state):
+    //
+    //   Initial
+    //     │ DOMContentLoaded
+    //     │
+    //     ├─ no [data-phx-session] ─→ NonLVReady (terminal for non-LV)
+    //     │
+    //     └─ has [data-phx-session] ─→ AwaitingHook
+    //                                    │ liveSocket.domCallbacks present
+    //                                    ▼
+    //                                  HookInstalled
+    //                                    │ first onPatchEnd
+    //                                    ▼
+    //                                  LVReady ←─┐
+    //                                    │       │ subsequent
+    //                                    └───────┘ onPatchEnd
+    //
+    // Allowed transitions only. The Elixir side raises on invalid
+    // ones (e.g. LVReady → AwaitingHook on the same document) so we
+    // see violations instead of silently flaking.
     W.pageId = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+    W.docId = W.pageId; // stable identifier for the bootstrap's lifetime
     W.pageReady = false;
     W.lvHooked = false;
     W.observedPatch = false;
+    W.state = 'Initial';
 
-    function bumpPageId() {
+    function transition(next) {
+      W.state = next;
+    }
+
+    function notify(reason) {
+      try {
+        __wallabidi(JSON.stringify({
+          type: 'page_ready',
+          pageId: W.pageId,
+          docId: W.docId,
+          state: W.state,
+          reason: reason
+        }));
+      } catch(e) {}
+    }
+
+    function bumpPageId(reason) {
       W.pageId = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
       W.pageReady = true;
-      try { __wallabidi(JSON.stringify({type: 'page_ready', pageId: W.pageId})); } catch(e) {}
+      notify(reason || 'patch');
     }
 
     function installLvHook() {
@@ -288,35 +320,36 @@ defmodule Wallabidi.Bootstrap do
           var origPatch = ls.domCallbacks.onPatchEnd;
           ls.domCallbacks.onPatchEnd = function(c) {
             if (origPatch) origPatch(c);
-            W.observedPatch = true;
+            if (!W.observedPatch) {
+              W.observedPatch = true;
+              transition('LVReady');
+            }
             W.check();
-            bumpPageId();
+            bumpPageId('onPatchEnd');
           };
           W.lvHooked = true;
+          transition('HookInstalled');
           return true;
         }
       } catch(e) {}
       return false;
     }
 
-    function markReady() {
+    function markReady(reason) {
       if (W.pageReady) return;
       W.pageReady = true;
-      try { __wallabidi(JSON.stringify({type: 'page_ready', pageId: W.pageId})); } catch(e) {}
+      notify(reason);
     }
 
     function detectReady() {
       if (!document.querySelector('[data-phx-session]')) {
-        return markReady();
+        transition('NonLVReady');
+        return markReady('non-lv');
       }
+      if (W.state === 'Initial') transition('AwaitingHook');
       var hooked = installLvHook();
-      // The patch hook bumps pageId itself (via bumpPageId) when the
-      // first onPatchEnd fires. That's the canonical "ready" signal
-      // for an LV page. detectReady's RAF loop is only here to keep
-      // checking until the hook is installed; once it is, the hook
-      // takes over.
       if (hooked && W.observedPatch) {
-        return markReady();
+        return markReady('lv-ready');
       }
       if (W.pageReady) return; // bumpPageId beat us
       requestAnimationFrame(detectReady);
