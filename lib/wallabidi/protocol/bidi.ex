@@ -1,7 +1,7 @@
 defmodule Wallabidi.Protocol.BiDi do
   @moduledoc false
 
-  # BiDi protocol adapter. Used by the Chrome (chromedriver + BiDi) driver.
+  # BiDi protocol adapter. Used by the Chrome (chromium-bidi + BiDi) driver.
 
   @behaviour Wallabidi.Protocol
 

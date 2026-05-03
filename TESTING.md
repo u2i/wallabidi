@@ -13,7 +13,7 @@ bench/                        Load tests + benchmarks
 | Driver | Protocol | Speed | What it tests |
 |--------|----------|-------|---------------|
 | `chrome_cdp` | CDP direct to Chrome | Fast (1ms/op) | Full browser behavior |
-| `chrome` | WebDriver BiDi via chromedriver | Medium (10-60ms/op) | BiDi protocol path |
+| `chrome` | WebDriver BiDi via chromium-bidi | Medium (10-60ms/op) | BiDi protocol path |
 | `live_view` | Phoenix channels (no browser) | Fastest (0.1ms/op) | LiveView routes only |
 
 ## Running tests
@@ -32,9 +32,6 @@ mix test.all
 
 # Benchmarks and load tests
 mix test.bench
-
-# Lifecycle tests (subprocess isolation)
-mix test.chrome.lifecycle
 
 # Run a specific test file
 WALLABIDI_DRIVER=chrome_cdp mix test integration_test/cases/browser/find_test.exs --no-start
@@ -104,5 +101,5 @@ WALLABIDI_DRIVER=chrome_cdp mix test integration_test/cases/browser/click_test.e
 mix test.bench 2>/dev/null
 
 # Kill zombie Chrome processes
-pkill -9 -f "Google Chrome for Testing"; pkill -9 -f chromedriver
+pkill -9 -f "Google Chrome for Testing"
 ```

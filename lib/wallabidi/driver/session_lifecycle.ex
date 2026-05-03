@@ -8,7 +8,7 @@ defmodule Wallabidi.Driver.SessionLifecycle do
   #
   # ## The problem
   #
-  # Wallabidi tests spawn long-lived resources (WebSockets, chromedriver
+  # Wallabidi tests spawn long-lived resources (WebSockets, BiDi
   # sessions, browser processes) from within test processes. When a test
   # finishes, cleanup runs in an `on_exit` callback — which ExUnit runs in
   # a separate process AFTER the test process has exited.
@@ -57,7 +57,7 @@ defmodule Wallabidi.Driver.SessionLifecycle do
 
       def end_session(session) do
         SessionLifecycle.safe(fn -> close_websocket(session) end)
-        SessionLifecycle.safe(fn -> delete_chromedriver_session(session) end)
+        SessionLifecycle.safe(fn -> delete_bidi_session(session) end)
         :ok
       end
   """

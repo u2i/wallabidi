@@ -112,7 +112,7 @@ All of this is installed via injected JavaScript — no changes to your `app.js`
 - `create_session_fn` / `end_session_fn` options
 
 **Simplified**:
-- Single ChromeDriver process shared by all test sessions
+- Direct CDP/BiDi transport — no chromedriver process to manage
 - Event-driven JS error detection (no HTTP polling per command)
 - W3C capabilities format (`goog:chromeOptions`)
 
@@ -145,7 +145,7 @@ config :wallaby, hackney_options: [...]
 
 ## Setup
 
-Requires Elixir 1.19+, OTP 28+, and either Docker or a local ChromeDriver installation.
+Requires Elixir 1.19+, OTP 28+, and Chrome (or Chromium). Use `mix wallabidi.install` to download a pinned Chrome for Testing build, or set `WALLABIDI_CHROME_PATH` to your existing Chrome binary.
 
 ### Installation
 
@@ -162,11 +162,26 @@ end
 
 ### How Chrome is managed
 
-Wallabidi needs ChromeDriver + Chrome to run tests. There are three modes, tried in this order:
+Wallabidi launches Chrome directly — no chromedriver, Selenium server, or Docker container in the loop. There are two modes:
 
-#### 1. Remote Chrome (Docker / CI)
+#### 1. Local Chrome (default)
 
-When Chrome runs as a service in your Docker Compose stack, just tell Wallabidi where it is:
+If Chrome is on your PATH or has been installed by `mix wallabidi.install`, Wallabidi launches it directly via CDP.
+
+```
+$ mix wallabidi.install  # downloads Chrome for Testing into .browsers/
+$ mix test
+```
+
+Override the binary path with `WALLABIDI_CHROME_PATH` if Chrome lives somewhere unusual:
+
+```bash
+WALLABIDI_CHROME_PATH=/usr/bin/google-chrome-stable mix test
+```
+
+#### 2. Remote Chrome (CI / Docker)
+
+When Chrome runs as a service in your Docker Compose stack, point Wallabidi at it:
 
 ```bash
 # .env or CI config — just the host:port, wallabidi handles the rest
@@ -174,56 +189,6 @@ WALLABIDI_CHROME_URL=chrome:9222
 ```
 
 Wallabidi auto-discovers the WebSocket URL via `/json/version`. Full `ws://` URLs also work for backward compat.
-
-For chromedriver (BiDi driver):
-
-```bash
-WALLABIDI_CHROMEDRIVER_URL=http://chrome:9515/
-```
-
-Example `compose.yml`:
-
-```yaml
-services:
-  app:
-    # your Elixir app
-    depends_on: [chrome]
-
-  chrome:
-    image: erseco/alpine-chromedriver:latest
-    shm_size: 512m
-```
-
-No automatic container management — you control the lifecycle via Compose. Wallabidi polls the `/status` endpoint until the service is ready.
-
-#### 2. Local ChromeDriver
-
-If ChromeDriver and Chrome are installed locally, Wallabidi uses them directly. This is the fastest mode (no Docker overhead) and how CI typically works (GitHub Actions has Chrome pre-installed).
-
-```
-$ brew install chromedriver  # macOS
-$ mix test                   # Uses local chromedriver
-```
-
-Configure the binary paths if they're not in your PATH:
-
-```elixir
-config :wallabidi,
-  chromedriver: [
-    path: "/path/to/chromedriver",
-    binary: "/path/to/chrome"
-  ]
-```
-
-#### 3. Automatic Docker (fallback)
-
-If no `remote_url` is configured and no local ChromeDriver is found, Wallabidi will automatically start a Docker container with ChromeDriver and Chromium. No configuration needed — just have Docker running.
-
-```
-$ mix test  # Just works. Docker container starts and stops automatically.
-```
-
-The container (`erseco/alpine-chromedriver`) is multi-arch (ARM64 + AMD64) and is cleaned up when your test suite finishes. The image is ~750MB (Chromium is large — but this is half the size of the Selenium Grid image). URLs are automatically rewritten so Chrome in the container can reach your local test server.
 
 ### CI (GitHub Actions)
 
@@ -239,12 +204,12 @@ steps:
     node-version: 20
 
 - run: mix deps.get
-- run: mix wallabidi.install   # downloads Chrome + chromedriver
+- run: mix wallabidi.install   # downloads Chrome for Testing
 - run: mix test
 ```
 
 `mix wallabidi.install` uses `npx @puppeteer/browsers install` to download
-matched Chrome + chromedriver binaries to `.browsers/`. Cache this directory
+a pinned Chrome for Testing binary into `.browsers/`. Cache this directory
 for faster subsequent runs:
 
 ```yaml
@@ -262,9 +227,7 @@ For Docker-based CI or remote browsers:
 | Variable | Purpose | Example |
 |----------|---------|---------|
 | `WALLABIDI_CHROME_URL` | Connect to remote Chrome (CDP) | `chrome:9222` |
-| `WALLABIDI_CHROMEDRIVER_URL` | Connect to remote chromedriver (BiDi) | `http://chromedriver:9515/` |
 | `WALLABIDI_CHROME_PATH` | Local Chrome binary override | `/usr/bin/google-chrome` |
-| `WALLABIDI_CHROMEDRIVER_PATH` | Local chromedriver override | `/usr/bin/chromedriver` |
 
 If you have Chrome pre-installed on the runner (e.g. GitHub Actions' built-in
 Chrome), set `WALLABIDI_CHROME_PATH` and skip `mix wallabidi.install`:
@@ -641,13 +604,7 @@ config :wallabidi,
   js_errors: true,                 # re-raise JS errors in Elixir
   js_logger: :stdio,               # IO device for console logs (nil to disable)
   screenshot_on_failure: false,
-  screenshot_dir: "screenshots",
-  chromedriver: [
-    headless: true,                # run Chrome headless
-    path: "chromedriver",          # chromedriver binary path
-    binary: "/path/to/chrome",     # Chrome binary path
-    remote_url: "http://chrome:9515/"  # for Docker/remote chromedriver (BiDi)
-  ]
+  screenshot_dir: "screenshots"
 ```
 
 ## Credits
@@ -662,10 +619,10 @@ Licensed under MIT, same as Wallaby.
 mix test                    # unit tests
 mix test.live_view          # LiveView driver integration tests
 mix test.lightpanda         # Lightpanda CDP integration tests
-mix test.chrome             # Chrome BiDi integration tests
-mix test.chrome.lifecycle   # chromedriver startup tests (subprocess)
+mix test.chrome             # Chrome CDP integration tests
+mix test.chrome.bidi        # Chrome BiDi (chromium-bidi) integration tests
 mix test.all                # all of the above
 mix test.browsers --browsers chrome   # run ALL tests on a specific browser
 ```
 
-The LiveView and Lightpanda tests require no external dependencies — Lightpanda's binary is installed automatically via `mix lightpanda.install`. Chrome tests need Docker (auto-detected) or a local ChromeDriver.
+The LiveView and Lightpanda tests require no external dependencies — Lightpanda's binary is installed automatically via `mix lightpanda.install`. Chrome tests need a local Chrome binary (use `mix wallabidi.install` to download one) or `WALLABIDI_CHROME_URL` pointing at a remote Chrome.

@@ -44,7 +44,7 @@ body:
     id: driver
     attributes:
       label: Driver
-      description: The webdriver that is demonstrating the error (ChromeDriver, GeckoDriver, Selenium, etc)
+      description: The driver that is demonstrating the error (chrome_cdp, chrome (BiDi), lightpanda, live_view)
     validations:
       required: true
 

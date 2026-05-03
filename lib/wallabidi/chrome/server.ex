@@ -1,7 +1,7 @@
 defmodule Wallabidi.Chrome.Server do
   @moduledoc false
 
-  # Manages a Chrome process launched directly (no chromedriver).
+  # Manages a Chrome process launched directly via CDP.
   # Chrome is started with --remote-debugging-port=0 and we parse
   # the DevTools WebSocket URL from its stderr output.
 

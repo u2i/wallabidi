@@ -2,7 +2,7 @@ defmodule Wallabidi.Chrome do
   @moduledoc """
   The Chrome driver speaks WebDriver BiDi to a chromium-bidi standalone
   server (`Wallabidi.Chrome.BidiServer`), which forwards to Chrome over
-  CDP. No chromedriver is involved.
+  CDP.
 
   All test sessions multiplex over one shared Chrome instance via BiDi
   `userContext`s — each test gets its own isolated profile (cookies,
@@ -50,7 +50,7 @@ defmodule Wallabidi.Chrome do
   def init(_) do
     # The Chrome (BiDi) driver speaks BiDi to a chromium-bidi standalone
     # server (Wallabidi.Chrome.BidiServer), which forwards to Chrome via
-    # CDP. No chromedriver involved.
+    # CDP.
     #
     # Test sessions run on a Wallabidi.Pool of N WebSocket connections
     # (each one = one Chrome + one BiDi Mapper). Pool size caps real
