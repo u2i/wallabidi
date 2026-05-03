@@ -14,12 +14,14 @@ Wallabidi is a fork of [Wallaby](https://github.com/elixir-wallaby/wallaby) with
 
 ## Drivers
 
-| Driver | Speed | What it does | When to use |
-|--------|-------|-------------|-------------|
-| **LiveView** | ~0ms/test | Renders pages in-process via Phoenix.ConnTest. No browser. | Default for local dev — instant feedback |
-| **Lightpanda** | ~50ms/test | Headless JS-capable browser via CDP. No CSS rendering. | Fast path for full functional suites — nearly LiveView speed |
-| **Chrome (CDP)** | ~200ms/test | Full browser via Chrome DevTools Protocol. Real multi-threading via Chrome's per-target threads. | Full fidelity (CSS, screenshots, mouse). Best concurrent throughput today. |
-| **Chrome (BiDi)** | ~600ms/test | Full browser via WebDriver BiDi (chromium-bidi → Chrome). Cross-engine portable. | Future-proof choice as BiDi matures; aspirationally replaces CDP. |
+| Driver | Speed (mc16) | What it does | When to use |
+|--------|--------------|-------------|-------------|
+| **LiveView** | ~200ms/test | Renders pages in-process via Phoenix.ConnTest. No browser. | Default for local dev — fastest feedback |
+| **Lightpanda** | ~200ms/test | Headless JS-capable browser via CDP. No CSS rendering. | Full functional suites — comparable to LiveView once concurrent |
+| **Chrome (CDP)** | ~500ms/test | Full browser via Chrome DevTools Protocol. Real multi-threading via Chrome's per-target threads. | Full fidelity (CSS, screenshots, mouse). Best concurrent throughput today. |
+| **Chrome (BiDi)** | ~2.4s/test | Full browser via WebDriver BiDi (chromium-bidi → Chrome). Cross-engine portable. | Future-proof choice as BiDi matures; aspirationally replaces CDP. |
+
+Numbers are wall-time per test at each driver's recommended `--max-cases` (see [concurrency table below](#concurrency-and-performance)). LiveView and Lightpanda land at the same per-test cost once parallelized — Lightpanda has a real browser per session but scales the same as in-process rendering.
 
 Tests declare their minimum requirement with tags:
 
@@ -72,7 +74,7 @@ Wall time in seconds for the full integration suite at each `--max-cases`:
 
 **When to pick which driver in CI:**
 
-- *Default:* let wallabidi route each test to the cheapest driver that supports it. Most LiveView-app tests run on the LiveView driver and are nearly free.
+- *Default:* let wallabidi route each test to the cheapest driver that supports it. Most LiveView-app tests run on the LiveView driver, which is the fastest path but not free — it still pays for ConnTest, sandbox setup, and assertion polling.
 - *JS-heavy app:* Lightpanda at mc16 — fastest real headless option.
 - *Need full browser fidelity (CSS, screenshots, mouse events):* CDP at mc4.
 - *Cross-browser portability or BiDi spec features:* BiDi at mc2. Slower than CDP today because the BiDi protocol serializes through a single Mapper per Chrome; will improve as chromium-bidi or successor implementations add parallel mapping.
