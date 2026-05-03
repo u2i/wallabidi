@@ -256,23 +256,28 @@ defmodule Wallabidi.Bootstrap do
     }).observe(document, {childList: true, subtree: true, attributes: true, characterData: true});
 
     // --- Page-ready detection + LiveView patch hook ---
-    //
-    // Each new document gets a fresh pageId. When the page is ready
-    // (DOM parsed + LV connected, OR non-LV detected), we set pageReady
-    // and fire a channel notification. Elixir captures the pre-click
-    // pageId, then waits for a page_ready notification with a new pageId.
-    // Zero polling.
-    //
-    // The LV patch hook bumps pageId on every onPatchEnd, so live_redirect
-    // and other in-document navigations also fire page_ready.
     W.pageId = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
     W.pageReady = false;
     W.lvHooked = false;
+    W.observedPatch = false;
+    W.t0 = Date.now();
+    W.trace = [];
+
+    function _trace(tag, extra) {
+      var ms = Date.now() - W.t0;
+      var el = document.getElementById('full-lv-connected');
+      var dom = el ? el.textContent : null;
+      var rec = '[wallabidi_trace +' + ms + 'ms] ' + tag + ' pageId=' + W.pageId + ' dom=' + JSON.stringify(dom) + (extra ? ' ' + extra : '');
+      W.trace.push(rec);
+      try { console.log(rec); } catch(e) {}
+    }
+    _trace('init', 'url=' + JSON.stringify(location.href));
 
     function bumpPageId() {
       W.pageId = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
       W.pageReady = true;
-      try { __wallabidi(JSON.stringify({type: 'page_ready', pageId: W.pageId})); } catch(e) {}
+      _trace('bumpPageId');
+      try { __wallabidi(JSON.stringify({type: 'page_ready', pageId: W.pageId, source: 'bumpPageId'})); } catch(e) {}
     }
 
     function installLvHook() {
@@ -283,41 +288,47 @@ defmodule Wallabidi.Bootstrap do
           var origPatch = ls.domCallbacks.onPatchEnd;
           ls.domCallbacks.onPatchEnd = function(c) {
             if (origPatch) origPatch(c);
+            W.observedPatch = true;
+            _trace('onPatchEnd');
             W.check();
             bumpPageId();
           };
           W.lvHooked = true;
+          _trace('installLvHook ok');
           return true;
         }
       } catch(e) {}
       return false;
     }
 
-    function markReady() {
+    function markReady(reason) {
       if (W.pageReady) return;
       W.pageReady = true;
-      try { __wallabidi(JSON.stringify({type: 'page_ready', pageId: W.pageId})); } catch(e) {}
+      _trace('markReady', 'reason=' + reason);
+      try { __wallabidi(JSON.stringify({type: 'page_ready', pageId: W.pageId, source: reason})); } catch(e) {}
     }
 
     function detectReady() {
-      // Non-LV page: ready as soon as DOM is parsed
       if (!document.querySelector('[data-phx-session]')) {
-        return markReady();
+        return markReady('non-lv');
       }
-      // LV page: install the patch hook (deferred until liveSocket exists)
-      // and wait for liveSocket.main to finish joining. We require BOTH:
-      //   - main.isConnected() — channel.canPush(), so the join has at
-      //     least started
-      //   - !main.joinPending — the join reply landed and the diff was
-      //     applied
-      // joinPending alone is undefined-falsy before the join begins, so
-      // checking it in isolation can fire too early on slow pages.
-      installLvHook();
+      var hooked = installLvHook();
       var ls = window.liveSocket;
-      if (ls && ls.main && ls.main.isConnected && ls.main.isConnected() && !ls.main.joinPending) {
-        return markReady();
+      var hasMain = !!(ls && ls.main);
+      var connected = hasMain && ls.main.isConnected && ls.main.isConnected();
+      var joining = hasMain ? ls.main.joinPending : null;
+
+      if (hooked && W.observedPatch) {
+        return markReady('observedPatch');
       }
-      // Still waiting — re-check on next animation frame
+      if (W.pageReady) return; // bumpPageId beat us
+
+      // Reduce log volume: only trace the gate every ~500ms, not every RAF
+      if (!W._lastGateTrace || (Date.now() - W._lastGateTrace) > 500) {
+        _trace('gate', 'hooked=' + hooked + ' hasLs=' + !!ls + ' hasMain=' + hasMain + ' connected=' + connected + ' joinPending=' + joining + ' observedPatch=' + W.observedPatch);
+        W._lastGateTrace = Date.now();
+      }
+
       requestAnimationFrame(detectReady);
     }
 
