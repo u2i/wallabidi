@@ -1300,6 +1300,23 @@ defmodule Wallabidi.CDPClient do
   bootstrap interpreter — no JS generation.
   """
   def find_elements_ops(parent, %Wallabidi.CDP.Ops{} = ops, find_opts \\ []) do
+    do_find_elements_ops(parent, ops, find_opts, _retries_left = 1)
+  end
+
+  defp do_find_elements_ops(parent, ops, find_opts, retries_left) do
+    case run_find_elements_ops(parent, ops, find_opts) do
+      {:error, :stale_reference} when retries_left > 0 ->
+        # Concurrent navigation cleared `window.__w.queries` between the
+        # count-notification and the secondary fetch. Re-run once — the
+        # new context has a fresh `__w` already.
+        do_find_elements_ops(parent, ops, find_opts, retries_left - 1)
+
+      result ->
+        result
+    end
+  end
+
+  defp run_find_elements_ops(parent, ops, find_opts) do
     session = root_session(parent)
     query_id = "q-#{System.unique_integer([:positive])}"
     timeout = Keyword.get(find_opts, :timeout, 5_000)
@@ -1367,38 +1384,54 @@ defmodule Wallabidi.CDPClient do
               {:ok, elements}
             else
               _ ->
+                # The push notification said `found_count > 0` but the
+                # secondary `window.__w.queries[id].elements` fetch
+                # returned undefined — the page navigated mid-flight or
+                # `W.queries` was cleared by a teardown elsewhere. Don't
+                # fabricate placeholder elements with nil ids; surface a
+                # stale-reference so the Browser-level retry layer can
+                # re-run the query against the new context.
                 cleanup_query(session, query_id)
-
-                {:ok,
-                 List.duplicate(%Element{parent: parent, driver: session.driver}, found_count)}
+                {:error, :stale_reference}
             end
 
           true ->
+            # found_count == 0 — genuinely empty result, no elements to fetch.
             cleanup_query(session, query_id)
-            {:ok, List.duplicate(%Element{parent: parent, driver: session.driver}, found_count)}
+            {:ok, []}
         end
 
       {:timeout, _} ->
         cleanup_query(session, query_id)
-        # Final sync check for count: 0 queries
-        final_js =
-          "(function(){var W=window.__w;if(!W)return 0;var r=W.exec(#{ops_json},null);return r.els.length;})()"
+        # Final sync check: re-run ops inline AND fetch real refs in
+        # one eval so we never return placeholder %Element{id: nil}.
+        # The W.exec call returns the array of matched elements; we
+        # then go through the same getProperties dance as the success
+        # path to extract real objectIds.
+        final_js = "(window.__w && window.__w.exec(#{ops_json}, null).els) || []"
+        {method, params} = Commands.evaluate(final_js, return_by_value: false)
 
-        case send_cdp_session(session, "Runtime.evaluate", %{
-               expression: final_js,
-               returnByValue: true
-             }) do
-          {:ok, result} ->
-            case ResponseParser.extract_value({:ok, result}) do
-              {:ok, n} when is_integer(n) ->
-                {:ok, List.duplicate(%Element{parent: parent, driver: session.driver}, n)}
+        with {:ok, result} <- send_cdp_session(session, method, params),
+             {:ok, array_id} <- ResponseParser.extract_object_id({:ok, result}),
+             true <- not is_nil(array_id),
+             {:ok, gp_result} <- send_cdp_raw(session, Commands.get_properties(array_id)),
+             {:ok, ids} <- ResponseParser.extract_element_ids({:ok, gp_result}) do
+          if array_id, do: cast_release(session, array_id)
 
-              _ ->
-                {:ok, []}
-            end
+          elements =
+            Enum.map(ids, fn object_id ->
+              %Element{
+                id: object_id,
+                bidi_shared_id: object_id,
+                parent: parent,
+                driver: session.driver,
+                url: session.session_url
+              }
+            end)
 
-          _ ->
-            {:ok, []}
+          {:ok, elements}
+        else
+          _ -> {:ok, []}
         end
     end
   end

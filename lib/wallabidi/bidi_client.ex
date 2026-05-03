@@ -484,9 +484,34 @@ defmodule Wallabidi.BiDiClient do
     {method, params} =
       Commands.call_function(context, wrapped, [%{type: "array", value: bidi_args}])
 
+    do_execute_script(session_or_element, method, params, _attempts = 5)
+  end
+
+  # chromium-bidi briefly returns "Cannot find context with specified id"
+  # when a new top-level realm hasn't been registered yet (e.g. between
+  # form-POST navigation and the new document binding). Retry with a
+  # short backoff before failing — by the time wallabidi's caller is
+  # making this call, the click flow has already awaited page_ready, so
+  # any "stale realm" error is transient by definition.
+  defp do_execute_script(_session, _method, _params, 0) do
+    {:error, {"unknown error", "Cannot find context with specified id"}}
+  end
+
+  defp do_execute_script(session_or_element, method, params, attempts) do
     case send_bidi(session_or_element, method, params) do
-      {:ok, result} -> ResponseParser.extract_value(result)
-      error -> error
+      {:ok, result} ->
+        ResponseParser.extract_value(result)
+
+      {:error, {_, msg}} = error when is_binary(msg) ->
+        if msg =~ "Cannot find context" do
+          Process.sleep(50)
+          do_execute_script(session_or_element, method, params, attempts - 1)
+        else
+          error
+        end
+
+      error ->
+        error
     end
   end
 

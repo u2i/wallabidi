@@ -916,14 +916,7 @@ defmodule Wallabidi.Browser do
         :ok
 
       :timeout ->
-        post =
-          case Wallabidi.Protocol.current_url(session) do
-            {:ok, url} -> url
-            _ -> nil
-          end
-
-        raise Wallabidi.NavigationTimeoutError,
-              %{from: nil, to: post, timeout_ms: 5_000}
+        raise_navigation_timeout(session, 5_000)
     end
   end
 
@@ -933,18 +926,29 @@ defmodule Wallabidi.Browser do
         :ok
 
       :timeout ->
-        post =
-          case Wallabidi.Protocol.current_url(session) do
-            {:ok, url} -> url
-            _ -> nil
-          end
-
-        raise Wallabidi.NavigationTimeoutError,
-              %{from: nil, to: post, timeout_ms: 5_000}
+        raise_navigation_timeout(session, 5_000)
     end
   end
 
   defp do_post_click(_, _, _, _, _), do: :ok
+
+  defp raise_navigation_timeout(session, timeout_ms) do
+    post =
+      case Wallabidi.Protocol.current_url(session) do
+        {:ok, url} -> url
+        _ -> nil
+      end
+
+    {page_state, page_state_history} = Wallabidi.SessionProcess.get_page_state(session)
+
+    raise Wallabidi.NavigationTimeoutError, %{
+      from: nil,
+      to: post,
+      timeout_ms: timeout_ms,
+      page_state: page_state,
+      page_state_history: page_state_history
+    }
+  end
 
   defp extract_query_from_ops(%Wallabidi.CDP.Ops{ops: ops}) do
     case Enum.find(ops, fn [cmd | _] -> cmd == "query" end) do
@@ -1170,10 +1174,26 @@ defmodule Wallabidi.Browser do
   """
   @spec find(parent, Query.t()) :: Element.t() | [Element.t()]
   def find(parent, %Query{} = query) do
+    do_find(parent, query, current_time())
+  end
+
+  # Pipeline path can return :stale_reference when a concurrent
+  # navigation cleared `window.__w.queries` between the count
+  # notification and the element fetch, OR when the find itself timed
+  # out but the elements actually exist (sync recheck found > 0). In
+  # both cases the right move is to re-run the whole query against the
+  # current page — the query budget bounds the total wait.
+  defp do_find(parent, query, start_time) do
     case execute_query(parent, query) do
       {:ok, query} ->
-        query
-        |> Query.result()
+        Query.result(query)
+
+      {:error, :stale_reference} ->
+        if max_time_exceeded?(start_time) do
+          raise Wallabidi.QueryError, ErrorMessage.message(query, :not_found)
+        else
+          do_find(parent, query, start_time)
+        end
 
       {:error, {:not_found, result}} ->
         query = %{query | result: result}
