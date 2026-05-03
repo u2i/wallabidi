@@ -949,54 +949,39 @@ defmodule Wallabidi.CDPClient do
     end
   end
 
+  # No-session, top-level CDP send. Used during browser-context bootstrap
+  # before a session_id exists.
   defp send_cdp(pid, {method, params}) when is_pid(pid) do
     WebSocketClient.send_command(pid, method, params)
     |> ResponseParser.check_error()
   end
 
-  # Fire-and-forget: write to WebSocket, don't wait for response.
-  defp cast_cdp_with_session(pid, session_id, {method, params}, opts)
-       when is_pid(pid) do
-    if Keyword.get(opts, :flat_session_id) do
-      WebSocketClient.cast_command_flat(pid, method, params, session_id)
-    else
-      params = Map.put(params, :sessionId, session_id)
-      WebSocketClient.cast_command_flat(pid, method, params, session_id)
-    end
-  end
-
-  @doc false
-  def cast_cdp_command(%Session{} = session, method, params) do
+  # Single dispatcher for session-scoped CDP messages. `kind` selects the
+  # WebSocketClient call:
+  #   :send → blocking send_command(_flat); returns {:ok, _} | {:error, _}
+  #   :cast → fire-and-forget; returns :ok
+  # `session.capabilities[:flat_session_id]` selects whether sessionId
+  # rides at the JSON-RPC top level (flat) or nested inside `params`.
+  defp dispatch(%Session{} = session, kind, method, params) do
     pid = bidi_pid(session)
     session_id = effective_session_id(session)
+    flat? = session.capabilities[:flat_session_id]
 
-    if session.capabilities[:flat_session_id] do
-      WebSocketClient.cast_command_flat(pid, method, params, session_id)
-    else
-      params = Map.put(params, :sessionId, session_id)
-      WebSocketClient.cast_command_flat(pid, method, params, session_id)
-    end
-  end
+    case {kind, flat?} do
+      {:send, true} ->
+        WebSocketClient.send_command_flat(pid, method, params, session_id)
 
-  # Fire-and-forget releaseObject — frees remote references without blocking.
-  defp cast_release(%Session{} = session, object_id) do
-    pid = bidi_pid(session)
-    session_id = effective_session_id(session)
+      {:send, _} ->
+        WebSocketClient.send_command(pid, method, Map.put(params, :sessionId, session_id))
 
-    if session.capabilities[:flat_session_id] do
-      WebSocketClient.cast_command_flat(
-        pid,
-        "Runtime.releaseObject",
-        %{objectId: object_id},
-        session_id
-      )
-    else
-      WebSocketClient.cast_command_flat(
-        pid,
-        "Runtime.releaseObject",
-        %{objectId: object_id, sessionId: session_id},
-        session_id
-      )
+      {:cast, _} ->
+        # cast_command_flat unconditionally puts sessionId at top level;
+        # for the non-flat path we additionally keep it in params so
+        # legacy CDP servers reading it from there still work.
+        params_for_cast =
+          if flat?, do: params, else: Map.put(params, :sessionId, session_id)
+
+        WebSocketClient.cast_command_flat(pid, method, params_for_cast, session_id)
     end
   end
 
@@ -1009,16 +994,33 @@ defmodule Wallabidi.CDPClient do
     # explicit. See SessionProcess.sync_barrier/1 for rationale.
     Wallabidi.SessionProcess.sync_barrier(session)
 
-    pid = bidi_pid(session)
-    session_id = effective_session_id(session)
-
-    if session.capabilities[:flat_session_id] do
-      WebSocketClient.send_command_flat(pid, method, params, session_id)
-    else
-      params = Map.put(params, :sessionId, session_id)
-      WebSocketClient.send_command(pid, method, params)
-    end
+    dispatch(session, :send, method, params)
     |> ResponseParser.check_error()
+  end
+
+  defp send_cdp_raw(%Session{} = session, {method, params}) do
+    dispatch(session, :send, method, params)
+  end
+
+  @doc false
+  def cast_cdp_command(%Session{} = session, method, params) do
+    dispatch(session, :cast, method, params)
+  end
+
+  # Pre-resolved-pid variant for the bootstrap path where the caller
+  # already has the session_id (no Session struct yet).
+  defp cast_cdp_with_session(pid, session_id, {method, params}, opts)
+       when is_pid(pid) do
+    params =
+      if Keyword.get(opts, :flat_session_id),
+        do: params,
+        else: Map.put(params, :sessionId, session_id)
+
+    WebSocketClient.cast_command_flat(pid, method, params, session_id)
+  end
+
+  defp cast_release(%Session{} = session, object_id) do
+    dispatch(session, :cast, "Runtime.releaseObject", %{objectId: object_id})
   end
 
   # Allow drivers to override the active CDP session_id via process dict
@@ -1027,18 +1029,6 @@ defmodule Wallabidi.CDPClient do
     case Process.get({:cdp_current_target, session.id}) do
       {_target_id, sess_id} -> sess_id
       _ -> session.browsing_context
-    end
-  end
-
-  defp send_cdp_raw(%Session{} = session, {method, params}) do
-    pid = bidi_pid(session)
-    session_id = effective_session_id(session)
-
-    if session.capabilities[:flat_session_id] do
-      WebSocketClient.send_command_flat(pid, method, params, session_id)
-    else
-      params = Map.put(params, :sessionId, session_id)
-      WebSocketClient.send_command(pid, method, params)
     end
   end
 
