@@ -88,7 +88,21 @@ defmodule Wallabidi.Mixfile do
 
   defp package do
     [
-      files: ["lib", "mix.exs", "README.md", "LICENSE.md", "priv"],
+      # Don't ship priv/bidi-server/node_modules — consumers run `npm install`
+      # via `mix wallabidi.install` after pulling the package. Including
+      # node_modules pushes the tarball past Hex's 8 MB limit.
+      files: [
+        "lib",
+        "mix.exs",
+        "README.md",
+        "LICENSE.md",
+        "priv/cdp",
+        "priv/perf-matrix.svg",
+        "priv/run_command.sh",
+        "priv/bidi-server/package.json",
+        "priv/bidi-server/package-lock.json",
+        "priv/bidi-server/run.mjs"
+      ],
       maintainers: @maintainers,
       licenses: ["MIT"],
       links: %{
