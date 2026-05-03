@@ -1300,6 +1300,23 @@ defmodule Wallabidi.CDPClient do
   bootstrap interpreter — no JS generation.
   """
   def find_elements_ops(parent, %Wallabidi.CDP.Ops{} = ops, find_opts \\ []) do
+    do_find_elements_ops(parent, ops, find_opts, _retries_left = 1)
+  end
+
+  defp do_find_elements_ops(parent, ops, find_opts, retries_left) do
+    case run_find_elements_ops(parent, ops, find_opts) do
+      {:error, :stale_reference} when retries_left > 0 ->
+        # Concurrent navigation cleared `window.__w.queries` between the
+        # count-notification and the secondary fetch. Re-run once — the
+        # new context has a fresh `__w` already.
+        do_find_elements_ops(parent, ops, find_opts, retries_left - 1)
+
+      result ->
+        result
+    end
+  end
+
+  defp run_find_elements_ops(parent, ops, find_opts) do
     session = root_session(parent)
     query_id = "q-#{System.unique_integer([:positive])}"
     timeout = Keyword.get(find_opts, :timeout, 5_000)
@@ -1367,10 +1384,15 @@ defmodule Wallabidi.CDPClient do
               {:ok, elements}
             else
               _ ->
+                # The push notification said `found_count > 0` but the
+                # secondary `window.__w.queries[id].elements` fetch
+                # returned undefined — the page navigated mid-flight or
+                # `W.queries` was cleared by a teardown elsewhere. Don't
+                # fabricate placeholder elements with nil ids; surface a
+                # stale-reference so the Browser-level retry layer can
+                # re-run the query against the new context.
                 cleanup_query(session, query_id)
-
-                {:ok,
-                 List.duplicate(%Element{parent: parent, driver: session.driver}, found_count)}
+                {:error, :stale_reference}
             end
 
           true ->
