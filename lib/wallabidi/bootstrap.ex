@@ -305,10 +305,16 @@ defmodule Wallabidi.Bootstrap do
         return markReady();
       }
       // LV page: install the patch hook (deferred until liveSocket exists)
-      // and wait for liveSocket.main to finish joining
+      // and wait for liveSocket.main to finish joining. We require BOTH:
+      //   - main.isConnected() — channel.canPush(), so the join has at
+      //     least started
+      //   - !main.joinPending — the join reply landed and the diff was
+      //     applied
+      // joinPending alone is undefined-falsy before the join begins, so
+      // checking it in isolation can fire too early on slow pages.
       installLvHook();
       var ls = window.liveSocket;
-      if (ls && ls.main && !ls.main.joinPending) {
+      if (ls && ls.main && ls.main.isConnected && ls.main.isConnected() && !ls.main.joinPending) {
         return markReady();
       }
       // Still waiting — re-check on next animation frame
