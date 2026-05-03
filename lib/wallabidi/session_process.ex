@@ -418,17 +418,15 @@ defmodule Wallabidi.SessionProcess do
   end
 
   def handle_call({:await_page_ready_after, pre_page_id, timeout_ms}, from, state) do
-    require Logger
-
-    Logger.warning(
-      "[wallabidi_diag] await_page_ready_after sess=#{inspect(self())} pre=#{String.slice(pre_page_id || "nil", 0, 12)} last=#{String.slice(state.last_page_id || "nil", 0, 12)} early_return=#{state.last_page_id != nil and state.last_page_id != pre_page_id}"
-    )
-
-    if state.last_page_id != nil and state.last_page_id != pre_page_id do
-      # Already received a notification with a different pageId
+    # Early-return only when we have a meaningful pre-state to
+    # compare AND a different last_page_id has already arrived.
+    # Without `pre_page_id != nil`, a session whose pre_page_id capture
+    # raced ahead of its first page_ready notification (so pre = nil)
+    # would falsely claim "ready" against any non-nil last_page_id —
+    # the bug behind the plain-form-submit BiDi flake.
+    if pre_page_id != nil and state.last_page_id != nil and state.last_page_id != pre_page_id do
       {:reply, :ok, state}
     else
-      # Register waiter; the next page_ready event will resolve it
       timeout_ref = Process.send_after(self(), :page_ready_timeout, timeout_ms)
       {:noreply, %{state | page_ready_waiter: {from, pre_page_id, timeout_ref}}}
     end
@@ -554,15 +552,6 @@ defmodule Wallabidi.SessionProcess do
       {:ok, %{"type" => "page_ready", "pageId" => page_id} = msg} ->
         state = update_page_state_machine(state, msg)
         resolve_page_ready(state, page_id)
-
-      {:ok, %{"type" => "diag"} = msg} ->
-        require Logger
-
-        Logger.warning(
-          "[wallabidi_diag] sess=#{inspect(self())} path=#{msg["path"]} reason=#{msg["reason"]} state=#{msg["state"]} dom=#{inspect(msg["dom"])} docId=#{String.slice(msg["docId"] || "?", 0, 12)} last_page_id=#{String.slice(state.last_page_id || "nil", 0, 12)} pageId=#{String.slice(msg["pageId"] || "?", 0, 12)} waiter?=#{not is_nil(state.page_ready_waiter)}"
-        )
-
-        state
 
       _ ->
         state
