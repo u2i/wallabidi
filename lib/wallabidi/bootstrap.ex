@@ -261,18 +261,30 @@ defmodule Wallabidi.Bootstrap do
     // (DOM parsed + LV connected mount applied, OR non-LV detected),
     // we set pageReady and fire a channel notification. Elixir captures
     // the pre-click pageId, then waits for a page_ready notification
-    // with a new pageId. Zero polling.
+    // with a new pageId. Fully event-driven, no polling.
     //
-    // For LV pages we wait for `observedPatch` — set by the patch hook
-    // on the first onPatchEnd. That's the strict signal that the
-    // *connected* mount's diff has been applied. Don't trust
-    // joinPending alone; it's undefined-falsy before the join begins,
-    // so a check that runs before app.js has constructed liveSocket
-    // would fire markReady against the disconnected server render.
+    // For LV pages, the canonical "connected mount applied" signal is
+    // `phx:page-loading-stop` with `detail.kind === "initial"`. It's a
+    // public, documented LV event (same one NProgress integrations
+    // hook into). It fires from `withPageLoading`'s `done` closure
+    // inside `applyJoinPatch`, AFTER the join's diff has been
+    // performPatch'd into the DOM and AFTER `joinPending = false`.
+    // We listen on window — listener can be installed before
+    // `liveSocket` exists, so no construction-order race.
+    //
+    // `phx:page-loading-stop` also fires for `kind: "patch"`
+    // (live_redirect via pushHistoryPatch) and `kind: "redirect"`
+    // (replaceMain) — both bump pageId via the same listener.
+    //
+    // Plain `phx-click → diff` interactions don't fire
+    // page-loading-stop (only navigations and elements with
+    // phx-page-loading do). For those, we still patch
+    // `domCallbacks.onPatchEnd` to bump pageId on every diff. The
+    // hook is installed lazily — first time we see liveSocket, but no
+    // earlier than DOMContentLoaded.
     W.pageId = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
     W.pageReady = false;
     W.lvHooked = false;
-    W.observedPatch = false;
 
     function bumpPageId() {
       W.pageId = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
@@ -288,7 +300,6 @@ defmodule Wallabidi.Bootstrap do
           var origPatch = ls.domCallbacks.onPatchEnd;
           ls.domCallbacks.onPatchEnd = function(c) {
             if (origPatch) origPatch(c);
-            W.observedPatch = true;
             W.check();
             bumpPageId();
           };
@@ -305,28 +316,28 @@ defmodule Wallabidi.Bootstrap do
       try { __wallabidi(JSON.stringify({type: 'page_ready', pageId: W.pageId})); } catch(e) {}
     }
 
-    function detectReady() {
+    // Listener installed early (before liveSocket exists) — no race.
+    // Fires on initial join, live_redirect, replaceMain. Each of those
+    // means navigation/connection completed and the diff is in the DOM.
+    window.addEventListener('phx:page-loading-stop', function(e) {
+      // Try to install the patch hook here too — by the time
+      // page-loading-stop fires, liveSocket definitely exists. This
+      // covers the case where DOMContentLoaded ran before app.js.
+      installLvHook();
+      bumpPageId();
+    });
+
+    document.addEventListener('DOMContentLoaded', function() {
+      // Non-LV page: ready as soon as DOM is parsed.
       if (!document.querySelector('[data-phx-session]')) {
         return markReady();
       }
-      var hooked = installLvHook();
-      // The patch hook bumps pageId itself (via bumpPageId) when the
-      // first onPatchEnd fires. That's the canonical "ready" signal
-      // for an LV page. detectReady's RAF loop is only here to keep
-      // checking until the hook is installed; once it is, the hook
-      // takes over.
-      if (hooked && W.observedPatch) {
-        return markReady();
-      }
-      if (W.pageReady) return; // bumpPageId beat us
-      requestAnimationFrame(detectReady);
-    }
-
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', detectReady);
-    } else {
-      detectReady();
-    }
+      // LV page: install the patch hook for plain phx-click → diff
+      // interactions (which don't fire page-loading-stop). The
+      // page-loading-stop listener above handles initial/redirect/
+      // patch readiness — this hook handles everything else.
+      installLvHook();
+    });
     """
   end
 end
