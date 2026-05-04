@@ -650,6 +650,35 @@ defmodule Wallabidi.V2.CDPClient do
     end
   end
 
+  @doc """
+  Like `click_aware/3` but returns the classification AND a status
+  tag (`:ready` or `:timeout`) so callers can branch on the
+  classification before deciding whether a page-ready timeout is
+  actually an error. Patch-classified timeouts in particular are
+  silent in the legacy click pipeline.
+  """
+  @spec click_aware_with_classification(Session.t(), Element.t(), keyword) ::
+          {:ok, String.t(), :ready | :timeout} | {:error, term}
+  def click_aware_with_classification(%Session{} = session, %Element{} = element, opts \\ []) do
+    timeout = Keyword.get(opts, :timeout, 5_000)
+    pre_page_id = V2Session.get_page_id(session)
+
+    with :ok <- await_lv_ready(session, timeout),
+         {:ok, classification} <- classify(session, element, :click),
+         {:ok, _} <- click(session, element) do
+      case classification do
+        "none" ->
+          {:ok, classification, :ready}
+
+        _ ->
+          case V2Session.await_page_ready_after(session, pre_page_id, timeout) do
+            :ok -> {:ok, classification, :ready}
+            :timeout -> {:ok, classification, :timeout}
+          end
+      end
+    end
+  end
+
   # Block until liveSocket.main is finished joining (or there's no
   # LiveView at all). Mirrors the pre-click readiness wait the legacy
   # click_full op does — without it, clicks fired during the join

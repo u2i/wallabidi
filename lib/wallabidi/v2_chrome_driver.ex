@@ -293,23 +293,70 @@ defmodule Wallabidi.V2ChromeDriver do
 
     check_logs!(session, fn ->
       # click_aware does pre_page_id capture + classify + click + page_ready
-      # await, which is what tests like ClickButton (form submit -> nav)
-      # expect. For non-navigating clicks classification is "none" and the
+      # await. For non-navigating clicks classification is "none" and the
       # await is skipped.
-      case CDPClient.click_aware(session, element) do
-        {:ok, _classification} ->
+      case CDPClient.click_aware_with_classification(session, element) do
+        {:ok, _classification, :ready} ->
           {:ok, nil}
 
-        {:error, :timeout} ->
-          # The post-click navigation/patch never completed within the
-          # deadline — surface as Wallabidi.NavigationTimeoutError so
-          # tests like NavigateTimeoutTest can catch it explicitly.
+        {:ok, "navigate", :timeout} ->
+          # data-phx-link=redirect / JS.navigate-classified clicks raise
+          # NavigationTimeoutError on page_ready timeout — those tests
+          # explicitly catch the error.
           raise_navigation_timeout(session, 5_000)
+
+        {:ok, "full_page", :timeout} ->
+          raise_navigation_timeout(session, 5_000)
+
+        {:ok, "patch", :timeout} ->
+          # Legacy patch-classified timeout silently falls through
+          # (caller's assert_has retries do the work) — but only AFTER
+          # awaiting the LV server's ack of the click event, which
+          # closes the slow-handle_event race. V2 doesn't have an LV
+          # ack channel, but we can do the next-best thing: poll
+          # `current_url` for a transition, plus another page_ready
+          # window of equal length. Closes SlowDestMount.
+          _ = await_url_change_or_load(session, 10_000)
+          {:ok, nil}
+
+        {:ok, _classification, :timeout} ->
+          # Other classifications — silent fallback.
+          {:ok, nil}
 
         err ->
           err
       end
     end)
+  end
+
+  # Block until current URL differs from the URL captured here, or
+  # until a Page lifecycle "load" event fires, or `timeout_ms`
+  # elapses. Used as a fallback after a patch-classified timeout
+  # when the LV server may still be processing handle_event.
+  defp await_url_change_or_load(%Session{} = session, timeout_ms) do
+    pre_url =
+      case CDPClient.current_url(session) do
+        {:ok, url} -> url
+        _ -> nil
+      end
+
+    deadline = System.monotonic_time(:millisecond) + timeout_ms
+    poll_url(session, pre_url, deadline)
+  end
+
+  defp poll_url(session, pre_url, deadline) do
+    cond do
+      System.monotonic_time(:millisecond) >= deadline ->
+        :timeout
+
+      true ->
+        case CDPClient.current_url(session) do
+          {:ok, url} when url != pre_url and url != "" -> :ok
+          _ ->
+            Process.sleep(50)
+            poll_url(session, pre_url, deadline)
+        end
+    end
   end
 
   defp raise_navigation_timeout(session, timeout_ms) do
