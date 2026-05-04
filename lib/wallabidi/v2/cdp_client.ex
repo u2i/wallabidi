@@ -123,6 +123,86 @@ defmodule Wallabidi.V2.CDPClient do
     end
   end
 
+  # ----- Element-scoped operations -----
+
+  @doc """
+  Runs a JS function against the given element's `objectId` (`this`),
+  optionally with positional args. Returns the serialised value.
+
+  Equivalent to `Runtime.callFunctionOn` with `returnByValue: true`.
+
+  Used as a building block for element-scoped operations (text,
+  attribute, displayed, etc.).
+  """
+  @spec call_on_element(Session.t(), Element.t(), String.t(), [term]) ::
+          {:ok, term} | {:error, term}
+  def call_on_element(
+        %Session{} = session,
+        %Element{bidi_shared_id: object_id},
+        fn_decl,
+        args \\ []
+      )
+      when is_binary(object_id) and is_binary(fn_decl) and is_list(args) do
+    encoded_args = Enum.map(args, &%{value: &1})
+
+    case cdp_send(session, "Runtime.callFunctionOn", %{
+           objectId: object_id,
+           functionDeclaration: fn_decl,
+           arguments: encoded_args,
+           returnByValue: true
+         }) do
+      {:ok, %{"result" => %{"value" => value}}} ->
+        {:ok, value}
+
+      {:ok, %{"result" => %{"type" => "undefined"}}} ->
+        {:ok, nil}
+
+      {:ok, %{"exceptionDetails" => details}} ->
+        {:error, {:js_exception, details}}
+
+      {:ok, _} = ok ->
+        ok
+
+      error ->
+        error
+    end
+  end
+
+  @doc "Returns the element's visible text content (`innerText` / fallback)."
+  @spec text(Session.t(), Element.t()) :: {:ok, String.t()} | {:error, term}
+  def text(%Session{} = session, %Element{} = element) do
+    call_on_element(
+      session,
+      element,
+      "function() { return this.innerText || this.textContent || ''; }"
+    )
+  end
+
+  @doc """
+  Returns the value of a named attribute on the element, or `nil` if
+  not set. Treats `value`, `checked`, and `selected` specially —
+  those map to live DOM properties rather than HTML attributes.
+  """
+  @spec attribute(Session.t(), Element.t(), String.t()) ::
+          {:ok, String.t() | nil} | {:error, term}
+  def attribute(%Session{} = session, %Element{} = element, name) when is_binary(name) do
+    call_on_element(
+      session,
+      element,
+      """
+      function(name) {
+        if (name === 'value' && 'value' in this) return this.value;
+        if (name === 'checked') return this.checked ? 'true' : null;
+        if (name === 'selected') return this.selected ? 'true' : null;
+        if (name === 'outerHTML') return this.outerHTML;
+        if (name === 'innerHTML') return this.innerHTML;
+        return this.getAttribute(name);
+      }
+      """,
+      [name]
+    )
+  end
+
   # ----- Element finding -----
 
   @doc """

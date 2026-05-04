@@ -234,4 +234,35 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
       assert html =~ ~r/<\/html>/i
     end
   end
+
+  describe "text/2 and attribute/3" do
+    setup %{session: session} do
+      base = Application.fetch_env!(:wallabidi, :base_url)
+      :ok = CDPClient.visit(session, base <> "index.html")
+      :ok
+    end
+
+    test "text/2 returns the visible text of an element", %{session: session} do
+      {:ok, [el]} = CDPClient.find_elements(session, Query.css("#header"))
+      assert {:ok, text} = CDPClient.text(session, el)
+      assert is_binary(text)
+      assert byte_size(text) > 0
+    end
+
+    test "attribute/3 returns a string for a present attribute", %{session: session} do
+      {:ok, [el]} = CDPClient.find_elements(session, Query.css("#header"))
+      assert {:ok, "header"} = CDPClient.attribute(session, el, "id")
+    end
+
+    test "attribute/3 returns nil for a missing attribute", %{session: session} do
+      {:ok, [el]} = CDPClient.find_elements(session, Query.css("#header"))
+      assert {:ok, nil} = CDPClient.attribute(session, el, "data-not-present")
+    end
+
+    test "attribute/3 returns outerHTML when asked", %{session: session} do
+      {:ok, [el]} = CDPClient.find_elements(session, Query.css("#header"))
+      assert {:ok, html} = CDPClient.attribute(session, el, "outerHTML")
+      assert html =~ ~r/<h1[^>]*id="header"/i
+    end
+  end
 end
