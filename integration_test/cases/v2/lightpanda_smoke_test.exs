@@ -312,6 +312,59 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
     end
   end
 
+  describe "cookies" do
+    setup %{session: session} do
+      base = Application.fetch_env!(:wallabidi, :base_url)
+      :ok = CDPClient.visit(session, base <> "index.html")
+      %{base_url: base}
+    end
+
+    test "cookies/1 returns the current cookie set", %{session: session} do
+      assert {:ok, cookies} = CDPClient.cookies(session)
+      assert is_list(cookies)
+    end
+
+    test "set_cookie/4 + cookies/1 round-trip", %{session: session, base_url: base} do
+      assert {:ok, _} = CDPClient.set_cookie(session, "v2_test", "hello", %{url: base})
+      assert {:ok, cookies} = CDPClient.cookies(session)
+
+      assert Enum.any?(cookies, fn c ->
+               c["name"] == "v2_test" and c["value"] == "hello"
+             end)
+    end
+  end
+
+  describe "screenshot + window size" do
+    setup %{session: session} do
+      base = Application.fetch_env!(:wallabidi, :base_url)
+      :ok = CDPClient.visit(session, base <> "index.html")
+      :ok
+    end
+
+    @tag :lightpanda_ni
+    test "take_screenshot/1 returns binary PNG bytes", %{session: session} do
+      # Lightpanda doesn't implement Page.captureScreenshot. Tagged
+      # :lightpanda_ni so it's skipped on Lightpanda runs but exercised
+      # by future Chrome integrations.
+      assert {:ok, png} = CDPClient.take_screenshot(session)
+      assert is_binary(png)
+      # PNG magic bytes
+      assert <<0x89, "PNG", 0x0D, 0x0A, 0x1A, 0x0A, _::binary>> = png
+    end
+
+    test "get_window_size/1 returns width and height", %{session: session} do
+      assert {:ok, %{width: w, height: h}} = CDPClient.get_window_size(session)
+      assert is_integer(w) and w > 0
+      assert is_integer(h) and h > 0
+    end
+
+    @tag :lightpanda_ni
+    test "set_window_size/3 + get_window_size/1 round-trip", %{session: session} do
+      assert {:ok, nil} = CDPClient.set_window_size(session, 800, 600)
+      assert {:ok, %{width: 800, height: 600}} = CDPClient.get_window_size(session)
+    end
+  end
+
   describe "input ops (set_value, clear, send_keys)" do
     setup %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)

@@ -356,6 +356,102 @@ defmodule Wallabidi.V2.CDPClient do
     end
   end
 
+  # ----- Cookies -----
+
+  @doc """
+  Returns the cookies visible to the current page.
+  """
+  @spec cookies(Session.t()) :: {:ok, [map]} | {:error, term}
+  def cookies(%Session{} = session) do
+    case cdp_send(session, "Network.getCookies", %{}) do
+      {:ok, %{"cookies" => cookies}} when is_list(cookies) -> {:ok, cookies}
+      {:ok, _} -> {:ok, []}
+      error -> error
+    end
+  end
+
+  @doc """
+  Sets a cookie. `attrs` may include any standard CDP `setCookie`
+  fields (`url`, `domain`, `path`, `expires`, `secure`, `httpOnly`,
+  `sameSite`); a `:url` is helpful when you don't have a known domain
+  and just want the cookie scoped to the current page.
+  """
+  @spec set_cookie(Session.t(), String.t(), String.t(), map) ::
+          {:ok, true | false} | {:error, term}
+  def set_cookie(%Session{} = session, name, value, attrs \\ %{})
+      when is_binary(name) and is_binary(value) do
+    params =
+      attrs
+      |> Map.put(:name, name)
+      |> Map.put(:value, value)
+
+    case cdp_send(session, "Network.setCookie", params) do
+      {:ok, %{"success" => true}} -> {:ok, true}
+      {:ok, %{"success" => false}} -> {:ok, false}
+      {:ok, _} -> {:ok, true}
+      error -> error
+    end
+  end
+
+  # ----- Screenshot + window size -----
+
+  @doc """
+  Captures a PNG screenshot of the current page (viewport).
+  Returns the raw binary (not base64).
+  """
+  @spec take_screenshot(Session.t()) :: {:ok, binary} | {:error, term}
+  def take_screenshot(%Session{} = session) do
+    case cdp_send(session, "Page.captureScreenshot", %{format: "png"}) do
+      {:ok, %{"data" => data}} when is_binary(data) ->
+        Base.decode64(data)
+
+      {:ok, _} ->
+        {:error, :no_screenshot_data}
+
+      error ->
+        error
+    end
+  end
+
+  @doc "Returns the current viewport size as `{:ok, %{width: w, height: h}}`."
+  @spec get_window_size(Session.t()) ::
+          {:ok, %{width: non_neg_integer, height: non_neg_integer}} | {:error, term}
+  def get_window_size(%Session{} = session) do
+    case evaluate(
+           session,
+           "JSON.stringify({width: window.innerWidth, height: window.innerHeight})"
+         ) do
+      {:ok, json} when is_binary(json) ->
+        case Jason.decode(json) do
+          {:ok, %{"width" => w, "height" => h}} -> {:ok, %{width: w, height: h}}
+          _ -> {:error, :bad_size_response}
+        end
+
+      error ->
+        error
+    end
+  end
+
+  @doc """
+  Resizes the viewport (and optionally the device) via
+  `Emulation.setDeviceMetricsOverride`. Pass 0 for `device_scale_factor`
+  / `mobile` to use defaults.
+  """
+  @spec set_window_size(Session.t(), non_neg_integer, non_neg_integer) ::
+          {:ok, nil} | {:error, term}
+  def set_window_size(%Session{} = session, width, height)
+      when is_integer(width) and is_integer(height) do
+    case cdp_send(session, "Emulation.setDeviceMetricsOverride", %{
+           width: width,
+           height: height,
+           deviceScaleFactor: 0,
+           mobile: false
+         }) do
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
+  end
+
   # ----- Element finding -----
 
   @doc """
