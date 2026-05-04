@@ -754,51 +754,102 @@ defmodule Wallabidi.Browser do
   def click(parent, query) do
     session = get_session(parent)
 
-    if session && not is_nil(session.protocol) &&
-         not in_frame?(session) && not in_switched_window?(session) do
-      # Execute click synchronously via pipeline (must be immediate
-      # because callers like assert_raise expect errors to surface now,
-      # and dialog handlers expect the click to have fired).
-      alias Wallabidi.CDP.Ops
+    cond do
+      session && session.driver == Wallabidi.V2Driver &&
+          not in_frame?(session) && not in_switched_window?(session) ->
+        # V2Driver (Lightpanda): route through V2.CDPClient.click_aware
+        # which captures pre_page_id, classifies, clicks, awaits
+        # page_ready — same shape as do_post_click but in one native
+        # V2 call. Avoids the post-click `find` polling fallback that
+        # cost LP ~3s per submit-form click.
+        #
+        # V2ChromeDriver intentionally NOT routed here — it has
+        # nav-timeout / slow-dest-mount-fallback logic in its own
+        # click impl that needs to run via Element.click + driver.click.
+        v2_click_with_await(parent, query)
 
-      # Capture pre-click page id so do_post_click can wait for the
-      # bootstrap's push notification on the NEW page (zero polling).
-      pre_page_id = Wallabidi.SessionProcess.get_page_id(session)
+      session && not is_nil(session.protocol) &&
+          not in_frame?(session) && not in_switched_window?(session) ->
+        # Execute click synchronously via pipeline (must be immediate
+        # because callers like assert_raise expect errors to surface now,
+        # and dialog handlers expect the click to have fired).
+        alias Wallabidi.CDP.Ops
 
-      case Ops.from_wallaby(parent, query, :click) do
-        {:ok, ops, validated} ->
-          result =
-            if session.protocol == Wallabidi.Protocol.CDP do
-              Wallabidi.CDPClient.execute_ops(parent, ops,
-                timeout: max_wait_time(),
-                count: Query.count(validated)
-              )
-            else
-              execute_ops_click_bidi(parent, session, ops, validated)
+        # Capture pre-click page id so do_post_click can wait for the
+        # bootstrap's push notification on the NEW page (zero polling).
+        pre_page_id = Wallabidi.SessionProcess.get_page_id(session)
+
+        case Ops.from_wallaby(parent, query, :click) do
+          {:ok, ops, validated} ->
+            result =
+              if session.protocol == Wallabidi.Protocol.CDP do
+                Wallabidi.CDPClient.execute_ops(parent, ops,
+                  timeout: max_wait_time(),
+                  count: Query.count(validated)
+                )
+              else
+                execute_ops_click_bidi(parent, session, ops, validated)
+              end
+
+            case result do
+              {:ok, :clicked, %{classification: c, prepared: p} = meta} ->
+                do_post_click(session, c, p, pre_page_id, meta[:pre_ref])
+                parent
+
+              {:error, _} ->
+                with_patch_await(parent, query, :click, fn ->
+                  find(parent, query, &Element.click/1)
+                end)
+
+                parent
             end
 
-          case result do
-            {:ok, :clicked, %{classification: c, prepared: p} = meta} ->
-              do_post_click(session, c, p, pre_page_id, meta[:pre_ref])
-              parent
+          _ ->
+            with_patch_await(parent, query, :click, fn ->
+              parent |> find(query, &Element.click/1)
+            end)
+        end
 
-            {:error, _} ->
-              with_patch_await(parent, query, :click, fn ->
-                find(parent, query, &Element.click/1)
-              end)
+      true ->
+        with_patch_await(parent, query, :click, fn ->
+          parent |> find(query, &Element.click/1)
+        end)
+    end
+  end
 
-              parent
-          end
+  # V2 click path: find the element, then route the click through
+  # V2.CDPClient.click_aware which:
+  #   1. captures pre_page_id from the bootstrap
+  #   2. classifies the click (patch / navigate / full_page / none)
+  #   3. dispatches the click via JS
+  #   4. for non-"none" classifications, awaits the bootstrap's
+  #      page_ready notification on the new document (push-based, no
+  #      polling)
+  defp v2_click_with_await(parent, query) do
+    case find(parent, query) do
+      %Wallabidi.Element{} = element ->
+        case Wallabidi.V2.CDPClient.click_aware(element.parent, element) do
+          {:ok, _classification} ->
+            parent
 
-        _ ->
-          with_patch_await(parent, query, :click, fn ->
-            parent |> find(query, &Element.click/1)
-          end)
-      end
-    else
-      with_patch_await(parent, query, :click, fn ->
-        parent |> find(query, &Element.click/1)
-      end)
+          {:error, :timeout} ->
+            # Page-ready timeout: the click ran but no page_ready
+            # arrived. Fall through; subsequent assertions will retry
+            # via their own polling.
+            parent
+
+          {:error, _} ->
+            with_patch_await(parent, query, :click, fn ->
+              find(parent, query, &Element.click/1)
+            end)
+
+            parent
+        end
+
+      _ ->
+        with_patch_await(parent, query, :click, fn ->
+          parent |> find(query, &Element.click/1)
+        end)
     end
   end
 
