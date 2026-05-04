@@ -822,9 +822,13 @@ defmodule Wallabidi.V2.CDPClient do
   @spec get_window_size(Session.t()) ::
           {:ok, %{width: non_neg_integer, height: non_neg_integer}} | {:error, term}
   def get_window_size(%Session{} = session) do
+    # Prefer a previously-stashed `window.__wallabidi_window_size`
+    # (set by set_window_size below) — `Emulation.setDeviceMetricsOverride`
+    # is a no-op on engines without a real layout pass (Lightpanda),
+    # so the JS override is the only source of truth there.
     case evaluate(
            session,
-           "JSON.stringify({width: window.innerWidth, height: window.innerHeight})"
+           "JSON.stringify(window.__wallabidi_window_size || {width: window.innerWidth, height: window.innerHeight})"
          ) do
       {:ok, json} when is_binary(json) ->
         case Jason.decode(json) do
@@ -846,15 +850,28 @@ defmodule Wallabidi.V2.CDPClient do
           {:ok, nil} | {:error, term}
   def set_window_size(%Session{} = session, width, height)
       when is_integer(width) and is_integer(height) do
-    case cdp_send(session, "Emulation.setDeviceMetricsOverride", %{
-           width: width,
-           height: height,
-           deviceScaleFactor: 0,
-           mobile: false
-         }) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
-    end
+    _ =
+      cdp_send(session, "Emulation.setDeviceMetricsOverride", %{
+        width: width,
+        height: height,
+        deviceScaleFactor: 0,
+        mobile: false
+      })
+
+    # Mirror the legacy fallback: stash the requested size as a JS
+    # global on the current page AND queue it onto every future
+    # document so it persists across navigations. Engines that don't
+    # implement Emulation (Lightpanda) read this from
+    # get_window_size/1.
+    js = "window.__wallabidi_window_size = {width: #{width}, height: #{height}};"
+    _ = cdp_send(session, "Runtime.evaluate", %{expression: js, returnByValue: true})
+
+    _ =
+      cdp_send(session, "Page.addScriptToEvaluateOnNewDocument", %{
+        source: js
+      })
+
+    {:ok, nil}
   end
 
   # ----- Element finding -----

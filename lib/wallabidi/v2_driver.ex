@@ -92,6 +92,16 @@ defmodule Wallabidi.V2Driver do
           :ok = CDPClient.enable_page_lifecycle_events(session)
           :ok = CDPClient.install_bootstrap(session)
           :ok = CDPClient.enable_frame_tracking(session)
+
+          if window_size = Keyword.get(opts, :window_size) do
+            _ =
+              CDPClient.set_window_size(
+                session,
+                window_size[:width],
+                window_size[:height]
+              )
+          end
+
           {:ok, session}
 
         error ->

@@ -59,14 +59,7 @@ excludes =
       excludes ++ [browser: true, lightpanda_ni: true, live_view_only: true, cdp_only: true]
 
     :lightpanda_v2 ->
-      excludes ++
-        [
-          browser: true,
-          headless: true,
-          lightpanda_ni: true,
-          live_view_only: true,
-          cdp_only: true
-        ]
+      excludes ++ [browser: true, lightpanda_ni: true, live_view_only: true, cdp_only: true]
 
     :chrome_cdp_v2 ->
       excludes ++ [live_view_only: true, cdp_only: true]
