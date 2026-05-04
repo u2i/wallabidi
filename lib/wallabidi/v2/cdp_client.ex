@@ -20,9 +20,6 @@ defmodule Wallabidi.V2.CDPClient do
   alias Wallabidi.Session
   alias Wallabidi.V2.Session, as: V2Session
 
-  # Operations land here as we add them.
-  # First will be `evaluate/2` (Runtime.evaluate).
-
   @doc """
   Returns the CDP send opts (`:flat_session_id` + `:session_id`) for
   a given Session. Used internally by every CDP call.
@@ -41,5 +38,43 @@ defmodule Wallabidi.V2.CDPClient do
   # the unwrapped CDP result.
   def cdp_send(%Session{} = session, method, params) do
     V2Session.cdp_send(session, method, params, send_opts(session))
+  end
+
+  # ----- Runtime.evaluate -----
+
+  @doc """
+  Runs a JS expression in the page's main realm and returns the
+  serialised value. Equivalent to `Runtime.evaluate` with
+  `returnByValue: true`.
+
+  Examples:
+
+      iex> evaluate(session, "1 + 1")
+      {:ok, 2}
+
+      iex> evaluate(session, "document.title")
+      {:ok, "Wallabidi Test"}
+  """
+  @spec evaluate(Session.t(), String.t()) :: {:ok, term} | {:error, term}
+  def evaluate(%Session{} = session, expression) when is_binary(expression) do
+    case cdp_send(session, "Runtime.evaluate", %{
+           expression: expression,
+           returnByValue: true
+         }) do
+      {:ok, %{"result" => %{"value" => value}}} ->
+        {:ok, value}
+
+      {:ok, %{"result" => %{"type" => "undefined"}}} ->
+        {:ok, nil}
+
+      {:ok, %{"exceptionDetails" => details}} ->
+        {:error, {:js_exception, details}}
+
+      {:ok, _} = ok ->
+        ok
+
+      error ->
+        error
+    end
   end
 end
