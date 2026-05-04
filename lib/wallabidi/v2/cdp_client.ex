@@ -606,7 +606,8 @@ defmodule Wallabidi.V2.CDPClient do
     timeout = Keyword.get(opts, :timeout, 5_000)
     pre_page_id = V2Session.get_page_id(session)
 
-    with {:ok, classification} <- classify(session, element, :click),
+    with :ok <- await_lv_ready(session, timeout),
+         {:ok, classification} <- classify(session, element, :click),
          {:ok, _} <- click(session, element) do
       case classification do
         "none" ->
@@ -618,6 +619,35 @@ defmodule Wallabidi.V2.CDPClient do
             :timeout -> {:error, :timeout}
           end
       end
+    end
+  end
+
+  # Block until liveSocket.main is finished joining (or there's no
+  # LiveView at all). Mirrors the pre-click readiness wait the legacy
+  # click_full op does — without it, clicks fired during the join
+  # window get dropped because the LV channel hasn't bound yet.
+  defp await_lv_ready(%Session{} = session, timeout_ms) do
+    js = """
+    new Promise(function(resolve) {
+      var deadline = Date.now() + #{timeout_ms};
+      function check() {
+        var ls = window.liveSocket;
+        if (!ls || !ls.main) return resolve(true);
+        if (ls.main.joinPending !== true) return resolve(true);
+        if (Date.now() > deadline) return resolve(false);
+        setTimeout(check, 20);
+      }
+      check();
+    })
+    """
+
+    case cdp_send(session, "Runtime.evaluate", %{
+           expression: js,
+           awaitPromise: true,
+           returnByValue: true
+         }) do
+      {:ok, _} -> :ok
+      _ -> :ok
     end
   end
 
