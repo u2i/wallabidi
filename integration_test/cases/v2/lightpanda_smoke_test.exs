@@ -311,4 +311,44 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
                CDPClient.find_elements(parent, Query.css("a", count: :any), timeout: 200)
     end
   end
+
+  describe "input ops (set_value, clear, send_keys)" do
+    setup %{session: session} do
+      base = Application.fetch_env!(:wallabidi, :base_url)
+      :ok = CDPClient.visit(session, base <> "forms.html")
+      :ok
+    end
+
+    test "set_value/3 writes a value into a text input", %{session: session} do
+      {:ok, [input]} = CDPClient.find_elements(session, Query.css("#name_field"))
+
+      assert {:ok, nil} = CDPClient.set_value(session, input, "alice")
+      assert {:ok, "alice"} = CDPClient.attribute(session, input, "value")
+    end
+
+    test "clear/3 empties the value (silent by default)", %{session: session} do
+      {:ok, [input]} = CDPClient.find_elements(session, Query.css("#name_field"))
+
+      assert {:ok, nil} = CDPClient.set_value(session, input, "to-be-cleared")
+      assert {:ok, nil} = CDPClient.clear(session, input)
+      assert {:ok, ""} = CDPClient.attribute(session, input, "value")
+    end
+
+    test "send_keys/3 with a string appends to the value", %{session: session} do
+      {:ok, [input]} = CDPClient.find_elements(session, Query.css("#name_field"))
+
+      assert {:ok, nil} = CDPClient.send_keys(session, input, "hello")
+      assert {:ok, "hello"} = CDPClient.attribute(session, input, "value")
+
+      assert {:ok, nil} = CDPClient.send_keys(session, input, " world")
+      assert {:ok, "hello world"} = CDPClient.attribute(session, input, "value")
+    end
+
+    test "send_keys/3 with a list joins segments", %{session: session} do
+      {:ok, [input]} = CDPClient.find_elements(session, Query.css("#name_field"))
+
+      assert {:ok, nil} = CDPClient.send_keys(session, input, ["foo", "bar"])
+      assert {:ok, "foobar"} = CDPClient.attribute(session, input, "value")
+    end
+  end
 end

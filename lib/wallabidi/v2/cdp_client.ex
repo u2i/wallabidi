@@ -237,6 +237,99 @@ defmodule Wallabidi.V2.CDPClient do
   end
 
   @doc """
+  Sets the value of an input element and dispatches `input` and
+  `change` events. Suitable for `<input>`, `<textarea>`, and
+  `<select>`. For `<select>`, sets `.value` and synthesises change.
+
+  Mirrors today's CDPClient.set_value/2 (event-dispatching) shape —
+  unlike clear/2 which has a `silent` mode that skips events.
+  """
+  @spec set_value(Session.t(), Element.t(), term) :: {:ok, nil} | {:error, term}
+  def set_value(%Session{} = session, %Element{} = element, value) do
+    case call_on_element(
+           session,
+           element,
+           """
+           function(v) {
+             this.value = v;
+             this.dispatchEvent(new Event('input', {bubbles: true}));
+             this.dispatchEvent(new Event('change', {bubbles: true}));
+             return null;
+           }
+           """,
+           [value]
+         ) do
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
+  end
+
+  @doc """
+  Clears the element's value. With `silent: true` (default), no events
+  are dispatched — used internally before fill_in to avoid firing
+  phx-change for the intermediate empty state.
+  """
+  @spec clear(Session.t(), Element.t(), keyword) :: {:ok, nil} | {:error, term}
+  def clear(%Session{} = session, %Element{} = element, opts \\ []) do
+    silent? = Keyword.get(opts, :silent, true)
+
+    fn_decl =
+      if silent? do
+        "function() { this.value = ''; return null; }"
+      else
+        """
+        function() {
+          this.value = '';
+          this.dispatchEvent(new Event('input', {bubbles: true}));
+          this.dispatchEvent(new Event('change', {bubbles: true}));
+          return null;
+        }
+        """
+      end
+
+    case call_on_element(session, element, fn_decl) do
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
+  end
+
+  @doc """
+  Sends keys to the element. `keys` is a list of string segments;
+  each segment is appended to the element's value, with `input` and
+  `change` events dispatched after each.
+
+  Special-key atoms (`:enter`, `:tab`, etc.) are NOT supported here —
+  full key mapping comes when we layer in CDP's
+  `Input.dispatchKeyEvent`. For now, just text input.
+  """
+  @spec send_keys(Session.t(), Element.t(), [String.t()] | String.t()) ::
+          {:ok, nil} | {:error, term}
+  def send_keys(%Session{} = session, %Element{} = element, keys) when is_binary(keys) do
+    send_keys(session, element, [keys])
+  end
+
+  def send_keys(%Session{} = session, %Element{} = element, keys) when is_list(keys) do
+    text = keys |> Enum.filter(&is_binary/1) |> Enum.join("")
+
+    case call_on_element(
+           session,
+           element,
+           """
+           function(s) {
+             this.value = (this.value || '') + s;
+             this.dispatchEvent(new Event('input', {bubbles: true}));
+             this.dispatchEvent(new Event('change', {bubbles: true}));
+             return null;
+           }
+           """,
+           [text]
+         ) do
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
+  end
+
+  @doc """
   Click an element. Scrolls into view, focuses, then dispatches the
   click via the DOM API.
 
