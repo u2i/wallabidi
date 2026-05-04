@@ -4,6 +4,7 @@ defmodule Wallabidi.Integration.Browser.AssertTextTest do
   alias Wallabidi.ExpectationNotMetError
 
   @tag :headless
+  @tag :polling
   test "has_text?/2 waits for presence of text and returns a bool", %{session: session} do
     element =
       session
@@ -25,6 +26,8 @@ defmodule Wallabidi.Integration.Browser.AssertTextTest do
 
     assert element == assert_text(element, "main")
   end
+
+  @tag :polling
 
   test "assert_text/2 will raise an exception for text not found", %{session: session} do
     element =

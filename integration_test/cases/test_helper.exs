@@ -72,7 +72,15 @@ excludes =
   end
 
 ExUnit.configure(exclude: excludes)
-ExUnit.start()
+
+# SlowTestGuard flags tests that exceed a threshold without an
+# explicit @tag :polling. Tests intentionally relying on Wallabidi's
+# max_wait_time polling (refute_has, find/not-found, etc.) should
+# carry the tag so the guard ignores them — anything else over
+# 1500ms is suspicious.
+ExUnit.start(
+  formatters: [ExUnit.CLIFormatter, Wallabidi.Integration.SlowTestGuard]
+)
 
 # --- Start LiveApp endpoint (LiveView integration tests) ---
 Application.put_env(:wallabidi, Wallabidi.Integration.LiveApp.Endpoint,

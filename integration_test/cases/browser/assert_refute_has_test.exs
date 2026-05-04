@@ -18,6 +18,8 @@ defmodule Wallabidi.Integration.Browser.AssertRefuteHasTest do
       assert %Wallabidi.Session{} = return
     end
 
+    @tag :polling
+
     test "raises if the query is not found", %{session: session} do
       assert_raise ExpectationNotMetError, ~r/Expected.+ 1.*css.*\.something-else.*0/i, fn ->
         session
@@ -25,6 +27,8 @@ defmodule Wallabidi.Integration.Browser.AssertRefuteHasTest do
         |> assert_has(@not_found_query)
       end
     end
+
+    @tag :polling
 
     test "mentions the count of found vs. expected elements", %{session: session} do
       assert_raise ExpectationNotMetError, ~r/Expected.+ 5.*css.*\.user.*6/i, fn ->
@@ -56,6 +60,7 @@ defmodule Wallabidi.Integration.Browser.AssertRefuteHasTest do
   end
 
   describe "refute_has/2" do
+    @tag :polling
     test "passes if the query is not found on the page", %{session: session} do
       return =
         session
