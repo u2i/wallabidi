@@ -87,4 +87,14 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
                V2Session.await_page_load(session, "loader-that-never-fires", "load", 200)
     end
   end
+
+  describe "visit/2" do
+    test "navigates and waits for load in one call", %{session: session} do
+      base = Application.fetch_env!(:wallabidi, :base_url)
+      url = base <> "/index.html"
+
+      assert :ok = CDPClient.visit(session, url)
+      assert {:ok, ^url} = CDPClient.evaluate(session, "location.href")
+    end
+  end
 end

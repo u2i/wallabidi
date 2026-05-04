@@ -91,6 +91,36 @@ defmodule Wallabidi.V2.CDPClient do
     end
   end
 
+  # ----- Visit (navigate + await load) -----
+
+  @doc """
+  Navigates to `url` and blocks until the page's `load` lifecycle
+  event has fired. Returns `:ok` or `{:error, :timeout}`.
+
+  Convenience over `navigate/2` + `await_page_load/4` for the common
+  "visit a URL and wait for it" case.
+
+  Same-document navigations (URL fragments) don't produce a new
+  loader_id — those return `:ok` immediately without waiting.
+  """
+  @spec visit(Session.t(), String.t(), keyword) :: :ok | {:error, term}
+  def visit(%Session{} = session, url, opts \\ []) when is_binary(url) do
+    timeout = Keyword.get(opts, :timeout, 10_000)
+
+    with {:ok, %{loader_id: loader_id}} <- navigate(session, url) do
+      if is_binary(loader_id) do
+        case V2Session.await_page_load(session, loader_id, "load", timeout) do
+          :ok -> :ok
+          :timeout -> {:error, :timeout}
+        end
+      else
+        # Same-document nav (fragment / cached) — no loaderId, no
+        # new load cycle to await.
+        :ok
+      end
+    end
+  end
+
   # ----- Runtime.evaluate -----
 
   @doc """
