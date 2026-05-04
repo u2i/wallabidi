@@ -200,21 +200,30 @@ defmodule Wallabidi.V2.CDPClient do
   @spec attribute(Session.t(), Element.t(), String.t()) ::
           {:ok, String.t() | nil} | {:error, term}
   def attribute(%Session{} = session, %Element{} = element, name) when is_binary(name) do
-    call_on_element(
-      session,
-      element,
-      """
-      function(name) {
-        if (name === 'value' && 'value' in this) return this.value;
-        if (name === 'checked') return this.checked ? 'true' : null;
-        if (name === 'selected') return this.selected ? 'true' : null;
-        if (name === 'outerHTML') return this.outerHTML;
-        if (name === 'innerHTML') return this.innerHTML;
-        return this.getAttribute(name);
-      }
-      """,
-      [name]
-    )
+    # Detached nodes still hold a live JS reference, so call_on_element
+    # would happily run `this.getAttribute(...)` on them. To match
+    # Wallaby's "raise StaleReferenceError when the element has left
+    # the document" contract, we check `isConnected` and signal stale
+    # via a sentinel return value.
+    case call_on_element(
+           session,
+           element,
+           """
+           function(name) {
+             if (this && !this.isConnected) return {__wallabidi_stale: true};
+             if (name === 'value' && 'value' in this) return this.value;
+             if (name === 'checked') return this.checked ? 'true' : null;
+             if (name === 'selected') return this.selected ? 'true' : null;
+             if (name === 'outerHTML') return this.outerHTML;
+             if (name === 'innerHTML') return this.innerHTML;
+             return this.getAttribute(name);
+           }
+           """,
+           [name]
+         ) do
+      {:ok, %{"__wallabidi_stale" => true}} -> {:error, :stale_reference}
+      result -> result
+    end
   end
 
   @doc """
@@ -839,7 +848,17 @@ defmodule Wallabidi.V2.CDPClient do
             returnByValue: true
           })
         else
-          cdp_send(session, "Runtime.evaluate", %{expression: register_js, returnByValue: true})
+          # Thread the active frame's executionContextId so find runs
+          # inside the focused iframe (set via focus_frame_by_id).
+          base = %{expression: register_js, returnByValue: true}
+
+          params =
+            case V2Session.current_context_id(session) do
+              nil -> base
+              ctx -> Map.put(base, :contextId, ctx)
+            end
+
+          cdp_send(session, "Runtime.evaluate", params)
         end
 
       case V2Session.await_find_result(session, query_id, timeout) do
@@ -866,7 +885,9 @@ defmodule Wallabidi.V2.CDPClient do
     # When the original query was scoped to a parent element, run the
     # final exec via callFunctionOn so `this` is the parent — keeping
     # the scoping intent intact. Document scope passes null root so
-    # the bootstrap's `ctx = root || document` falls through to document.
+    # the bootstrap's `ctx = root || document` falls through to
+    # document. Threads the focused iframe's executionContextId so
+    # the fallback runs in the same realm as the original query.
     eval_result =
       if parent_id do
         cdp_send(session, "Runtime.callFunctionOn", %{
@@ -876,10 +897,18 @@ defmodule Wallabidi.V2.CDPClient do
           returnByValue: false
         })
       else
-        cdp_send(session, "Runtime.evaluate", %{
+        base = %{
           expression: "(window.__w ? window.__w.exec(#{ops_json}, null).els : [])",
           returnByValue: false
-        })
+        }
+
+        params =
+          case V2Session.current_context_id(session) do
+            nil -> base
+            ctx -> Map.put(base, :contextId, ctx)
+          end
+
+        cdp_send(session, "Runtime.evaluate", params)
       end
 
     with {:ok, ev} <- eval_result,

@@ -297,10 +297,35 @@ defmodule Wallabidi.V2ChromeDriver do
       # expect. For non-navigating clicks classification is "none" and the
       # await is skipped.
       case CDPClient.click_aware(session, element) do
-        {:ok, _classification} -> {:ok, nil}
-        err -> err
+        {:ok, _classification} ->
+          {:ok, nil}
+
+        {:error, :timeout} ->
+          # The post-click navigation/patch never completed within the
+          # deadline — surface as Wallabidi.NavigationTimeoutError so
+          # tests like NavigateTimeoutTest can catch it explicitly.
+          raise_navigation_timeout(session, 5_000)
+
+        err ->
+          err
       end
     end)
+  end
+
+  defp raise_navigation_timeout(session, timeout_ms) do
+    post =
+      case CDPClient.current_url(session) do
+        {:ok, url} -> url
+        _ -> nil
+      end
+
+    raise Wallabidi.NavigationTimeoutError, %{
+      from: nil,
+      to: post,
+      timeout_ms: timeout_ms,
+      page_state: :unknown,
+      page_state_history: []
+    }
   end
 
   @impl true
@@ -445,13 +470,107 @@ defmodule Wallabidi.V2ChromeDriver do
   @impl true
   def dismiss_prompt(%Session{} = s, fun), do: CDPClient.handle_dialog(s, fun, false)
   @impl true
-  def window_handle(_), do: {:ok, "main"}
+  def window_handle(%Session{pid: pid} = session) when is_pid(pid) do
+    # The session struct in the caller's hand may carry a stale
+    # target_id (focus_window/2 mutates the live state in the
+    # GenServer). Re-fetch the current state.
+    case GenServer.call(pid, :get_session) do
+      %Session{capabilities: caps} -> {:ok, caps[:target_id]}
+      _ -> {:ok, get_in(session.capabilities, [:target_id])}
+    end
+  catch
+    :exit, _ -> {:ok, get_in(session.capabilities, [:target_id])}
+  end
+
+  def window_handle(%Session{} = session) do
+    {:ok, get_in(session.capabilities, [:target_id])}
+  end
+
+  def window_handle(%Element{} = element) do
+    window_handle(Element.root_session(element))
+  end
+
   @impl true
-  def window_handles(_), do: {:ok, ["main"]}
+  def window_handles(parent) do
+    session = Element.root_session(parent)
+    ws_pid = session.bidi_pid
+    ctx_id = get_in(session.capabilities, [:browser_context_id])
+
+    case WebSocket.send_sync(ws_pid, "Target.getTargets", %{}) do
+      {:ok, %{"targetInfos" => targets}} ->
+        handles =
+          targets
+          |> Enum.filter(fn t ->
+            t["type"] == "page" && t["browserContextId"] == ctx_id
+          end)
+          |> Enum.map(fn t -> t["targetId"] end)
+
+        {:ok, handles}
+
+      _ ->
+        {:ok, [get_in(session.capabilities, [:target_id])]}
+    end
+  end
+
   @impl true
-  def focus_window(_, _), do: {:ok, nil}
+  def focus_window(parent, target_id) when is_binary(target_id) do
+    session = Element.root_session(parent)
+    ws_pid = session.bidi_pid
+
+    # Switch the V2.Session's CDP target by re-attaching to the new
+    # one (gets a new sessionId). Update session.browsing_context so
+    # subsequent cdp_send opts route there.
+    case WebSocket.send_sync(ws_pid, "Target.attachToTarget", %{
+           targetId: target_id,
+           flatten: true
+         }) do
+      {:ok, %{"sessionId" => session_id}} ->
+        # Update session struct in the GenServer (the caller's struct
+        # may be stale; window_handle/1 re-fetches via :get_session).
+        if session.pid do
+          GenServer.call(session.pid, {:update_browsing_context, session_id, target_id})
+        end
+
+        new_session = %{
+          session
+          | browsing_context: session_id,
+            capabilities: Map.put(session.capabilities, :target_id, target_id)
+        }
+
+        _ = CDPClient.enable_page_lifecycle_events(new_session)
+        _ = CDPClient.install_bootstrap(new_session)
+
+        # The new tab may have already loaded its document before we
+        # attached. Force a reload so the bootstrap runs (Page.add-
+        # ScriptToEvaluateOnNewDocument only fires for *new* docs).
+        # Cheaper than a true reload: navigate to current URL.
+        case CDPClient.cdp_send(new_session, "Runtime.evaluate", %{
+               expression: "location.href",
+               returnByValue: true
+             }) do
+          {:ok, %{"result" => %{"value" => url}}} when is_binary(url) and url != "about:blank" ->
+            _ = CDPClient.visit(new_session, url)
+
+          _ ->
+            :ok
+        end
+
+        {:ok, nil}
+
+      err ->
+        err
+    end
+  end
+
   @impl true
-  def close_window(_), do: {:ok, nil}
+  def close_window(%Session{} = session) do
+    target_id = get_in(session.capabilities, [:target_id])
+    ws_pid = session.bidi_pid
+    _ = WebSocket.send_sync(ws_pid, "Target.closeTarget", %{targetId: target_id})
+    {:ok, nil}
+  end
+
+  def close_window(%Element{} = element), do: close_window(Element.root_session(element))
   @impl true
   def maximize_window(_), do: {:ok, nil}
   @impl true
@@ -459,8 +578,38 @@ defmodule Wallabidi.V2ChromeDriver do
   @impl true
   def set_window_position(_, _, _), do: {:ok, nil}
   @impl true
+  def focus_frame(%Session{} = session, %Element{bidi_shared_id: object_id})
+      when is_binary(object_id) do
+    # Resolve the iframe element's frameId via DOM.describeNode, then
+    # ask V2.Session to push the frame's executionContextId so all
+    # subsequent script evals target it.
+    case CDPClient.cdp_send(session, "DOM.describeNode", %{objectId: object_id}) do
+      {:ok, %{"node" => %{"frameId" => frame_id}}} when is_binary(frame_id) ->
+        case CDPClient.focus_frame_by_id(session, frame_id) do
+          :ok -> {:ok, nil}
+          err -> err
+        end
+
+      _ ->
+        {:ok, nil}
+    end
+  end
+
+  # Browser.focus_default_frame/1 calls driver.focus_frame(session, nil)
+  # to escape all the way out. Reset the frame stack.
+  def focus_frame(%Session{pid: pid}, nil) when is_pid(pid) do
+    GenServer.call(pid, :reset_frame_stack)
+    {:ok, nil}
+  end
+
   def focus_frame(_, _), do: {:ok, nil}
+
   @impl true
+  def focus_parent_frame(%Session{} = session) do
+    :ok = CDPClient.focus_parent_frame(session)
+    {:ok, nil}
+  end
+
   def focus_parent_frame(_), do: {:ok, nil}
 
   # ----- Internal -----

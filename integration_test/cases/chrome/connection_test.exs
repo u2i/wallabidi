@@ -7,6 +7,9 @@ defmodule Wallabidi.Integration.Chrome.TraceConnectionTest do
   alias Wallabidi.ChromeCDP.SharedConnection
 
   @moduletag :browser
+  # References Wallabidi.ChromeCDP.SharedConnection directly, so it
+  # only makes sense under WALLABIDI_DRIVER=chrome_cdp.
+  @moduletag :cdp_only
 
   test "shared connection survives 20 concurrent sessions" do
     cdp_pid = SharedConnection.get()

@@ -403,6 +403,20 @@ defmodule Wallabidi.V2.Session do
     {:reply, state.session, state}
   end
 
+  def handle_call({:update_browsing_context, session_id, target_id}, _from, state) do
+    new_session = %{
+      state.session
+      | browsing_context: session_id,
+        capabilities: Map.put(state.session.capabilities, :target_id, target_id)
+    }
+
+    {:reply, :ok, %{state | session: new_session}}
+  end
+
+  def handle_call(:reset_frame_stack, _from, state) do
+    {:reply, :ok, %{state | frame_stack: []}}
+  end
+
   def handle_call({:cdp_send, method, params, opts}, from, state) do
     wire_id = WebSocket.cast_send(state.ws_pid, self(), method, params, opts)
     pending = Map.put(state.pending_calls, wire_id, from)
