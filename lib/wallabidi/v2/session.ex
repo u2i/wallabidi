@@ -418,6 +418,19 @@ defmodule Wallabidi.V2.Session do
   end
 
   def handle_call({:cdp_send, method, params, opts}, from, state) do
+    # If the caller's opts carry a session_id (CDP flat-session
+    # routing), override it with our LIVE browsing_context. The
+    # caller's struct may be stale after a focus_window/2 swap; the
+    # GenServer state is the source of truth.
+    opts =
+      case Keyword.fetch(opts, :session_id) do
+        {:ok, _} when is_binary(state.session.browsing_context) ->
+          Keyword.put(opts, :session_id, state.session.browsing_context)
+
+        _ ->
+          opts
+      end
+
     wire_id = WebSocket.cast_send(state.ws_pid, self(), method, params, opts)
     pending = Map.put(state.pending_calls, wire_id, from)
     {:noreply, %{state | pending_calls: pending}}

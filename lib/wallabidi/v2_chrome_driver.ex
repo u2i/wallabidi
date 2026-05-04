@@ -540,20 +540,17 @@ defmodule Wallabidi.V2ChromeDriver do
         _ = CDPClient.enable_page_lifecycle_events(new_session)
         _ = CDPClient.install_bootstrap(new_session)
 
-        # The new tab may have already loaded its document before we
-        # attached. Force a reload so the bootstrap runs (Page.add-
-        # ScriptToEvaluateOnNewDocument only fires for *new* docs).
-        # Cheaper than a true reload: navigate to current URL.
-        case CDPClient.cdp_send(new_session, "Runtime.evaluate", %{
-               expression: "location.href",
-               returnByValue: true
-             }) do
-          {:ok, %{"result" => %{"value" => url}}} when is_binary(url) and url != "about:blank" ->
-            _ = CDPClient.visit(new_session, url)
-
-          _ ->
-            :ok
-        end
+        # The new tab may have loaded its document BEFORE we attached.
+        # Page.addScriptToEvaluateOnNewDocument (queued by
+        # install_bootstrap) only fires for *future* documents, so the
+        # bootstrap won't be present until the next nav. Run the IIFE
+        # inline against the current document so subsequent finds
+        # work without needing a reload.
+        _ =
+          CDPClient.cdp_send(new_session, "Runtime.evaluate", %{
+            expression: Wallabidi.Bootstrap.cdp_iife(),
+            returnByValue: true
+          })
 
         {:ok, nil}
 
@@ -563,6 +560,24 @@ defmodule Wallabidi.V2ChromeDriver do
   end
 
   @impl true
+  def close_window(%Session{pid: pid} = session) when is_pid(pid) do
+    # The caller's session struct may carry a stale target_id —
+    # focus_window/2 mutates the live state in the GenServer. Re-fetch
+    # so close_window closes the *currently focused* target, not the
+    # one the caller's struct was first built with.
+    current =
+      try do
+        GenServer.call(pid, :get_session)
+      catch
+        :exit, _ -> session
+      end
+
+    target_id = get_in(current.capabilities, [:target_id])
+    ws_pid = session.bidi_pid
+    _ = WebSocket.send_sync(ws_pid, "Target.closeTarget", %{targetId: target_id})
+    {:ok, nil}
+  end
+
   def close_window(%Session{} = session) do
     target_id = get_in(session.capabilities, [:target_id])
     ws_pid = session.bidi_pid
