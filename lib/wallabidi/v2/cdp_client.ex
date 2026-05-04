@@ -1181,12 +1181,75 @@ defmodule Wallabidi.V2.CDPClient do
   """
   @spec evaluate(Session.t(), String.t(), list) :: {:ok, term} | {:error, term}
   def evaluate(%Session{} = session, expression, args) when is_binary(expression) and is_list(args) do
-    if needs_wrap?(expression, args) do
-      args_json = Jason.encode!(args)
-      wrapped = "(function(){#{expression}}).apply(this, #{args_json})"
-      evaluate_raw(session, wrapped)
+    case encode_script_args(args) do
+      {:elements, cdp_args} ->
+        # Args contain WebDriver-encoded element references — pass them
+        # through as real CDP objectIds via Runtime.callFunctionOn so
+        # the script's `arguments[n]` is a live Element, not a JSON
+        # blob. callFunctionOn needs an objectId, so use globalThis.
+        evaluate_with_element_args(session, expression, cdp_args)
+
+      {:no_elements, _} ->
+        if needs_wrap?(expression, args) do
+          args_json = Jason.encode!(args)
+          wrapped = "(function(){#{expression}}).apply(this, #{args_json})"
+          evaluate_raw(session, wrapped)
+        else
+          evaluate_raw(session, expression)
+        end
+    end
+  end
+
+  @web_element_identifier "element-6066-11e4-a52e-4f735466cecf"
+
+  defp encode_script_args(args) do
+    has_element? =
+      Enum.any?(args, fn
+        %{@web_element_identifier => _} -> true
+        _ -> false
+      end)
+
+    if has_element? do
+      cdp_args =
+        Enum.map(args, fn
+          %{@web_element_identifier => id} -> %{objectId: id}
+          v -> %{value: v}
+        end)
+
+      {:elements, cdp_args}
     else
-      evaluate_raw(session, expression)
+      {:no_elements, args}
+    end
+  end
+
+  defp evaluate_with_element_args(%Session{} = session, expression, cdp_args) do
+    # Wrap the script body in a function so `arguments[n]` and bare
+    # `return X` work — same shape as the no-element path.
+    wrapped = "function() { #{expression} }"
+
+    with {:ok, eval_result} <-
+           cdp_send(session, "Runtime.evaluate", %{
+             expression: "globalThis",
+             returnByValue: false
+           }),
+         {:ok, global_id} when is_binary(global_id) <-
+           ResponseParser.extract_object_id({:ok, eval_result}) do
+      result =
+        cdp_send(session, "Runtime.callFunctionOn", %{
+          objectId: global_id,
+          functionDeclaration: wrapped,
+          arguments: cdp_args,
+          returnByValue: true
+        })
+
+      _ = cdp_send(session, "Runtime.releaseObject", %{objectId: global_id})
+
+      case result do
+        {:ok, %{"result" => %{"value" => v}}} -> {:ok, v}
+        {:ok, %{"result" => %{"type" => "undefined"}}} -> {:ok, nil}
+        {:ok, %{"exceptionDetails" => details}} -> {:error, {:js_exception, details}}
+        other -> other
+      end
     end
   end
 
