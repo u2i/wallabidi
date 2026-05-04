@@ -63,7 +63,7 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
 
     test "navigates to a URL and returns a loader_id", %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)
-      url = base <> "/" <> @url_for
+      url = base <> @url_for
 
       assert {:ok, %{loader_id: loader_id, frame_id: frame_id}} =
                CDPClient.navigate(session, url)
@@ -74,7 +74,7 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
 
     test "navigate + await_page_load: location.href reflects new URL", %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)
-      url = base <> "/" <> @url_for
+      url = base <> @url_for
 
       {:ok, %{loader_id: loader_id}} = CDPClient.navigate(session, url)
       assert :ok = V2Session.await_page_load(session, loader_id, "load", 5_000)
@@ -91,10 +91,38 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
   describe "visit/2" do
     test "navigates and waits for load in one call", %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)
-      url = base <> "/index.html"
+      url = base <> "index.html"
 
       assert :ok = CDPClient.visit(session, url)
       assert {:ok, ^url} = CDPClient.evaluate(session, "location.href")
+    end
+  end
+
+  describe "page introspection" do
+    setup %{session: session} do
+      base = Application.fetch_env!(:wallabidi, :base_url)
+      url = base <> "index.html"
+      :ok = CDPClient.visit(session, url)
+      %{base_url: base, url: url}
+    end
+
+    test "current_url/1", %{session: session, url: url} do
+      assert {:ok, ^url} = CDPClient.current_url(session)
+    end
+
+    test "current_path/1", %{session: session} do
+      assert {:ok, "/index.html"} = CDPClient.current_path(session)
+    end
+
+    test "page_title/1", %{session: session} do
+      assert {:ok, title} = CDPClient.page_title(session)
+      assert is_binary(title)
+    end
+
+    test "page_source/1 returns full document HTML", %{session: session} do
+      assert {:ok, html} = CDPClient.page_source(session)
+      assert html =~ ~r/<html/i
+      assert html =~ ~r/<\/html>/i
     end
   end
 end

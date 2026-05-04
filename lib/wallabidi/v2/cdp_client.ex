@@ -91,6 +91,44 @@ defmodule Wallabidi.V2.CDPClient do
     end
   end
 
+  # ----- Page introspection -----
+
+  @doc """
+  Returns the page's current URL (`window.location.href`) as a string.
+  """
+  @spec current_url(Session.t()) :: {:ok, String.t()} | {:error, term}
+  def current_url(%Session{} = session) do
+    evaluate(session, "location.href")
+  end
+
+  @doc """
+  Returns the page's current path (the URL's path component, defaulting
+  to `"/"`).
+  """
+  @spec current_path(Session.t()) :: {:ok, String.t()} | {:error, term}
+  def current_path(%Session{} = session) do
+    case current_url(session) do
+      {:ok, url} -> {:ok, URI.parse(url).path || "/"}
+      error -> error
+    end
+  end
+
+  @doc """
+  Returns the page's `<title>` text.
+  """
+  @spec page_title(Session.t()) :: {:ok, String.t()} | {:error, term}
+  def page_title(%Session{} = session) do
+    evaluate(session, "document.title")
+  end
+
+  @doc """
+  Returns the page's full HTML source (`document.documentElement.outerHTML`).
+  """
+  @spec page_source(Session.t()) :: {:ok, String.t()} | {:error, term}
+  def page_source(%Session{} = session) do
+    evaluate(session, "document.documentElement.outerHTML")
+  end
+
   # ----- Visit (navigate + await load) -----
 
   @doc """
