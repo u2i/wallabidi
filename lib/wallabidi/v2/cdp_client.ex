@@ -182,14 +182,42 @@ defmodule Wallabidi.V2.CDPClient do
       String.contains?(msg, "Object has been released")
   end
 
+  @extract_text_js """
+  function() {
+    // Always use a DOM walker so the result is consistent across
+    // engines that *have* a layout pass (Chrome, where innerText
+    // already inserts newlines between blocks) and engines that
+    // *don't* (Lightpanda, where innerText would just whitespace-
+    // collapse). Mirrors what the legacy CDPClient.text does.
+    var blocks = ['DIV','P','H1','H2','H3','H4','H5','H6','LI','TR','BR',
+                  'SECTION','ARTICLE','HEADER','FOOTER','NAV','MAIN','UL','OL','DL',
+                  'BLOCKQUOTE','PRE','TABLE','THEAD','TBODY','TFOOT','FORM','FIELDSET','HR'];
+    function walk(node) {
+      if (node.nodeType === 3) return node.nodeValue.replace(/\\s+/g, ' ');
+      if (node.nodeType !== 1) return '';
+      if (node.tagName === 'BR') return '\\n';
+      var parts = [];
+      for (var i = 0; i < node.childNodes.length; i++) {
+        parts.push(walk(node.childNodes[i]));
+      }
+      var text = parts.join('');
+      if (blocks.indexOf(node.tagName) >= 0) text = '\\n' + text + '\\n';
+      return text;
+    }
+    var result = walk(this);
+    return result.split('\\n').map(function(l) { return l.trim(); }).filter(Boolean).join('\\n');
+  }
+  """
+
   @doc "Returns the element's visible text content (`innerText` / fallback)."
   @spec text(Session.t(), Element.t()) :: {:ok, String.t()} | {:error, term}
   def text(%Session{} = session, %Element{} = element) do
-    call_on_element(
-      session,
-      element,
-      "function() { return this.innerText || this.textContent || ''; }"
-    )
+    # innerText handles whitespace/block-element newlines in real
+    # browsers (Chrome). Headless engines without a layout pass
+    # (Lightpanda) lack innerText, so fall back to a DOM walker that
+    # inserts newlines between block-level elements — matching
+    # Wallaby's contract for cross-engine text equality.
+    call_on_element(session, element, @extract_text_js)
   end
 
   @doc """
