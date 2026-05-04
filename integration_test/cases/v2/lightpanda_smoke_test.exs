@@ -98,6 +98,25 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
     end
   end
 
+  describe "bootstrap installation" do
+    test "window.__w is defined after visiting a page", %{session: session} do
+      base = Application.fetch_env!(:wallabidi, :base_url)
+      :ok = CDPClient.visit(session, base <> "index.html")
+
+      assert {:ok, "object"} = CDPClient.evaluate(session, "typeof window.__w")
+      assert {:ok, "function"} = CDPClient.evaluate(session, "typeof window.__w.check")
+      assert {:ok, "function"} = CDPClient.evaluate(session, "typeof window.__w.exec")
+    end
+
+    test "__wallabidi binding is callable", %{session: session} do
+      base = Application.fetch_env!(:wallabidi, :base_url)
+      :ok = CDPClient.visit(session, base <> "index.html")
+      # The binding is exposed via Runtime.addBinding — it's a host
+      # function injected into every realm. Type should be "function".
+      assert {:ok, "function"} = CDPClient.evaluate(session, "typeof __wallabidi")
+    end
+  end
+
   describe "page introspection" do
     setup %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)

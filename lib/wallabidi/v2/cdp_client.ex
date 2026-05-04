@@ -59,6 +59,37 @@ defmodule Wallabidi.V2.CDPClient do
     end
   end
 
+  @doc """
+  Installs the wallabidi browser-side bootstrap (`window.__w`):
+
+    1. `Runtime.enable` — required for `Runtime.addBinding`.
+    2. `Runtime.addBinding(name: "__wallabidi")` — exposes a binding
+       that, when called from JS, fires a `Runtime.bindingCalled` event
+       up the WebSocket. Subscribes the Session to that event.
+    3. `Page.addScriptToEvaluateOnNewDocument(source: Bootstrap.cdp_iife())` —
+       runs the bootstrap IIFE in every new document. Defines
+       `window.__w` (opcode interpreter, find machinery, LV patch hook).
+
+  After this, push-based element finding works: the V2 find path
+  registers a query in `window.__w.queries`, calls `W.check()`, and
+  awaits a `Runtime.bindingCalled` event matching its query id.
+
+  Idempotent — calling twice re-registers the binding (harmless) and
+  re-installs the preload (deduped JS-side via `if (window.__w) return`).
+  """
+  @spec install_bootstrap(Session.t()) :: :ok | {:error, term}
+  def install_bootstrap(%Session{} = session) do
+    with :ok <- V2Session.subscribe(session, "Runtime.bindingCalled"),
+         {:ok, _} <- cdp_send(session, "Runtime.enable", %{}),
+         {:ok, _} <- cdp_send(session, "Runtime.addBinding", %{name: "__wallabidi"}),
+         {:ok, _} <-
+           cdp_send(session, "Page.addScriptToEvaluateOnNewDocument", %{
+             source: Wallabidi.Bootstrap.cdp_iife()
+           }) do
+      :ok
+    end
+  end
+
   # ----- Page.navigate -----
 
   @doc """
