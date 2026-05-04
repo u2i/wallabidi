@@ -23,7 +23,7 @@ defmodule Wallabidi.V2ChromeDriver do
   alias Wallabidi.{DependencyError, Element, Metadata, Session}
   alias Wallabidi.Chrome.Server, as: ChromeServer
   alias Wallabidi.V2.{CDPClient, Transport, WebSocket}
-  alias Wallabidi.V2.Session, as: V2Session
+  alias Wallabidi.V2.Transport.Protocol
   alias Wallabidi.V2Chrome.SharedConnection
   import Wallabidi.Driver.LogChecker
 
@@ -125,7 +125,7 @@ defmodule Wallabidi.V2ChromeDriver do
 
   @impl true
   def end_session(%Session{} = session) do
-    V2Session.stop(session)
+    Protocol.stop(session)
     :ok
   end
 

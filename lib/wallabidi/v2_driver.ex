@@ -23,7 +23,7 @@ defmodule Wallabidi.V2Driver do
 
   alias Wallabidi.{Element, Session}
   alias Wallabidi.V2.{CDPClient, Transport}
-  alias Wallabidi.V2.Session, as: V2Session
+  alias Wallabidi.V2.Transport.Protocol
 
   # ----- Driver supervisor —
   #
@@ -158,7 +158,7 @@ defmodule Wallabidi.V2Driver do
 
   @impl true
   def end_session(%Session{} = session) do
-    V2Session.stop(session)
+    Protocol.stop(session)
     :ok
   end
 

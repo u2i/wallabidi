@@ -19,7 +19,7 @@ defmodule Wallabidi.V2.CDPClient do
 
   alias Wallabidi.{Bootstrap, Element, Session}
   alias Wallabidi.CDP.{Commands, Ops, ResponseParser}
-  alias Wallabidi.V2.Session, as: V2Session
+  alias Wallabidi.V2.Transport.Protocol
   alias Wallabidi.V2.WebSocket
 
   @doc """
@@ -39,7 +39,7 @@ defmodule Wallabidi.V2.CDPClient do
   # Helper: send a raw CDP method+params via V2.Session and return
   # the unwrapped CDP result.
   def cdp_send(%Session{} = session, method, params) do
-    V2Session.cdp_send(session, method, params, send_opts(session))
+    Protocol.cdp_send(session, method, params, send_opts(session))
   end
 
   @doc false
@@ -47,7 +47,7 @@ defmodule Wallabidi.V2.CDPClient do
   # per-session, so any subsequent `cdp_send/3` still observes the
   # effects of the cast call.
   def cdp_cast(%Session{} = session, method, params) do
-    V2Session.cdp_cast(session, method, params, send_opts(session))
+    Protocol.cdp_cast(session, method, params, send_opts(session))
   end
 
   # ----- Page domain enables -----
@@ -65,7 +65,7 @@ defmodule Wallabidi.V2.CDPClient do
     # lifecycle event on the next visit. The enables themselves are
     # fire-and-forget — CDP applies commands in order per session,
     # so subsequent blocking sends still see their effects.
-    :ok = V2Session.subscribe(session, "Page.lifecycleEvent")
+    :ok = Protocol.subscribe(session, "Page.lifecycleEvent")
     cdp_cast(session, "Page.enable", %{})
     cdp_cast(session, "Page.setLifecycleEventsEnabled", %{enabled: true})
     :ok
@@ -94,7 +94,7 @@ defmodule Wallabidi.V2.CDPClient do
     # Subscribe + Runtime.enable can be cast (CDP applies in order).
     # Runtime.addBinding and Page.addScriptToEvaluateOnNewDocument
     # MUST complete before any find runs — those stay blocking.
-    :ok = V2Session.subscribe(session, "Runtime.bindingCalled")
+    :ok = Protocol.subscribe(session, "Runtime.bindingCalled")
     cdp_cast(session, "Runtime.enable", %{})
 
     with {:ok, _} <- cdp_send(session, "Runtime.addBinding", %{name: "__wallabidi"}),
@@ -646,7 +646,7 @@ defmodule Wallabidi.V2.CDPClient do
           {:ok, String.t()} | {:error, term}
   def click_aware(%Session{} = session, %Element{} = element, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, 5_000)
-    pre_page_id = V2Session.get_page_id(session)
+    pre_page_id = Protocol.get_page_id(session)
 
     with :ok <- await_lv_ready(session, timeout),
          {:ok, classification} <- classify(session, element, :click),
@@ -656,7 +656,7 @@ defmodule Wallabidi.V2.CDPClient do
           {:ok, classification}
 
         _ ->
-          case V2Session.await_page_ready_after(session, pre_page_id, timeout) do
+          case Protocol.await_page_ready_after(session, pre_page_id, timeout) do
             :ok -> {:ok, classification}
             :timeout -> {:error, :timeout}
           end
@@ -675,7 +675,7 @@ defmodule Wallabidi.V2.CDPClient do
           {:ok, String.t(), :ready | :timeout} | {:error, term}
   def click_aware_with_classification(%Session{} = session, %Element{} = element, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, 5_000)
-    pre_page_id = V2Session.get_page_id(session)
+    pre_page_id = Protocol.get_page_id(session)
 
     with :ok <- await_lv_ready(session, timeout),
          {:ok, classification} <- classify(session, element, :click),
@@ -685,7 +685,7 @@ defmodule Wallabidi.V2.CDPClient do
           {:ok, classification, :ready}
 
         _ ->
-          case V2Session.await_page_ready_after(session, pre_page_id, timeout) do
+          case Protocol.await_page_ready_after(session, pre_page_id, timeout) do
             :ok -> {:ok, classification, :ready}
             :timeout -> {:ok, classification, :timeout}
           end
@@ -735,8 +735,8 @@ defmodule Wallabidi.V2.CDPClient do
   """
   @spec enable_frame_tracking(Session.t()) :: :ok | {:error, term}
   def enable_frame_tracking(%Session{} = session) do
-    with :ok <- V2Session.subscribe(session, "Runtime.executionContextCreated"),
-         :ok <- V2Session.subscribe(session, "Runtime.executionContextDestroyed") do
+    with :ok <- Protocol.subscribe(session, "Runtime.executionContextCreated"),
+         :ok <- Protocol.subscribe(session, "Runtime.executionContextDestroyed") do
       :ok
     end
   end
@@ -751,12 +751,12 @@ defmodule Wallabidi.V2.CDPClient do
   """
   @spec focus_frame_by_id(Session.t(), String.t()) :: :ok | {:error, term}
   def focus_frame_by_id(%Session{} = session, frame_id) when is_binary(frame_id) do
-    case V2Session.lookup_frame_context(session, frame_id) do
+    case Protocol.lookup_frame_context(session, frame_id) do
       nil ->
         {:error, :unknown_frame}
 
       context_id when is_integer(context_id) ->
-        V2Session.push_frame(session, context_id)
+        Protocol.push_frame(session, context_id)
         :ok
     end
   end
@@ -764,7 +764,7 @@ defmodule Wallabidi.V2.CDPClient do
   @doc "Pops the top frame off the focus stack (no-op at root)."
   @spec focus_parent_frame(Session.t()) :: :ok
   def focus_parent_frame(%Session{} = session) do
-    V2Session.pop_frame(session)
+    Protocol.pop_frame(session)
     :ok
   end
 
@@ -952,7 +952,7 @@ defmodule Wallabidi.V2.CDPClient do
       root_js = if ops.parent_id, do: "this", else: "null"
       register_js = Bootstrap.register_js(query_id, ops_json, count_js, root_js)
 
-      :ok = V2Session.register_find(session, query_id, timeout)
+      :ok = Protocol.register_find(session, query_id, timeout)
 
       # Fire-and-forget: register the query and call W.check(). For
       # element-scoped searches we use Runtime.callFunctionOn so the
@@ -971,7 +971,7 @@ defmodule Wallabidi.V2.CDPClient do
           base = %{expression: register_js, returnByValue: true}
 
           params =
-            case V2Session.current_context_id(session) do
+            case Protocol.current_context_id(session) do
               nil -> base
               ctx -> Map.put(base, :contextId, ctx)
             end
@@ -979,7 +979,7 @@ defmodule Wallabidi.V2.CDPClient do
           cdp_send(session, "Runtime.evaluate", params)
         end
 
-      case V2Session.await_find_result(session, query_id, timeout) do
+      case Protocol.await_find_result(session, query_id, timeout) do
         {:ok, found_count, _meta} when found_count > 0 ->
           fetch_element_refs(session, query_id, found_count)
 
@@ -1021,7 +1021,7 @@ defmodule Wallabidi.V2.CDPClient do
         }
 
         params =
-          case V2Session.current_context_id(session) do
+          case Protocol.current_context_id(session) do
             nil -> base
             ctx -> Map.put(base, :contextId, ctx)
           end
@@ -1155,7 +1155,7 @@ defmodule Wallabidi.V2.CDPClient do
     with {:ok, %{loader_id: loader_id}} <- navigate(session, url) do
       result =
         if is_binary(loader_id) do
-          case V2Session.await_page_load(session, loader_id, "load", timeout) do
+          case Protocol.await_page_load(session, loader_id, "load", timeout) do
             :ok -> :ok
             :timeout -> {:error, :timeout}
           end
@@ -1328,7 +1328,7 @@ defmodule Wallabidi.V2.CDPClient do
     """
 
     params =
-      case V2Session.current_context_id(session) do
+      case Protocol.current_context_id(session) do
         nil ->
           %{expression: wrapped, returnByValue: true, awaitPromise: true}
 
@@ -1347,7 +1347,7 @@ defmodule Wallabidi.V2.CDPClient do
 
   defp evaluate_raw(%Session{} = session, expression) do
     params =
-      case V2Session.current_context_id(session) do
+      case Protocol.current_context_id(session) do
         nil -> %{expression: expression, returnByValue: true}
         ctx -> %{expression: expression, returnByValue: true, contextId: ctx}
       end
