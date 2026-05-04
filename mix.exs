@@ -30,7 +30,13 @@ defmodule Wallabidi.Mixfile do
         ],
         "test.live_view": fn args -> test_driver("live_view", "LiveView", args) end,
         "test.lightpanda": fn args -> test_driver("lightpanda", "Lightpanda", args) end,
+        "test.lightpanda_v2": fn args ->
+          test_driver("lightpanda_v2", "Lightpanda (V2)", args)
+        end,
         "test.chrome": fn args -> test_driver("chrome_cdp", "Chrome (CDP)", args) end,
+        "test.chrome_v2": fn args ->
+          test_driver("chrome_cdp_v2", "Chrome (CDP V2)", args)
+        end,
         "test.chrome.bidi": fn args -> test_driver("chrome", "Chrome (BiDi)", args) end,
         "test.bench": fn args -> test_driver("bench", "Benchmarks", args) end
       ],
@@ -45,7 +51,9 @@ defmodule Wallabidi.Mixfile do
         "test.all": :test,
         "test.live_view": :test,
         "test.lightpanda": :test,
+        "test.lightpanda_v2": :test,
         "test.chrome": :test,
+        "test.chrome_v2": :test,
         "test.chrome.bidi": :test,
         "test.bench": :test
       ]
@@ -134,8 +142,10 @@ defmodule Wallabidi.Mixfile do
 
   defp test_paths("live_view"), do: ["integration_test/cases"]
   defp test_paths("lightpanda"), do: ["integration_test/cases"]
+  defp test_paths("lightpanda_v2"), do: ["integration_test/cases"]
   defp test_paths("chrome"), do: ["integration_test/cases"]
   defp test_paths("chrome_cdp"), do: ["integration_test/cases"]
+  defp test_paths("chrome_cdp_v2"), do: ["integration_test/cases"]
   defp test_paths("bench"), do: ["bench"]
   defp test_paths(_), do: ["test"]
 

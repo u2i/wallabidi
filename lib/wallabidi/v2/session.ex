@@ -170,6 +170,54 @@ defmodule Wallabidi.V2.Session do
   end
 
   @doc """
+  Block until ANY `Page.lifecycleEvent` of milestone `name` fires.
+  Used by the navigation-classification path where the loader_id
+  isn't known up-front (e.g. plain HTML form submits, server-driven
+  redirects).
+
+  Consumes any already-buffered load events as a side effect.
+  """
+  @spec await_next_page_load(Wallabidi.Session.t(), String.t(), timeout) :: :ok | :timeout
+  def await_next_page_load(%Wallabidi.Session{pid: pid}, name \\ "load", timeout_ms \\ 10_000)
+      when is_pid(pid) and is_binary(name) do
+    GenServer.call(pid, {:await_next_page_load, name, timeout_ms}, timeout_ms + 2_000)
+  catch
+    :exit, _ -> :timeout
+  end
+
+  @doc """
+  Synchronisation barrier — blocks until the SessionProcess has
+  processed every message that was already in its mailbox at the
+  moment of this call. V2.Session technically doesn't need this
+  (its FIFO mailbox already provides ordering), but the existing
+  `Wallabidi.SessionProcess.sync_barrier/1` is hard-coded across
+  Browser and CDPClient. We expose it here for API parity so V2
+  sessions can stand in for SessionProcess pids.
+  """
+  @spec sync_barrier(Wallabidi.Session.t()) :: :ok
+  def sync_barrier(%Wallabidi.Session{pid: pid}) when is_pid(pid) do
+    GenServer.call(pid, :sync_barrier)
+  catch
+    :exit, _ -> :ok
+  end
+
+  def sync_barrier(%Wallabidi.Session{}), do: :ok
+
+  @doc """
+  Returns `{state, history}` for diagnostic compatibility with
+  `Wallabidi.SessionProcess.get_page_state/1`. V2 doesn't yet
+  implement the bootstrap state machine — returns a minimal
+  `{:lv_ready, []}` so callers (like `NavigationTimeoutError`) can
+  pattern-match on the shape without crashing.
+  """
+  @spec get_page_state(Wallabidi.Session.t()) :: {atom, list}
+  def get_page_state(%Wallabidi.Session{pid: pid}) when is_pid(pid) do
+    GenServer.call(pid, :get_page_state)
+  catch
+    :exit, _ -> {:lv_ready, []}
+  end
+
+  @doc """
   Register a find waiter (non-blocking). Must be called BEFORE the JS
   that triggers the binding, to avoid the race where the binding event
   arrives before the waiter is registered.
@@ -363,6 +411,34 @@ defmodule Wallabidi.V2.Session do
       waiter = {from, loader_id, name, timer_ref}
       {:noreply, %{state | load_waiters: [waiter | state.load_waiters]}}
     end
+  end
+
+  def handle_call({:await_next_page_load, name, timeout_ms}, from, state) do
+    # `:any` wildcard loader_id — wake on the first matching milestone
+    # regardless of which navigation produced it. Consume any buffered
+    # loads first.
+    already_loaded =
+      Enum.any?(state.loads, fn {_loader_id, milestones} ->
+        Map.get(milestones, name, false)
+      end)
+
+    if already_loaded do
+      {:reply, :ok, %{state | loads: %{}}}
+    else
+      timer_ref = Process.send_after(self(), {:load_timeout, from}, timeout_ms)
+      waiter = {from, :any, name, timer_ref}
+      {:noreply, %{state | loads: %{}, load_waiters: [waiter | state.load_waiters]}}
+    end
+  end
+
+  def handle_call(:sync_barrier, _from, state) do
+    # Reaching this clause means every prior message in the mailbox
+    # has been processed. Reply is purely the synchronization signal.
+    {:reply, :ok, state}
+  end
+
+  def handle_call(:get_page_state, _from, state) do
+    {:reply, {:lv_ready, []}, state}
   end
 
   def handle_call({:register_find, query_id, timeout_ms}, _from, state) do
@@ -649,7 +725,11 @@ defmodule Wallabidi.V2.Session do
   defp wake_load_waiters(state, loader_id, name) do
     {ready, pending} =
       Enum.split_with(state.load_waiters, fn
+        # Specific loader_id match.
         {_from, ^loader_id, ^name, _ref} -> true
+        # Wildcard waiter from await_next_page_load — woken by any
+        # matching milestone regardless of loader_id.
+        {_from, :any, ^name, _ref} -> true
         _ -> false
       end)
 

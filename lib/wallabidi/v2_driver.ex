@@ -74,7 +74,10 @@ defmodule Wallabidi.V2Driver do
         capabilities: %{
           target_id: target_id,
           flat_session_id: true,
-          server_pid: server_pid
+          server_pid: server_pid,
+          # Lightpanda's JS engine doesn't ship a real document.evaluate
+          # — V2.CDPClient.visit injects wgxpath after each page load.
+          needs_xpath_polyfill: true
         }
       }
 
@@ -134,7 +137,12 @@ defmodule Wallabidi.V2Driver do
   defp cookie_result(other), do: other
 
   @impl true
-  def take_screenshot(%Session{} = session), do: CDPClient.take_screenshot(session)
+  def take_screenshot(%Session{} = session) do
+    case CDPClient.take_screenshot(session) do
+      {:ok, binary} -> binary
+      _ -> ""
+    end
+  end
 
   @impl true
   def get_window_size(%Session{} = parent) do
@@ -187,15 +195,12 @@ defmodule Wallabidi.V2Driver do
   end
 
   @impl true
-  def execute_script(%Session{} = session, script, _args) do
-    CDPClient.evaluate(session, script)
-  end
+  def execute_script(%Session{} = session, script, args),
+    do: CDPClient.evaluate(session, script, args || [])
 
   @impl true
-  def execute_script_async(%Session{} = session, script, _args) do
-    # No native async exec in V2 yet — fall back to evaluate.
-    CDPClient.evaluate(session, script)
-  end
+  def execute_script_async(%Session{} = session, script, args),
+    do: CDPClient.evaluate_async(session, script, args || [])
 
   @impl true
   def send_keys(%Session{}, _keys) do
@@ -210,12 +215,52 @@ defmodule Wallabidi.V2Driver do
 
   @impl true
   def selected(%Element{} = element) do
-    case CDPClient.attribute(Element.root_session(element), element, "selected") do
-      {:ok, "true"} -> {:ok, true}
-      {:ok, _} -> {:ok, false}
-      error -> error
+    case CDPClient.cdp_send(Element.root_session(element), "Runtime.callFunctionOn", %{
+           objectId: element.bidi_shared_id,
+           functionDeclaration:
+             "function() { return this.checked === true || this.selected === true; }",
+           returnByValue: true
+         }) do
+      {:ok, %{"result" => %{"value" => v}}} -> {:ok, v == true}
+      err -> err
     end
   end
+
+  # Element.fill_in/2 calls driver.clear(element, silent: true).
+  def clear(%Element{} = element, _opts),
+    do: CDPClient.clear(Element.root_session(element), element)
+
+  # ----- Mouse/touch/geometry (Lightpanda may not implement many of
+  # these CDP domains; they're here for Driver-behaviour compatibility
+  # and silently no-op when unsupported). -----
+
+  def hover(%Element{} = element), do: CDPClient.hover(element)
+  def tap(%Element{} = element), do: CDPClient.tap(element)
+
+  def touch_down(parent, target, x, y),
+    do: CDPClient.touch_down(Element.root_session(parent), target, x, y)
+
+  def touch_up(parent), do: CDPClient.touch_up(parent)
+  def touch_move(parent, x, y), do: CDPClient.touch_move(parent, x, y)
+
+  def touch_scroll(%Element{} = _element, _x_offset, _y_offset) do
+    # Lightpanda doesn't implement Input.synthesizeScrollGesture.
+    {:ok, nil}
+  end
+
+  def click(parent, button) when button in [:left, :middle, :right],
+    do: CDPClient.click_at_cursor(parent, button)
+
+  def double_click(parent), do: CDPClient.double_click(parent)
+  def button_down(parent, button), do: CDPClient.button_down(parent, button)
+  def button_up(parent, button), do: CDPClient.button_up(parent, button)
+
+  def move_mouse_by(parent, x_offset, y_offset),
+    do: CDPClient.move_mouse_by(parent, x_offset, y_offset)
+
+  def element_size(%Element{} = element), do: CDPClient.element_size(element)
+  def element_location(%Element{} = element), do: CDPClient.element_location(element)
+  def blank_page?(%Session{} = session), do: CDPClient.blank_page?(session)
 
   @impl true
   def accept_alert(session, fun) do

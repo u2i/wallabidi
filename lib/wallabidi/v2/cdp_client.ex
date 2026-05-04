@@ -20,6 +20,7 @@ defmodule Wallabidi.V2.CDPClient do
   alias Wallabidi.{Bootstrap, Element, Session}
   alias Wallabidi.CDP.{Commands, Ops, ResponseParser}
   alias Wallabidi.V2.Session, as: V2Session
+  alias Wallabidi.V2.WebSocket
 
   @doc """
   Returns the CDP send opts (`:flat_session_id` + `:session_id`) for
@@ -246,11 +247,46 @@ defmodule Wallabidi.V2.CDPClient do
   """
   @spec set_value(Session.t(), Element.t(), term) :: {:ok, nil} | {:error, term}
   def set_value(%Session{} = session, %Element{} = element, value) do
+    # Element-type-aware: checkboxes/radios toggle .checked, <option>s
+    # toggle .selected on the option (and update the select), everything
+    # else sets .value.
     case call_on_element(
            session,
            element,
            """
            function(v) {
+             var t = this.tagName;
+             var ty = (this.type || '').toLowerCase();
+
+             if (t === 'INPUT' && (ty === 'checkbox' || ty === 'radio')) {
+               // Wallaby semantics: passing the input's `value` checks it
+               // (used by Browser.click for radios/checkboxes); falsy
+               // unchecks. Treating any non-empty truthy value as "check".
+               this.checked = !!v;
+               this.dispatchEvent(new Event('input', {bubbles: true}));
+               this.dispatchEvent(new Event('change', {bubbles: true}));
+               return null;
+             }
+
+             if (t === 'OPTION') {
+               var sel = this.closest('select');
+               if (sel) {
+                 if (sel.multiple) {
+                   this.selected = !!v;
+                 } else {
+                   sel.value = this.value;
+                   for (var i = 0; i < sel.options.length; i++) {
+                     sel.options[i].selected = (sel.options[i] === this);
+                   }
+                 }
+                 sel.dispatchEvent(new Event('input', {bubbles: true}));
+                 sel.dispatchEvent(new Event('change', {bubbles: true}));
+               } else {
+                 this.selected = !!v;
+               }
+               return null;
+             }
+
              this.value = v;
              this.dispatchEvent(new Event('input', {bubbles: true}));
              this.dispatchEvent(new Event('change', {bubbles: true}));
@@ -309,25 +345,105 @@ defmodule Wallabidi.V2.CDPClient do
   end
 
   def send_keys(%Session{} = session, %Element{} = element, keys) when is_list(keys) do
-    text = keys |> Enum.filter(&is_binary/1) |> Enum.join("")
+    if Enum.all?(keys, &is_binary/1) do
+      # Plain text — fast path keeps Lightpanda working (Input.dispatchKeyEvent
+      # is broken there).
+      text = Enum.join(keys, "")
 
-    case call_on_element(
-           session,
-           element,
-           """
-           function(s) {
-             this.value = (this.value || '') + s;
-             this.dispatchEvent(new Event('input', {bubbles: true}));
-             this.dispatchEvent(new Event('change', {bubbles: true}));
-             return null;
-           }
-           """,
-           [text]
-         ) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
+      case call_on_element(
+             session,
+             element,
+             """
+             function(s) {
+               this.value = (this.value || '') + s;
+               this.dispatchEvent(new Event('input', {bubbles: true}));
+               this.dispatchEvent(new Event('change', {bubbles: true}));
+               return null;
+             }
+             """,
+             [text]
+           ) do
+        {:ok, _} -> {:ok, nil}
+        error -> error
+      end
+    else
+      # Mixed string+atom — focus the element and dispatch real key events
+      # so :tab, :enter etc. fire. Requires a CDP browser that implements
+      # Input.dispatchKeyEvent (Chrome does; Lightpanda doesn't).
+      _ =
+        cdp_send(session, "Runtime.callFunctionOn", %{
+          objectId: element.bidi_shared_id,
+          functionDeclaration: "function() { this.focus(); }",
+          returnByValue: true
+        })
+
+      send_keys_to_session(session, keys)
     end
   end
+
+  @doc """
+  Send keys to whatever element currently has focus on the page.
+  Atoms like `:tab`, `:enter` map to real key events via
+  `Input.dispatchKeyEvent`.
+  """
+  @spec send_keys_to_session(Session.t(), [String.t() | atom]) :: {:ok, nil}
+  def send_keys_to_session(%Session{} = session, keys) when is_list(keys) do
+    Enum.each(keys, fn
+      key when is_atom(key) ->
+        {code, key_val} = key_mapping(key)
+        send_key_event(session, code, key_val)
+
+      text when is_binary(text) ->
+        for char <- String.graphemes(text) do
+          cdp_send(session, "Input.dispatchKeyEvent", %{type: "keyDown", text: char})
+          cdp_send(session, "Input.dispatchKeyEvent", %{type: "keyUp", text: char})
+        end
+    end)
+
+    {:ok, nil}
+  end
+
+  defp send_key_event(session, code, key_val) do
+    cdp_send(session, "Input.dispatchKeyEvent", %{
+      type: "rawKeyDown",
+      key: key_val,
+      code: code,
+      windowsVirtualKeyCode: key_code(code)
+    })
+
+    cdp_send(session, "Input.dispatchKeyEvent", %{
+      type: "keyUp",
+      key: key_val,
+      code: code,
+      windowsVirtualKeyCode: key_code(code)
+    })
+  end
+
+  defp key_mapping(:enter), do: {"Enter", "Enter"}
+  defp key_mapping(:tab), do: {"Tab", "Tab"}
+  defp key_mapping(:escape), do: {"Escape", "Escape"}
+  defp key_mapping(:backspace), do: {"Backspace", "Backspace"}
+  defp key_mapping(:delete), do: {"Delete", "Delete"}
+  defp key_mapping(:arrow_up), do: {"ArrowUp", "ArrowUp"}
+  defp key_mapping(:arrow_down), do: {"ArrowDown", "ArrowDown"}
+  defp key_mapping(:arrow_left), do: {"ArrowLeft", "ArrowLeft"}
+  defp key_mapping(:arrow_right), do: {"ArrowRight", "ArrowRight"}
+  defp key_mapping(:home), do: {"Home", "Home"}
+  defp key_mapping(:end_key), do: {"End", "End"}
+  defp key_mapping(:space), do: {"Space", " "}
+  defp key_mapping(other), do: {to_string(other), to_string(other)}
+
+  defp key_code("Enter"), do: 13
+  defp key_code("Tab"), do: 9
+  defp key_code("Escape"), do: 27
+  defp key_code("Backspace"), do: 8
+  defp key_code("Delete"), do: 46
+  defp key_code("ArrowUp"), do: 38
+  defp key_code("ArrowDown"), do: 40
+  defp key_code("ArrowLeft"), do: 37
+  defp key_code("ArrowRight"), do: 39
+  defp key_code("Space"), do: 32
+  defp key_code(_), do: 0
 
   @doc """
   Classifies what kind of LV interaction `element` represents for an
@@ -490,6 +606,21 @@ defmodule Wallabidi.V2.CDPClient do
           {:ok, true | false} | {:error, term}
   def set_cookie(%Session{} = session, name, value, attrs \\ %{})
       when is_binary(name) and is_binary(value) do
+    # Network.setCookie requires either `url` or `domain` — pad in the
+    # current URL when callers haven't supplied one.
+    attrs = Map.new(attrs)
+
+    attrs =
+      if Map.has_key?(attrs, :url) or Map.has_key?(attrs, "url") or
+           Map.has_key?(attrs, :domain) or Map.has_key?(attrs, "domain") do
+        attrs
+      else
+        case current_url(session) do
+          {:ok, url} when is_binary(url) and url != "" -> Map.put(attrs, :url, url)
+          _ -> attrs
+        end
+      end
+
     params =
       attrs
       |> Map.put(:name, name)
@@ -625,8 +756,57 @@ defmodule Wallabidi.V2.CDPClient do
           {:error, :invalid_selector}
 
         {:timeout, _} ->
-          {:ok, []}
+          # Push didn't fire (count-shape mismatch, etc). Do a final
+          # sync exec so callers like Browser.find can see the *actual*
+          # element count for error messaging ("but 5"). Mirrors the
+          # legacy CDPClient.find_elements_ops timeout fallback.
+          final_sync_exec(session, ops_json, ops.parent_id)
       end
+    end
+  end
+
+  defp final_sync_exec(%Session{} = session, ops_json, parent_id) do
+    # When the original query was scoped to a parent element, run the
+    # final exec via callFunctionOn so `this` is the parent — keeping
+    # the scoping intent intact.
+    body = "function() { return window.__w ? window.__w.exec(#{ops_json}, this).els : []; }"
+
+    eval_result =
+      if parent_id do
+        cdp_send(session, "Runtime.callFunctionOn", %{
+          objectId: parent_id,
+          functionDeclaration: body,
+          returnByValue: false
+        })
+      else
+        cdp_send(session, "Runtime.evaluate", %{
+          expression: "(#{body})()",
+          returnByValue: false
+        })
+      end
+
+    with {:ok, ev} <- eval_result,
+         {:ok, array_id} when is_binary(array_id) <-
+           ResponseParser.extract_object_id({:ok, ev}),
+         {get_method, get_params} = Commands.get_properties(array_id),
+         {:ok, props_result} <- cdp_send(session, get_method, get_params),
+         {:ok, ids} <- ResponseParser.extract_element_ids({:ok, props_result}) do
+      _ = cdp_send(session, "Runtime.releaseObject", %{objectId: array_id})
+
+      elements =
+        Enum.map(ids, fn object_id ->
+          %Element{
+            id: object_id,
+            bidi_shared_id: object_id,
+            parent: session,
+            driver: session.driver,
+            url: session.session_url
+          }
+        end)
+
+      {:ok, elements}
+    else
+      _ -> {:ok, []}
     end
   end
 
@@ -729,17 +909,43 @@ defmodule Wallabidi.V2.CDPClient do
     timeout = Keyword.get(opts, :timeout, 10_000)
 
     with {:ok, %{loader_id: loader_id}} <- navigate(session, url) do
-      if is_binary(loader_id) do
-        case V2Session.await_page_load(session, loader_id, "load", timeout) do
-          :ok -> :ok
-          :timeout -> {:error, :timeout}
+      result =
+        if is_binary(loader_id) do
+          case V2Session.await_page_load(session, loader_id, "load", timeout) do
+            :ok -> :ok
+            :timeout -> {:error, :timeout}
+          end
+        else
+          # Same-document nav (fragment / cached) — no loaderId, no
+          # new load cycle to await.
+          :ok
         end
-      else
-        # Same-document nav (fragment / cached) — no loaderId, no
-        # new load cycle to await.
-        :ok
+
+      # Browsers without native XPath (Lightpanda) need wgxpath injected
+      # after each load — `Page.addScriptToEvaluateOnNewDocument` runs
+      # before page scripts, but the polyfill must run AFTER document
+      # parsing to attach properly.
+      if result == :ok and session.capabilities[:needs_xpath_polyfill] do
+        inject_xpath_polyfill(session)
       end
+
+      result
     end
+  end
+
+  @xpath_polyfill_path Path.join(:code.priv_dir(:wallabidi), "cdp/wgxpath.install.js")
+  @external_resource @xpath_polyfill_path
+  @xpath_polyfill if File.exists?(@xpath_polyfill_path),
+                    do: File.read!(@xpath_polyfill_path) <> "\nwgxpath.install(window);",
+                    else: ""
+
+  defp inject_xpath_polyfill(%Session{} = session) do
+    cdp_send(session, "Runtime.evaluate", %{
+      expression: @xpath_polyfill,
+      returnByValue: true
+    })
+
+    :ok
   end
 
   # ----- Runtime.evaluate -----
@@ -759,6 +965,80 @@ defmodule Wallabidi.V2.CDPClient do
   """
   @spec evaluate(Session.t(), String.t()) :: {:ok, term} | {:error, term}
   def evaluate(%Session{} = session, expression) when is_binary(expression) do
+    evaluate_raw(session, expression)
+  end
+
+  @doc """
+  Like `evaluate/2` but threads `args` into the script via
+  `arguments[]`. Wraps the body so `return X` and `arguments[0]`
+  references work like the user-facing `execute_script` API expects.
+
+  When the script has no `return`/`arguments` references, this still
+  works — but a bare expression like `"2 + 2"` evaluates inside a
+  function with no return statement (yielding `undefined`). Callers
+  who want plain expression evaluation should use `evaluate/2`.
+  """
+  @spec evaluate(Session.t(), String.t(), list) :: {:ok, term} | {:error, term}
+  def evaluate(%Session{} = session, expression, args) when is_binary(expression) and is_list(args) do
+    if needs_wrap?(expression, args) do
+      args_json = Jason.encode!(args)
+      wrapped = "(function(){#{expression}}).apply(this, #{args_json})"
+      evaluate_raw(session, wrapped)
+    else
+      evaluate_raw(session, expression)
+    end
+  end
+
+  # If the script uses `return`/`arguments`, wrap. Otherwise treat as
+  # an expression so `execute_script(s, "2+2", [])` returns 4 like the
+  # legacy CDPClient.evaluate path.
+  defp needs_wrap?(_expression, args) when args != [], do: true
+
+  defp needs_wrap?(expression, []) do
+    String.contains?(expression, "return") or String.contains?(expression, "arguments")
+  end
+
+  @doc """
+  Async-script semantics: the script's last argument is a callback that
+  resolves the awaited promise. Mirrors WebDriver's
+  `Execute Async Script` so test code like
+  `arguments[arguments.length - 1](value)` works.
+  """
+  @spec evaluate_async(Session.t(), String.t(), list) :: {:ok, term} | {:error, term}
+  def evaluate_async(%Session{} = session, expression, args) when is_binary(expression) do
+    args = args || []
+    args_json = Jason.encode!(args)
+
+    wrapped = """
+    new Promise(function(__resolve, __reject) {
+      try {
+        (function() {
+          var __args = #{args_json}.concat([__resolve]);
+          (function() { #{expression} }).apply(this, __args);
+        })();
+      } catch (e) { __reject(e); }
+    })
+    """
+
+    params =
+      case V2Session.current_context_id(session) do
+        nil ->
+          %{expression: wrapped, returnByValue: true, awaitPromise: true}
+
+        ctx ->
+          %{expression: wrapped, returnByValue: true, awaitPromise: true, contextId: ctx}
+      end
+
+    case cdp_send(session, "Runtime.evaluate", params) do
+      {:ok, %{"result" => %{"value" => value}}} -> {:ok, value}
+      {:ok, %{"result" => %{"type" => "undefined"}}} -> {:ok, nil}
+      {:ok, %{"exceptionDetails" => details}} -> {:error, {:js_exception, details}}
+      {:ok, _} = ok -> ok
+      error -> error
+    end
+  end
+
+  defp evaluate_raw(%Session{} = session, expression) do
     params =
       case V2Session.current_context_id(session) do
         nil -> %{expression: expression, returnByValue: true}
@@ -766,20 +1046,298 @@ defmodule Wallabidi.V2.CDPClient do
       end
 
     case cdp_send(session, "Runtime.evaluate", params) do
-      {:ok, %{"result" => %{"value" => value}}} ->
-        {:ok, value}
+      {:ok, %{"result" => %{"value" => value}}} -> {:ok, value}
+      {:ok, %{"result" => %{"type" => "undefined"}}} -> {:ok, nil}
+      {:ok, %{"exceptionDetails" => details}} -> {:error, {:js_exception, details}}
+      {:ok, _} = ok -> ok
+      error -> error
+    end
+  end
 
-      {:ok, %{"result" => %{"type" => "undefined"}}} ->
-        {:ok, nil}
+  # ----- Element geometry -----
 
-      {:ok, %{"exceptionDetails" => details}} ->
-        {:error, {:js_exception, details}}
+  @doc "Element width/height in CSS pixels via getBoundingClientRect."
+  @spec element_size(Element.t()) :: {:ok, {number, number}} | {:error, term}
+  def element_size(%Element{bidi_shared_id: object_id} = element) do
+    session = Element.root_session(element)
 
-      {:ok, _} = ok ->
-        ok
+    case cdp_send(session, "Runtime.callFunctionOn", %{
+           objectId: object_id,
+           functionDeclaration:
+             "function() { var r = this.getBoundingClientRect(); return JSON.stringify([Math.round(r.width), Math.round(r.height)]); }",
+           returnByValue: true
+         }) do
+      {:ok, %{"result" => %{"value" => json}}} ->
+        case Jason.decode(json) do
+          {:ok, [w, h]} -> {:ok, {w, h}}
+          err -> err
+        end
+
+      err ->
+        err
+    end
+  end
+
+  @doc "Element top-left position in CSS pixels."
+  @spec element_location(Element.t()) :: {:ok, {number, number}} | {:error, term}
+  def element_location(%Element{bidi_shared_id: object_id} = element) do
+    session = Element.root_session(element)
+
+    case cdp_send(session, "Runtime.callFunctionOn", %{
+           objectId: object_id,
+           functionDeclaration:
+             "function() { var r = this.getBoundingClientRect(); return JSON.stringify([Math.round(r.x), Math.round(r.y)]); }",
+           returnByValue: true
+         }) do
+      {:ok, %{"result" => %{"value" => json}}} ->
+        case Jason.decode(json) do
+          {:ok, [x, y]} -> {:ok, {x, y}}
+          err -> err
+        end
+
+      err ->
+        err
+    end
+  end
+
+  defp element_center(%Element{bidi_shared_id: object_id} = element) do
+    session = Element.root_session(element)
+
+    case cdp_send(session, "Runtime.callFunctionOn", %{
+           objectId: object_id,
+           functionDeclaration:
+             "function() { var r = this.getBoundingClientRect(); return JSON.stringify({x: r.x + r.width/2, y: r.y + r.height/2}); }",
+           returnByValue: true
+         }) do
+      {:ok, %{"result" => %{"value" => json}}} ->
+        %{"x" => x, "y" => y} = Jason.decode!(json)
+        {:ok, {x, y}}
 
       error ->
         error
     end
+  end
+
+  defp element_topleft(%Element{bidi_shared_id: object_id} = element) do
+    session = Element.root_session(element)
+
+    case cdp_send(session, "Runtime.callFunctionOn", %{
+           objectId: object_id,
+           functionDeclaration:
+             "function() { var r = this.getBoundingClientRect(); return JSON.stringify({x: r.x, y: r.y}); }",
+           returnByValue: true
+         }) do
+      {:ok, %{"result" => %{"value" => json}}} ->
+        %{"x" => x, "y" => y} = Jason.decode!(json)
+        {:ok, {x, y}}
+
+      error ->
+        error
+    end
+  end
+
+  # ----- Mouse / touch -----
+
+  @doc "Move the virtual mouse to the element's center."
+  @spec hover(Element.t()) :: {:ok, nil} | {:error, term}
+  def hover(%Element{} = element) do
+    case element_center(element) do
+      {:ok, {x, y}} ->
+        put_mouse_pos(element, x, y)
+        dispatch_mouse(element, "mouseMoved", x, y)
+
+      err ->
+        err
+    end
+  end
+
+  @doc "Synthesize a single tap (touchStart + touchEnd) at element center."
+  @spec tap(Element.t()) :: {:ok, nil} | {:error, term}
+  def tap(%Element{} = element) do
+    session = Element.root_session(element)
+
+    case element_center(element) do
+      {:ok, {x, y}} ->
+        dispatch_touch(session, "touchStart", trunc(x), trunc(y))
+        dispatch_touch(session, "touchEnd", trunc(x), trunc(y))
+
+      err ->
+        err
+    end
+  end
+
+  @doc "Press a touch point at element top-left + offset."
+  @spec touch_down(Session.t(), Element.t() | nil, integer, integer) ::
+          {:ok, nil} | {:error, term}
+  def touch_down(%Session{} = session, nil, x, y) do
+    dispatch_touch(session, "touchStart", x, y)
+  end
+
+  def touch_down(%Session{}, %Element{} = element, x_offset, y_offset) do
+    session = Element.root_session(element)
+
+    case element_topleft(element) do
+      {:ok, {ex, ey}} ->
+        dispatch_touch(session, "touchStart", trunc(ex + x_offset), trunc(ey + y_offset))
+
+      err ->
+        err
+    end
+  end
+
+  @doc "Release any active touch points."
+  @spec touch_up(Session.t() | Element.t()) :: {:ok, nil}
+  def touch_up(parent), do: dispatch_touch(parent, "touchEnd", 0, 0)
+
+  @doc "Move the active touch point to absolute coordinates."
+  @spec touch_move(Session.t() | Element.t(), integer, integer) :: {:ok, nil}
+  def touch_move(parent, x, y), do: dispatch_touch(parent, "touchMove", x, y)
+
+  @doc "Press a mouse button at the current cursor position."
+  @spec button_down(Session.t() | Element.t(), :left | :middle | :right) :: {:ok, nil}
+  def button_down(parent, button) do
+    {x, y} = get_mouse_pos(parent)
+    dispatch_mouse(parent, "mousePressed", x, y, button: mouse_button(button), clickCount: 1)
+  end
+
+  @doc "Release a mouse button at the current cursor position."
+  @spec button_up(Session.t() | Element.t(), :left | :middle | :right) :: {:ok, nil}
+  def button_up(parent, button) do
+    {x, y} = get_mouse_pos(parent)
+    dispatch_mouse(parent, "mouseReleased", x, y, button: mouse_button(button), clickCount: 1)
+  end
+
+  @doc "Mouse-pos-aware click: press+release at current cursor position."
+  @spec click_at_cursor(Session.t() | Element.t(), :left | :middle | :right) :: {:ok, nil}
+  def click_at_cursor(parent, button) do
+    {x, y} = get_mouse_pos(parent)
+    btn = mouse_button(button)
+    dispatch_mouse(parent, "mousePressed", x, y, button: btn, clickCount: 1)
+    dispatch_mouse(parent, "mouseReleased", x, y, button: btn, clickCount: 1)
+  end
+
+  @doc "Move mouse cursor by an offset from its last known position."
+  @spec move_mouse_by(Session.t() | Element.t(), integer, integer) :: {:ok, nil}
+  def move_mouse_by(parent, x_offset, y_offset) do
+    {cx, cy} = get_mouse_pos(parent)
+    nx = cx + x_offset
+    ny = cy + y_offset
+    put_mouse_pos(parent, nx, ny)
+    dispatch_mouse(parent, "mouseMoved", nx, ny)
+  end
+
+  @doc "Double-click at the current cursor position."
+  @spec double_click(Session.t() | Element.t()) :: {:ok, nil}
+  def double_click(parent) do
+    {x, y} = get_mouse_pos(parent)
+    dispatch_mouse(parent, "mousePressed", x, y, button: "left", clickCount: 2)
+    dispatch_mouse(parent, "mouseReleased", x, y, button: "left", clickCount: 2)
+  end
+
+  defp dispatch_mouse(parent, type, x, y, opts \\ []) do
+    session = Element.root_session(parent)
+    params = %{type: type, x: trunc(x), y: trunc(y)} |> Map.merge(Map.new(opts))
+    cdp_send(session, "Input.dispatchMouseEvent", params)
+    {:ok, nil}
+  end
+
+  defp dispatch_touch(parent, type, x, y) do
+    session = Element.root_session(parent)
+    touch_points = if type == "touchEnd", do: [], else: [%{x: x, y: y}]
+
+    cdp_send(session, "Input.dispatchTouchEvent", %{
+      type: type,
+      touchPoints: touch_points
+    })
+
+    {:ok, nil}
+  end
+
+  defp put_mouse_pos(parent, x, y) do
+    id = Element.root_session(parent).id
+    Process.put({:v2_mouse, id}, {trunc(x), trunc(y)})
+  end
+
+  defp get_mouse_pos(parent) do
+    id = Element.root_session(parent).id
+    Process.get({:v2_mouse, id}, {0, 0})
+  end
+
+  defp mouse_button(:left), do: "left"
+  defp mouse_button(:middle), do: "middle"
+  defp mouse_button(:right), do: "right"
+  defp mouse_button(other), do: to_string(other)
+
+  @doc "True when the page is on a known blank URL (about:blank, data:,)."
+  @spec blank_page?(Session.t()) :: boolean
+  def blank_page?(%Session{} = session) do
+    case current_url(session) do
+      {:ok, url} -> url in ["data:,", "about:blank", ""]
+      _ -> false
+    end
+  end
+
+  # ----- Dialog handling (Page.javascriptDialogOpening) -----
+
+  @doc """
+  Spawn an inner action that opens a JavaScript dialog
+  (`alert/confirm/prompt`), then accept or dismiss it. Mirrors
+  `Wallabidi.ChromeCDP.handle_dialog/4`.
+
+  `fun` must be the action that triggers the dialog (e.g. clicking
+  the button that calls `alert(...)`). It runs concurrently with the
+  dialog handler, since clicking the button blocks until the dialog
+  is dismissed.
+
+  Returns the dialog's message (the string passed to alert/confirm/prompt).
+  """
+  @spec handle_dialog(Session.t(), (Session.t() -> any), boolean, String.t() | nil) :: String.t()
+  def handle_dialog(%Session{} = session, fun, accept, prompt_text \\ nil) do
+    caller = self()
+
+    # Subscribe BEFORE the action so the dialog event isn't missed.
+    # Page domain must be enabled for the event to fire.
+    _ = cdp_send(session, "Page.enable", %{})
+
+    handler =
+      spawn(fn ->
+        # Subscribe directly at the V2.WebSocket level so the event is
+        # routed straight to this handler — V2.Session normally
+        # consumes events itself, but for one-shot dialog handling we
+        # don't need its routing.
+        ctx = session.browsing_context || :global
+        :ok = WebSocket.subscribe(session.bidi_pid, "Page.javascriptDialogOpening", ctx, self())
+
+        receive do
+          {:v2_event, "Page.javascriptDialogOpening", event} ->
+            msg = get_in(event, ["params", "message"]) || ""
+            default = get_in(event, ["params", "defaultPrompt"])
+            effective_text = prompt_text || default
+
+            params = %{accept: accept}
+
+            params =
+              if is_binary(effective_text),
+                do: Map.put(params, :promptText, effective_text),
+                else: params
+
+            _ = cdp_send(session, "Page.handleJavaScriptDialog", params)
+            send(caller, {:dialog_handled, msg})
+        after
+          10_000 -> send(caller, {:dialog_handled, ""})
+        end
+      end)
+
+    fun.(session)
+
+    message =
+      receive do
+        {:dialog_handled, msg} -> msg
+      after
+        10_000 -> ""
+      end
+
+    _ = handler
+    message
   end
 end

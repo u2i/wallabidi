@@ -83,7 +83,9 @@ defmodule Wallabidi do
     # monitoring for crashed-test cleanup.
     case resolve_driver(opts) do
       :live_view -> Wallabidi.LiveViewDriver.start_session(opts)
+      :lightpanda_v2 -> Wallabidi.V2Driver.start_session(opts)
       :lightpanda -> Wallabidi.Lightpanda.start_session(opts)
+      :chrome_cdp_v2 -> Wallabidi.V2ChromeDriver.start_session(opts)
       :chrome_cdp -> Wallabidi.ChromeCDP.start_session(opts)
       _browser -> Wallabidi.Chrome.start_session(opts)
     end
@@ -118,7 +120,9 @@ defmodule Wallabidi do
   @doc false
   def driver_module do
     case resolve_driver() do
+      :lightpanda_v2 -> Wallabidi.V2Driver
       :lightpanda -> Wallabidi.Lightpanda
+      :chrome_cdp_v2 -> Wallabidi.V2ChromeDriver
       :chrome_cdp -> Wallabidi.ChromeCDP
       :live_view -> Wallabidi.LiveViewDriver
       _ -> Wallabidi.Chrome

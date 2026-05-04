@@ -1738,14 +1738,22 @@ defmodule Wallabidi.Browser do
   def execute_query(%{driver: driver} = parent, query) do
     session = get_session(parent)
 
-    if session && not is_nil(session.protocol) &&
-         not in_frame?(session) && not in_switched_window?(session) do
-      # Both CDP and BiDi use the ops pipeline for find+filter in one eval.
-      # Push-based: CDP uses Runtime.addBinding, BiDi uses script.channel.
-      execute_query_pipeline(parent, driver, query)
-    else
-      maybe_await_selector(parent, query)
-      execute_query_legacy(parent, driver, query)
+    cond do
+      session && session.driver in [Wallabidi.V2Driver, Wallabidi.V2ChromeDriver] &&
+          not in_frame?(session) && not in_switched_window?(session) ->
+        # V2 transport uses the same ops pipeline shape (push-based finds
+        # via Runtime.addBinding). Routes through V2.CDPClient.
+        execute_query_pipeline(parent, driver, query)
+
+      session && not is_nil(session.protocol) &&
+          not in_frame?(session) && not in_switched_window?(session) ->
+        # Both CDP and BiDi use the ops pipeline for find+filter in one eval.
+        # Push-based: CDP uses Runtime.addBinding, BiDi uses script.channel.
+        execute_query_pipeline(parent, driver, query)
+
+      true ->
+        maybe_await_selector(parent, query)
+        execute_query_legacy(parent, driver, query)
     end
   end
 
@@ -1762,17 +1770,25 @@ defmodule Wallabidi.Browser do
       timeout = query_timeout(validated)
 
       result =
-        if session.protocol == Wallabidi.Protocol.CDP do
-          Wallabidi.CDPClient.execute_ops(parent, ops,
-            timeout: timeout,
-            count: Query.count(validated),
-            needs_elements: true
-          )
-        else
-          find_elements_ops_bidi(parent, session, ops,
-            timeout: timeout,
-            count: Query.count(validated)
-          )
+        cond do
+          session.driver in [Wallabidi.V2Driver, Wallabidi.V2ChromeDriver] ->
+            # V2 transport: V2.CDPClient.find_elements/3 reuses the
+            # same Bootstrap+register_js pipeline but routes through
+            # V2.Session for correlation. Returns {:ok, [Element]}.
+            Wallabidi.V2.CDPClient.find_elements(parent, validated, timeout: timeout)
+
+          session.protocol == Wallabidi.Protocol.CDP ->
+            Wallabidi.CDPClient.execute_ops(parent, ops,
+              timeout: timeout,
+              count: Query.count(validated),
+              needs_elements: true
+            )
+
+          true ->
+            find_elements_ops_bidi(parent, session, ops,
+              timeout: timeout,
+              count: Query.count(validated)
+            )
         end
 
       case result do

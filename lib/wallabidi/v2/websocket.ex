@@ -55,6 +55,16 @@ defmodule Wallabidi.V2.WebSocket do
   end
 
   @doc """
+  Like `start_link/1` but starts the GenServer unlinked. Used by the
+  shared-connection Agent so the WS isn't tied to the caller's
+  lifetime.
+  """
+  @spec start(String.t()) :: GenServer.on_start()
+  def start(ws_url) when is_binary(ws_url) do
+    GenServer.start(__MODULE__, ws_url)
+  end
+
+  @doc """
   Asynchronously send a CDP/BiDi command. The response (or transport
   failure) will be delivered to `owner_pid` as
   `{:v2_response, wire_id, result}`.
@@ -230,7 +240,10 @@ defmodule Wallabidi.V2.WebSocket do
         {:noreply, state}
 
       {:error, conn, reason, _responses} ->
-        Logger.debug("V2.WebSocket transport error: #{inspect(reason)}")
+        Logger.warning(
+          "V2.WebSocket transport error pid=#{inspect(self())} msg=#{inspect(message)} reason=#{inspect(reason)}"
+        )
+
         notify_all_pending(state, {:error, :session_closed})
         {:stop, {:transport_error, reason}, %{state | conn: conn}}
 

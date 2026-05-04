@@ -15,6 +15,8 @@ driver =
     "chrome" -> :chrome
     "live_view" -> :live_view
     "lightpanda" -> :lightpanda
+    "lightpanda_v2" -> :lightpanda_v2
+    "chrome_cdp_v2" -> :chrome_cdp_v2
     _ -> :chrome_cdp
   end
 
@@ -55,6 +57,19 @@ excludes =
 
     :lightpanda ->
       excludes ++ [browser: true, lightpanda_ni: true, live_view_only: true, cdp_only: true]
+
+    :lightpanda_v2 ->
+      excludes ++
+        [
+          browser: true,
+          headless: true,
+          lightpanda_ni: true,
+          live_view_only: true,
+          cdp_only: true
+        ]
+
+    :chrome_cdp_v2 ->
+      excludes ++ [live_view_only: true, cdp_only: true]
 
     :chrome ->
       excludes ++ [live_view_only: true, cdp_only: true]
