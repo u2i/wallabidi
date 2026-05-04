@@ -74,6 +74,30 @@ defmodule Wallabidi.V2.WebSocket do
   end
 
   @doc """
+  Synchronously send a CDP/BiDi command and wait for the response.
+
+  Convenience wrapper around `cast_send/5` for callers without a
+  Session GenServer (e.g. session bootstrap that runs before the
+  Session exists). The caller's mailbox receives the `:v2_response`
+  message; this function pulls it out and returns the result.
+
+  Caveat: this consumes the next `:v2_response` matching `wire_id`
+  from the calling process's mailbox. Don't use it from a process
+  that has other in-flight V2 calls.
+  """
+  @spec send_sync(pid, String.t(), map, keyword) :: {:ok, map} | {:error, term}
+  def send_sync(ws_pid, method, params, opts \\ []) do
+    timeout = Keyword.get(opts, :timeout, 15_000)
+    wire_id = cast_send(ws_pid, self(), method, params, Keyword.delete(opts, :timeout))
+
+    receive do
+      {:v2_response, ^wire_id, result} -> result
+    after
+      timeout -> {:error, :timeout}
+    end
+  end
+
+  @doc """
   Subscribe `subscriber` to events matching `event_method`, scoped by
   `routing_key` (a session/context id) or `:global` for all sessions.
   """
