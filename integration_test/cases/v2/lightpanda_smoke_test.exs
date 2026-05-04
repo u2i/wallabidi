@@ -295,6 +295,20 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
       {:ok, [header]} = CDPClient.find_elements(session, Query.css("#header"))
       assert {:ok, "none"} = CDPClient.classify(session, header, :click)
     end
+
+    test "click_aware/3 returns immediately for 'none' classification", %{session: session} do
+      {:ok, [header]} = CDPClient.find_elements(session, Query.css("#header"))
+      assert {:ok, "none"} = CDPClient.click_aware(session, header)
+    end
+
+    test "click_aware/3 awaits page_ready for a full_page navigation", %{session: session} do
+      {:ok, [link]} = CDPClient.find_elements(session, Query.css("a[href='page_1.html']"))
+
+      assert {:ok, "full_page"} = CDPClient.click_aware(session, link, timeout: 5_000)
+      # After the click_aware returns, the URL should be the new page.
+      assert {:ok, url} = CDPClient.current_url(session)
+      assert String.ends_with?(url, "page_1.html")
+    end
   end
 
   describe "element-scoped find_elements" do

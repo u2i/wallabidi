@@ -361,8 +361,8 @@ defmodule Wallabidi.V2.CDPClient do
   click via the DOM API.
 
   This is a *simple* click — no LV-aware classification or
-  prepare_patch wiring. Layered semantics (await_patch / await_load /
-  full_page) come later.
+  post-click await. Use `click_aware/3` when the click may trigger a
+  LiveView patch or navigation that the caller wants to wait for.
   """
   @spec click(Session.t(), Element.t()) :: {:ok, nil} | {:error, term}
   def click(%Session{} = session, %Element{} = element) do
@@ -380,6 +380,43 @@ defmodule Wallabidi.V2.CDPClient do
          ) do
       {:ok, _} -> {:ok, nil}
       error -> error
+    end
+  end
+
+  @doc """
+  LV-aware click. Captures `pre_page_id` BEFORE the click, classifies
+  the element to decide what to await, then issues the click and
+  blocks for the appropriate signal:
+
+    * `"none"` — JS-only interaction (hash href, target=_blank).
+      Returns immediately, no wait.
+    * `"patch"` / `"navigate"` / `"full_page"` — awaits the next
+      `page_ready` notification. The bootstrap's onPatchEnd hook
+      bumps pageId on every LV patch, and a fresh document fires
+      a new page_ready, so one signal covers all three cases.
+
+  Returns `{:ok, classification}` on success, `{:error, :timeout}`
+  if the expected signal didn't arrive within `:timeout` (default
+  5_000 ms), or `{:error, term}` for transport errors.
+  """
+  @spec click_aware(Session.t(), Element.t(), keyword) ::
+          {:ok, String.t()} | {:error, term}
+  def click_aware(%Session{} = session, %Element{} = element, opts \\ []) do
+    timeout = Keyword.get(opts, :timeout, 5_000)
+    pre_page_id = V2Session.get_page_id(session)
+
+    with {:ok, classification} <- classify(session, element, :click),
+         {:ok, _} <- click(session, element) do
+      case classification do
+        "none" ->
+          {:ok, classification}
+
+        _ ->
+          case V2Session.await_page_ready_after(session, pre_page_id, timeout) do
+            :ok -> {:ok, classification}
+            :timeout -> {:error, :timeout}
+          end
+      end
     end
   end
 
