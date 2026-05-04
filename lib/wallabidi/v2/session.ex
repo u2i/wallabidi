@@ -48,7 +48,15 @@ defmodule Wallabidi.V2.Session do
     #   4. Caller calls await_find_result(query_id) — either gets the
     #      already-resolved result, or registers `from` and we reply
     #      when the binding fires.
-    find_waiters: %{}
+    find_waiters: %{},
+    # Page-ready tracking. The bootstrap fires
+    # __wallabidi(JSON.stringify({type: "page_ready", pageId: ...}))
+    # whenever a new document parses or LiveView applies a patch (the
+    # patch hook bumps pageId). Captures the most-recent pageId so the
+    # click flow can capture pre_page_id BEFORE issuing the click and
+    # await_page_ready_after BLOCKs until a different pageId arrives.
+    last_page_id: nil,
+    page_ready_waiter: nil
   ]
 
   @type t :: %__MODULE__{}
@@ -184,6 +192,42 @@ defmodule Wallabidi.V2.Session do
   end
 
   @doc """
+  Returns the most-recent pageId reported by the bootstrap's
+  `page_ready` notification, or `nil` if the bootstrap hasn't yet
+  fired one. Capture this BEFORE a click that may navigate, then
+  pass it to `await_page_ready_after/3`.
+  """
+  @spec get_page_id(Wallabidi.Session.t()) :: String.t() | nil
+  def get_page_id(%Wallabidi.Session{pid: pid}) when is_pid(pid) do
+    GenServer.call(pid, :get_page_id)
+  catch
+    :exit, _ -> nil
+  end
+
+  @doc """
+  Block until a `page_ready` notification arrives with a pageId
+  different from `pre_page_id`. The bootstrap fires this notification
+  when a new document is ready (DOMContentLoaded + LV connected, or
+  non-LV detected) AND on every LV patch.
+
+  Returns `:ok` when a different pageId has been observed, or
+  `:timeout` after `timeout_ms`.
+
+  Special case: if `pre_page_id` is `nil`, we register a waiter for
+  ANY first notification (no comparison) — without this guard a
+  pre_page_id captured before the very first notification would
+  spuriously match against any non-nil last_page_id.
+  """
+  @spec await_page_ready_after(Wallabidi.Session.t(), String.t() | nil, timeout) ::
+          :ok | :timeout
+  def await_page_ready_after(%Wallabidi.Session{pid: pid}, pre_page_id, timeout_ms \\ 5_000)
+      when is_pid(pid) do
+    GenServer.call(pid, {:await_page_ready_after, pre_page_id, timeout_ms}, timeout_ms + 2_000)
+  catch
+    :exit, _ -> :timeout
+  end
+
+  @doc """
   Stops the Session GenServer. `terminate/2` runs the teardown_fun.
   """
   def stop(%Wallabidi.Session{pid: pid}) when is_pid(pid) do
@@ -267,6 +311,23 @@ defmodule Wallabidi.V2.Session do
     end
   end
 
+  def handle_call(:get_page_id, _from, state) do
+    {:reply, state.last_page_id, state}
+  end
+
+  def handle_call({:await_page_ready_after, pre_page_id, timeout_ms}, from, state) do
+    cond do
+      # If we already have a different pageId, return :ok immediately.
+      pre_page_id != nil and state.last_page_id != nil and
+          state.last_page_id != pre_page_id ->
+        {:reply, :ok, state}
+
+      true ->
+        timer_ref = Process.send_after(self(), {:page_ready_timeout, from}, timeout_ms)
+        {:noreply, %{state | page_ready_waiter: {from, pre_page_id, timer_ref}}}
+    end
+  end
+
   @impl true
   def handle_info({:v2_response, wire_id, result}, state) do
     case Map.pop(state.pending_calls, wire_id) do
@@ -318,6 +379,17 @@ defmodule Wallabidi.V2.Session do
       {[{^from, _l, _n, _ref} | _], rest} ->
         GenServer.reply(from, :timeout)
         {:noreply, %{state | load_waiters: rest}}
+    end
+  end
+
+  def handle_info({:page_ready_timeout, from}, state) do
+    case state.page_ready_waiter do
+      {^from, _pre, _ref} ->
+        GenServer.reply(from, :timeout)
+        {:noreply, %{state | page_ready_waiter: nil}}
+
+      _ ->
+        {:noreply, state}
     end
   end
 
@@ -383,9 +455,30 @@ defmodule Wallabidi.V2.Session do
       {:ok, %{"id" => query_id, "count" => count} = msg} ->
         resolve_find(state, query_id, {:ok, count, msg["meta"]})
 
+      {:ok, %{"type" => "page_ready", "pageId" => page_id}} ->
+        update_last_page_id(state, page_id)
+
       _ ->
-        # Other payload shapes (page_ready, etc.) — handled later as
-        # we migrate features over.
+        # Other payload shapes get added here as features migrate over.
+        state
+    end
+  end
+
+  defp update_last_page_id(state, page_id) do
+    state = %{state | last_page_id: page_id}
+    wake_page_ready_waiter(state, page_id)
+  end
+
+  defp wake_page_ready_waiter(state, page_id) do
+    case state.page_ready_waiter do
+      {from, pre_page_id, timer_ref} when pre_page_id != page_id ->
+        # Either we have a real change or pre_page_id was nil and any
+        # first notification counts as ready.
+        Process.cancel_timer(timer_ref)
+        GenServer.reply(from, :ok)
+        %{state | page_ready_waiter: nil}
+
+      _ ->
         state
     end
   end

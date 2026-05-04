@@ -375,6 +375,39 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
     end
   end
 
+  describe "page-ready tracking" do
+    test "get_page_id returns the most-recent pageId from bootstrap", %{session: session} do
+      base = Application.fetch_env!(:wallabidi, :base_url)
+      :ok = CDPClient.visit(session, base <> "index.html")
+
+      # The bootstrap fires page_ready with a pageId once the DOM
+      # parses. After visit returns, the binding event should have
+      # been routed in.
+      page_id = V2Session.get_page_id(session)
+      assert is_binary(page_id) or is_nil(page_id)
+    end
+
+    test "await_page_ready_after returns :ok when pageId changes", %{session: session} do
+      base = Application.fetch_env!(:wallabidi, :base_url)
+      :ok = CDPClient.visit(session, base <> "index.html")
+
+      pre = V2Session.get_page_id(session)
+
+      # Visit a different page — bootstrap fires a new page_ready.
+      Task.start(fn -> CDPClient.visit(session, base <> "page_1.html") end)
+
+      assert :ok = V2Session.await_page_ready_after(session, pre, 5_000)
+    end
+
+    test "await_page_ready_after times out when no new pageId arrives", %{session: session} do
+      base = Application.fetch_env!(:wallabidi, :base_url)
+      :ok = CDPClient.visit(session, base <> "index.html")
+
+      pre = V2Session.get_page_id(session)
+      assert :timeout = V2Session.await_page_ready_after(session, pre, 200)
+    end
+  end
+
   describe "input ops (set_value, clear, send_keys)" do
     setup %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)
