@@ -285,6 +285,16 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
       {:ok, [link]} = CDPClient.find_elements(session, Query.css("a[href='page_1.html']"))
       assert {:ok, nil} = CDPClient.click(session, link)
     end
+
+    test "classify/3 reports 'full_page' for a plain anchor", %{session: session} do
+      {:ok, [link]} = CDPClient.find_elements(session, Query.css("a[href='page_1.html']"))
+      assert {:ok, "full_page"} = CDPClient.classify(session, link, :click)
+    end
+
+    test "classify/3 reports 'none' for a header (no phx attrs, no href)", %{session: session} do
+      {:ok, [header]} = CDPClient.find_elements(session, Query.css("#header"))
+      assert {:ok, "none"} = CDPClient.classify(session, header, :click)
+    end
   end
 
   describe "element-scoped find_elements" do

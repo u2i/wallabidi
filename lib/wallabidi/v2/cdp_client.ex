@@ -330,6 +330,33 @@ defmodule Wallabidi.V2.CDPClient do
   end
 
   @doc """
+  Classifies what kind of LV interaction `element` represents for an
+  upcoming `interaction` (currently `:click` or `:change`).
+
+  Reads `window.__w.classify(this, interaction)` (installed by the
+  bootstrap), which inspects `phx-click` / `data-phx-link` /
+  `phx-trigger-action` / form `action` / `<a href>` to decide:
+
+    * `"patch"` — phx-click or live_redirect=patch; expect a DOM patch
+    * `"navigate"` — data-phx-link=redirect or JS.navigate; new LV mount
+    * `"full_page"` — submit button in a non-LV form, plain anchor
+    * `"none"` — JS-only interaction (hash href, target=_blank, …)
+
+  The string from JS is returned as-is.
+  """
+  @spec classify(Session.t(), Element.t(), :click | :change) ::
+          {:ok, String.t()} | {:error, term}
+  def classify(%Session{} = session, %Element{} = element, interaction)
+      when interaction in [:click, :change] do
+    call_on_element(
+      session,
+      element,
+      "function(t) { return window.__w.classify(this, t); }",
+      [Atom.to_string(interaction)]
+    )
+  end
+
+  @doc """
   Click an element. Scrolls into view, focuses, then dispatches the
   click via the DOM API.
 
