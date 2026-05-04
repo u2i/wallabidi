@@ -29,11 +29,15 @@ defmodule Wallabidi.V2.Session do
     :ws_pid,
     :owner_ref,
     :teardown_fun,
+    # wire_id → GenServer.from for in-flight cdp_send calls
     pending_calls: %{},
-    # State migrated from SessionProcess (will be added incrementally
-    # as drivers move over). For now we carry the minimum needed for
-    # the CDP send path:
-    pending_responses: %{}
+    # Page-load buffering: events that have already fired, keyed by
+    # `{loader_id, milestone}` (e.g. {"abc123", "load"}). Callers
+    # arriving AFTER the event get an immediate reply. Callers arriving
+    # BEFORE join `load_waiters` and get woken when the matching event
+    # lands.
+    loads: %{},
+    load_waiters: []
   ]
 
   @type t :: %__MODULE__{}
@@ -100,6 +104,43 @@ defmodule Wallabidi.V2.Session do
   end
 
   @doc """
+  Subscribes the Session to a wire-level event method.
+
+  Combines:
+    1. Telling the V2.WebSocket to route events with this method to us
+       (so they arrive in our mailbox as `{:v2_event, method, event}`).
+    2. Tagging the routing entry with the session's `browsing_context`
+       (CDP `sessionId` / BiDi context id) so events for OTHER sessions
+       on the same WebSocket don't fan in here.
+
+  `routing_key` defaults to the session's browsing_context. Pass
+  `:global` to receive events regardless of session (e.g. browser-level
+  Target.attachedToTarget).
+  """
+  @spec subscribe(Wallabidi.Session.t(), String.t(), :global | nil) :: :ok
+  def subscribe(%Wallabidi.Session{} = session, event_method, routing_key \\ nil)
+      when is_binary(event_method) do
+    GenServer.call(session.pid, {:subscribe, event_method, routing_key})
+  end
+
+  @doc """
+  Block until a `Page.lifecycleEvent` fires for `loader_id` with
+  milestone `name` (typically `"load"` or `"DOMContentLoaded"`).
+
+  If the matching event has already arrived and been buffered, returns
+  immediately. Otherwise registers a waiter and replies when the event
+  lands or the timeout elapses.
+  """
+  @spec await_page_load(Wallabidi.Session.t(), String.t(), String.t(), timeout) ::
+          :ok | :timeout
+  def await_page_load(%Wallabidi.Session{pid: pid}, loader_id, name, timeout_ms \\ 10_000)
+      when is_pid(pid) and is_binary(loader_id) and is_binary(name) do
+    GenServer.call(pid, {:await_page_load, loader_id, name, timeout_ms}, timeout_ms + 2_000)
+  catch
+    :exit, _ -> :timeout
+  end
+
+  @doc """
   Stops the Session GenServer. `terminate/2` runs the teardown_fun.
   """
   def stop(%Wallabidi.Session{pid: pid}) when is_pid(pid) do
@@ -146,6 +187,22 @@ defmodule Wallabidi.V2.Session do
     {:noreply, %{state | pending_calls: pending}}
   end
 
+  def handle_call({:subscribe, event_method, routing_key}, _from, state) do
+    key = routing_key || state.session.browsing_context || :global
+    :ok = WebSocket.subscribe(state.ws_pid, event_method, key, self())
+    {:reply, :ok, state}
+  end
+
+  def handle_call({:await_page_load, loader_id, name, timeout_ms}, from, state) do
+    if get_in(state.loads, [loader_id, name]) do
+      {:reply, :ok, state}
+    else
+      timer_ref = Process.send_after(self(), {:load_timeout, from}, timeout_ms)
+      waiter = {from, loader_id, name, timer_ref}
+      {:noreply, %{state | load_waiters: [waiter | state.load_waiters]}}
+    end
+  end
+
   @impl true
   def handle_info({:v2_response, wire_id, result}, state) do
     case Map.pop(state.pending_calls, wire_id) do
@@ -160,11 +217,34 @@ defmodule Wallabidi.V2.Session do
     end
   end
 
+  def handle_info({:v2_event, "Page.lifecycleEvent", event}, state) do
+    params = Map.get(event, "params", %{})
+    loader_id = params["loaderId"]
+    name = params["name"]
+
+    if is_binary(loader_id) and name in ["load", "DOMContentLoaded"] do
+      state = buffer_load(state, loader_id, name)
+      state = wake_load_waiters(state, loader_id, name)
+      {:noreply, state}
+    else
+      {:noreply, state}
+    end
+  end
+
   def handle_info({:v2_event, _method, _event}, state) do
-    # TODO: route to handlers as drivers migrate. For now: drop.
-    # Will become the new home for everything `SessionProcess` does
-    # with `:bidi_event` messages.
+    # Routes for other event types land here as we migrate them.
     {:noreply, state}
+  end
+
+  def handle_info({:load_timeout, from}, state) do
+    case Enum.split_with(state.load_waiters, fn {f, _, _, _} -> f == from end) do
+      {[], _} ->
+        {:noreply, state}
+
+      {[{^from, _l, _n, _ref} | _], rest} ->
+        GenServer.reply(from, :timeout)
+        {:noreply, %{state | load_waiters: rest}}
+    end
   end
 
   def handle_info({:DOWN, ref, :process, _pid, _reason}, %{owner_ref: ref} = state) do
@@ -187,4 +267,28 @@ defmodule Wallabidi.V2.Session do
   end
 
   def terminate(_reason, _state), do: :ok
+
+  # ----- Helpers -----
+
+  defp buffer_load(state, loader_id, name) do
+    loads =
+      Map.update(state.loads, loader_id, %{name => true}, &Map.put(&1, name, true))
+
+    %{state | loads: loads}
+  end
+
+  defp wake_load_waiters(state, loader_id, name) do
+    {ready, pending} =
+      Enum.split_with(state.load_waiters, fn
+        {_from, ^loader_id, ^name, _ref} -> true
+        _ -> false
+      end)
+
+    Enum.each(ready, fn {from, _l, _n, ref} ->
+      Process.cancel_timer(ref)
+      GenServer.reply(from, :ok)
+    end)
+
+    %{state | load_waiters: pending}
+  end
 end

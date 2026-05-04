@@ -56,6 +56,8 @@ defmodule Wallabidi.Integration.V2SessionHelper do
         teardown_fun: fn _ -> :ok end
       )
 
+    :ok = Wallabidi.V2.CDPClient.enable_page_lifecycle_events(session)
+
     ExUnit.Callbacks.on_exit(fn ->
       cleanup(session, ws_pid, server)
     end)

@@ -40,6 +40,25 @@ defmodule Wallabidi.V2.CDPClient do
     V2Session.cdp_send(session, method, params, send_opts(session))
   end
 
+  # ----- Page domain enables -----
+
+  @doc """
+  Enables CDP's Page domain for the session and subscribes to
+  `Page.lifecycleEvent`. After this returns, V2.Session is set up
+  to resolve `await_page_load/4` calls when matching events arrive.
+
+  Idempotent — safe to call more than once.
+  """
+  @spec enable_page_lifecycle_events(Session.t()) :: :ok | {:error, term}
+  def enable_page_lifecycle_events(%Session{} = session) do
+    with :ok <- V2Session.subscribe(session, "Page.lifecycleEvent"),
+         {:ok, _} <- cdp_send(session, "Page.enable", %{}),
+         {:ok, _} <-
+           cdp_send(session, "Page.setLifecycleEventsEnabled", %{enabled: true}) do
+      :ok
+    end
+  end
+
   # ----- Page.navigate -----
 
   @doc """

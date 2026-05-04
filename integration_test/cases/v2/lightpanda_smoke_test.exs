@@ -13,6 +13,7 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
 
   alias Wallabidi.Integration.V2SessionHelper
   alias Wallabidi.V2.CDPClient
+  alias Wallabidi.V2.Session, as: V2Session
 
   setup do
     V2SessionHelper.start_session()
@@ -71,33 +72,19 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
       assert is_binary(frame_id) or is_nil(frame_id)
     end
 
-    test "the destination URL is reflected by location.href", %{session: session} do
+    test "navigate + await_page_load: location.href reflects new URL", %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)
       url = base <> "/" <> @url_for
 
-      {:ok, _} = CDPClient.navigate(session, url)
-      # Briefly wait for the load to settle. evaluate against the
-      # post-navigate page returns the new URL once the document is
-      # parsed; we poll up to ~500ms.
-      assert eventually(fn ->
-               case CDPClient.evaluate(session, "location.href") do
-                 {:ok, ^url} -> true
-                 _ -> false
-               end
-             end)
+      {:ok, %{loader_id: loader_id}} = CDPClient.navigate(session, url)
+      assert :ok = V2Session.await_page_load(session, loader_id, "load", 5_000)
+
+      assert {:ok, ^url} = CDPClient.evaluate(session, "location.href")
     end
-  end
 
-  defp eventually(fun, attempts \\ 25, sleep \\ 20)
-
-  defp eventually(_fun, 0, _sleep), do: false
-
-  defp eventually(fun, attempts, sleep) do
-    if fun.() do
-      true
-    else
-      Process.sleep(sleep)
-      eventually(fun, attempts - 1, sleep)
+    test "await_page_load times out for an unknown loader_id", %{session: session} do
+      assert :timeout =
+               V2Session.await_page_load(session, "loader-that-never-fires", "load", 200)
     end
   end
 end
