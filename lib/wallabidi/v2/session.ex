@@ -133,6 +133,22 @@ defmodule Wallabidi.V2.Session do
   end
 
   @doc """
+  Fire-and-forget CDP send. Returns `:ok` synchronously after handing
+  the command to the V2.WebSocket. The response is delivered to the
+  Session GenServer but ignored (no caller is waiting for it).
+
+  Use for enables (`Page.enable`, `Runtime.enable`, etc.) where the
+  response carries nothing the caller would act on. CDP serializes
+  per-session, so any subsequent `cdp_send/4` from the same caller
+  still observes the effects.
+  """
+  @spec cdp_cast(Wallabidi.Session.t(), String.t(), map, keyword) :: :ok
+  def cdp_cast(%Wallabidi.Session{pid: pid}, method, params, opts \\ [])
+      when is_pid(pid) do
+    GenServer.cast(pid, {:cdp_cast, method, params, opts})
+  end
+
+  @doc """
   Subscribes the Session to a wire-level event method.
 
   Combines:
@@ -542,6 +558,26 @@ defmodule Wallabidi.V2.Session do
 
   def handle_call({:lookup_frame_context, frame_id}, _from, state) do
     {:reply, Map.get(state.frame_contexts, frame_id), state}
+  end
+
+  @impl true
+  def handle_cast({:cdp_cast, method, params, opts}, state) do
+    # Override session_id with live browsing_context (same as
+    # :cdp_send). Hand the command to V2.WebSocket without registering
+    # a pending entry — the response will land in our mailbox via
+    # `:v2_response` and `handle_info` will see no matching entry and
+    # drop it, which is what we want.
+    opts =
+      case Keyword.fetch(opts, :session_id) do
+        {:ok, _} when is_binary(state.session.browsing_context) ->
+          Keyword.put(opts, :session_id, state.session.browsing_context)
+
+        _ ->
+          opts
+      end
+
+    _ = WebSocket.cast_send(state.ws_pid, self(), method, params, opts)
+    {:noreply, state}
   end
 
   @impl true

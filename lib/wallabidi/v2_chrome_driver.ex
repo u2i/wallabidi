@@ -22,9 +22,8 @@ defmodule Wallabidi.V2ChromeDriver do
 
   alias Wallabidi.{DependencyError, Element, Metadata, Session}
   alias Wallabidi.Chrome.Server, as: ChromeServer
-  alias Wallabidi.V2.CDPClient
+  alias Wallabidi.V2.{CDPClient, Transport, WebSocket}
   alias Wallabidi.V2.Session, as: V2Session
-  alias Wallabidi.V2.WebSocket
   alias Wallabidi.V2Chrome.SharedConnection
   import Wallabidi.Driver.LogChecker
 
@@ -69,20 +68,10 @@ defmodule Wallabidi.V2ChromeDriver do
 
   @impl true
   def start_session(opts \\ []) do
-    ws_pid = SharedConnection.get(__MODULE__)
+    caller = Keyword.get(opts, :owner, self())
 
-    with {:ok, %{"browserContextId" => ctx_id}} <-
-           WebSocket.send_sync(ws_pid, "Target.createBrowserContext", %{}),
-         {:ok, %{"targetId" => target_id}} <-
-           WebSocket.send_sync(ws_pid, "Target.createTarget", %{
-             url: "about:blank",
-             browserContextId: ctx_id
-           }),
-         {:ok, %{"sessionId" => session_id}} <-
-           WebSocket.send_sync(ws_pid, "Target.attachToTarget", %{
-             targetId: target_id,
-             flatten: true
-           }) do
+    with {:ok, acquired} <-
+           Transport.SharedWS.acquire(connection: SharedConnection, driver: __MODULE__) do
       user_caps = Keyword.get(opts, :capabilities, %{})
 
       session_struct = %Session{
@@ -91,68 +80,45 @@ defmodule Wallabidi.V2ChromeDriver do
         session_url: "about:blank",
         driver: __MODULE__,
         protocol: nil,
-        bidi_pid: ws_pid,
-        browsing_context: session_id,
-        capabilities:
-          Map.merge(user_caps, %{
-            target_id: target_id,
-            browser_context_id: ctx_id,
-            flat_session_id: true,
-            shared_connection: true
-          })
+        bidi_pid: acquired.ws_pid,
+        browsing_context: acquired.session_id,
+        capabilities: Map.merge(user_caps, acquired.capabilities)
       }
 
-      teardown = fn _session -> teardown_browser_context(ws_pid, ctx_id) end
+      with {:ok, session} <-
+             Transport.start_session_from(acquired, session_struct, owner: caller) do
+        # Forward console + exception events to the test caller's
+        # mailbox so LogChecker.check_logs! can drain them after each
+        # operation. Subscribe at the V2.WebSocket layer so the test
+        # process is the direct subscriber (V2.Session normally
+        # consumes events itself, but LogChecker reads from the
+        # caller's mailbox).
+        _ =
+          WebSocket.subscribe(
+            acquired.ws_pid,
+            "Runtime.consoleAPICalled",
+            acquired.session_id,
+            caller
+          )
 
-      caller = Keyword.get(opts, :owner, self())
+        _ =
+          WebSocket.subscribe(
+            acquired.ws_pid,
+            "Runtime.exceptionThrown",
+            acquired.session_id,
+            caller
+          )
 
-      case V2Session.start_link(
-             ws_pid: ws_pid,
-             init_fun: fn -> {:ok, session_struct} end,
-             teardown_fun: teardown,
-             owner: caller
-           ) do
-        {:ok, session} ->
-          :ok = CDPClient.enable_page_lifecycle_events(session)
-          :ok = CDPClient.install_bootstrap(session)
-          :ok = CDPClient.enable_frame_tracking(session)
+        if metadata = Keyword.get(opts, :metadata) do
+          ua = Metadata.append(@base_user_agent, metadata)
+          _ = CDPClient.cdp_send(session, "Network.setUserAgentOverride", %{userAgent: ua})
+        end
 
-          # Forward console + exception events to the test caller's
-          # mailbox so LogChecker.check_logs! can drain them after each
-          # operation. Subscribe at the V2.WebSocket layer so the test
-          # process is the direct subscriber (V2.Session normally
-          # consumes events itself, but LogChecker reads from the
-          # caller's mailbox).
-          _ =
-            WebSocket.subscribe(
-              ws_pid,
-              "Runtime.consoleAPICalled",
-              session_id,
-              caller
-            )
+        if window_size = Keyword.get(opts, :window_size) do
+          _ = CDPClient.set_window_size(session, window_size[:width], window_size[:height])
+        end
 
-          _ =
-            WebSocket.subscribe(
-              ws_pid,
-              "Runtime.exceptionThrown",
-              session_id,
-              caller
-            )
-
-          if metadata = Keyword.get(opts, :metadata) do
-            ua = Metadata.append(@base_user_agent, metadata)
-            _ = CDPClient.cdp_send(session, "Network.setUserAgentOverride", %{userAgent: ua})
-          end
-
-          if window_size = Keyword.get(opts, :window_size) do
-            _ = CDPClient.set_window_size(session, window_size[:width], window_size[:height])
-          end
-
-          {:ok, session}
-
-        error ->
-          teardown_browser_context(ws_pid, ctx_id)
-          error
+        {:ok, session}
       end
     end
   end
@@ -167,19 +133,7 @@ defmodule Wallabidi.V2ChromeDriver do
   def release_server_session(%Session{} = session) do
     ws_pid = session.bidi_pid
     ctx_id = get_in(session.capabilities, [:browser_context_id])
-    if ws_pid && ctx_id, do: teardown_browser_context(ws_pid, ctx_id)
-    :ok
-  end
-
-  defp teardown_browser_context(ws_pid, ctx_id) do
-    try do
-      WebSocket.send_sync(ws_pid, "Target.disposeBrowserContext", %{
-        browserContextId: ctx_id
-      })
-    catch
-      :exit, _ -> :ok
-    end
-
+    if ws_pid && ctx_id, do: Transport.dispose_browser_context(ws_pid, ctx_id)
     :ok
   end
 

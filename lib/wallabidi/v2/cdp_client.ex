@@ -42,6 +42,14 @@ defmodule Wallabidi.V2.CDPClient do
     V2Session.cdp_send(session, method, params, send_opts(session))
   end
 
+  @doc false
+  # Fire-and-forget CDP send. The response is dropped. CDP serializes
+  # per-session, so any subsequent `cdp_send/3` still observes the
+  # effects of the cast call.
+  def cdp_cast(%Session{} = session, method, params) do
+    V2Session.cdp_cast(session, method, params, send_opts(session))
+  end
+
   # ----- Page domain enables -----
 
   @doc """
@@ -53,12 +61,14 @@ defmodule Wallabidi.V2.CDPClient do
   """
   @spec enable_page_lifecycle_events(Session.t()) :: :ok | {:error, term}
   def enable_page_lifecycle_events(%Session{} = session) do
-    with :ok <- V2Session.subscribe(session, "Page.lifecycleEvent"),
-         {:ok, _} <- cdp_send(session, "Page.enable", %{}),
-         {:ok, _} <-
-           cdp_send(session, "Page.setLifecycleEventsEnabled", %{enabled: true}) do
-      :ok
-    end
+    # Subscribe BEFORE the enables so we don't miss the first
+    # lifecycle event on the next visit. The enables themselves are
+    # fire-and-forget — CDP applies commands in order per session,
+    # so subsequent blocking sends still see their effects.
+    :ok = V2Session.subscribe(session, "Page.lifecycleEvent")
+    cdp_cast(session, "Page.enable", %{})
+    cdp_cast(session, "Page.setLifecycleEventsEnabled", %{enabled: true})
+    :ok
   end
 
   @doc """
@@ -81,9 +91,13 @@ defmodule Wallabidi.V2.CDPClient do
   """
   @spec install_bootstrap(Session.t()) :: :ok | {:error, term}
   def install_bootstrap(%Session{} = session) do
-    with :ok <- V2Session.subscribe(session, "Runtime.bindingCalled"),
-         {:ok, _} <- cdp_send(session, "Runtime.enable", %{}),
-         {:ok, _} <- cdp_send(session, "Runtime.addBinding", %{name: "__wallabidi"}),
+    # Subscribe + Runtime.enable can be cast (CDP applies in order).
+    # Runtime.addBinding and Page.addScriptToEvaluateOnNewDocument
+    # MUST complete before any find runs — those stay blocking.
+    :ok = V2Session.subscribe(session, "Runtime.bindingCalled")
+    cdp_cast(session, "Runtime.enable", %{})
+
+    with {:ok, _} <- cdp_send(session, "Runtime.addBinding", %{name: "__wallabidi"}),
          {:ok, _} <-
            cdp_send(session, "Page.addScriptToEvaluateOnNewDocument", %{
              source: Wallabidi.Bootstrap.cdp_iife()

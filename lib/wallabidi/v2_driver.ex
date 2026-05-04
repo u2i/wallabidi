@@ -22,12 +22,21 @@ defmodule Wallabidi.V2Driver do
   @behaviour Wallabidi.Driver
 
   alias Wallabidi.{Element, Session}
-  alias Wallabidi.V2.CDPClient
+  alias Wallabidi.V2.{CDPClient, Transport}
   alias Wallabidi.V2.Session, as: V2Session
-  alias Wallabidi.V2.WebSocket
 
-  # ----- Driver supervisor (no children — Lightpanda's hex package
-  # supervises its own server when start_session creates it). -----
+  # ----- Driver supervisor —
+  #
+  # Starts a single shared Lightpanda binary if the package is on
+  # the load path. Sessions multiplex over this binary by opening
+  # their own V2.WebSocket against its URL — the
+  # `Transport.PerSessionWS` model, mirroring legacy
+  # `Wallabidi.Lightpanda`.
+  #
+  # Falls back to per-session binary spawn (`Transport.IsolatedProcess`)
+  # if no shared server is running. Useful for ad-hoc tests that hit
+  # V2Driver directly without going through the application supervisor.
+  # -----
 
   def child_spec(opts) do
     %{
@@ -41,8 +50,34 @@ defmodule Wallabidi.V2Driver do
     Supervisor.start_link(__MODULE__, :ok, opts)
   end
 
+  @lightpanda_server Module.concat([Lightpanda, Server])
+  @lightpanda_server_name __MODULE__.LightpandaServer
+
+  # Lightpanda's --cdp-max-connections defaults to 16, which gets hit
+  # at mc=16 plus a few session-isolation tests creating extra
+  # sessions. Bump it so the shared-binary PerSessionWS model can run
+  # safely at peak ExUnit concurrency.
+  @cdp_max_connections 64
+
   @impl Supervisor
-  def init(_), do: Supervisor.init([], strategy: :one_for_one)
+  def init(_) do
+    children =
+      if Code.ensure_loaded?(@lightpanda_server) do
+        opts = [
+          name: @lightpanda_server_name,
+          extra_args: [
+            "--cdp-max-connections",
+            Integer.to_string(@cdp_max_connections)
+          ]
+        ]
+
+        [{@lightpanda_server, opts}]
+      else
+        []
+      end
+
+    Supervisor.init(children, strategy: :one_for_one)
+  end
 
   @doc false
   def validate, do: :ok
@@ -54,60 +89,70 @@ defmodule Wallabidi.V2Driver do
 
   @impl true
   def start_session(opts \\ []) do
-    with {:ok, ws_url, server_pid} <- ensure_server(opts),
-         {:ok, ws_pid} <- WebSocket.start_link(ws_url),
-         {:ok, %{"targetId" => target_id}} <-
-           WebSocket.send_sync(ws_pid, "Target.createTarget", %{url: "about:blank"}),
-         {:ok, %{"sessionId" => session_id}} <-
-           WebSocket.send_sync(ws_pid, "Target.attachToTarget", %{
-             targetId: target_id,
-             flatten: true
-           }) do
+    {transport_mod, transport_opts} = pick_transport(opts)
+
+    with {:ok, acquired} <- transport_mod.acquire(transport_opts) do
       session_struct = %Session{
         id: "v2drv-#{System.unique_integer([:positive])}",
         url: "about:blank",
         session_url: "about:blank",
         driver: __MODULE__,
         protocol: nil,
-        bidi_pid: ws_pid,
-        browsing_context: session_id,
-        capabilities: %{
-          target_id: target_id,
-          flat_session_id: true,
-          server_pid: server_pid,
-          # Lightpanda's JS engine doesn't ship a real document.evaluate
-          # — V2.CDPClient.visit injects wgxpath after each page load.
-          needs_xpath_polyfill: true
-        }
+        bidi_pid: acquired.ws_pid,
+        browsing_context: acquired.session_id,
+        capabilities: acquired.capabilities
       }
 
-      teardown = fn _session -> teardown_resources(ws_pid, server_pid) end
+      with {:ok, session} <- Transport.start_session_from(acquired, session_struct, opts) do
+        if window_size = Keyword.get(opts, :window_size) do
+          _ =
+            CDPClient.set_window_size(
+              session,
+              window_size[:width],
+              window_size[:height]
+            )
+        end
 
-      case V2Session.start_link(
-             ws_pid: ws_pid,
-             init_fun: fn -> {:ok, session_struct} end,
-             teardown_fun: teardown
-           ) do
-        {:ok, session} ->
-          :ok = CDPClient.enable_page_lifecycle_events(session)
-          :ok = CDPClient.install_bootstrap(session)
-          :ok = CDPClient.enable_frame_tracking(session)
-
-          if window_size = Keyword.get(opts, :window_size) do
-            _ =
-              CDPClient.set_window_size(
-                session,
-                window_size[:width],
-                window_size[:height]
-              )
-          end
-
-          {:ok, session}
-
-        error ->
-          teardown_resources(ws_pid, server_pid)
-          error
+        {:ok, session}
       end
+    end
+  end
+
+  # Pick the transport based on what's running:
+  #
+  #   * `:ws_url` opt    → IsolatedProcess (caller already has a URL)
+  #   * shared LP server → PerSessionWS (multiplex over the singleton)
+  #   * lightpanda dep   → IsolatedProcess (spawn a fresh binary)
+  defp pick_transport(opts) do
+    base_caps = %{
+      # Lightpanda's JS engine doesn't ship a real document.evaluate
+      # — V2.CDPClient.visit injects wgxpath after each page load.
+      needs_xpath_polyfill: true
+    }
+
+    cond do
+      url = Keyword.get(opts, :ws_url) ->
+        {Transport.IsolatedProcess, [ws_url: url, extra_capabilities: base_caps]}
+
+      Process.whereis(@lightpanda_server_name) ->
+        {Transport.PerSessionWS,
+         [
+           url_fun: fn ->
+             apply(@lightpanda_server, :ws_url, [@lightpanda_server_name])
+           end,
+           extra_capabilities: base_caps
+         ]}
+
+      Code.ensure_loaded?(@lightpanda_server) ->
+        {Transport.IsolatedProcess,
+         [
+           spawn_fun: fn -> apply(@lightpanda_server, :start_link, [[name: nil]]) end,
+           url_fun: fn server -> apply(@lightpanda_server, :ws_url, [server]) end,
+           extra_capabilities: base_caps
+         ]}
+
+      true ->
+        raise "V2Driver requires either a :ws_url opt or the `lightpanda` package on the path"
     end
   end
 
@@ -330,44 +375,6 @@ defmodule Wallabidi.V2Driver do
   def focus_parent_frame(_), do: {:ok, nil}
 
   # ----- Internal -----
-
-  defp ensure_server(opts) do
-    case Keyword.get(opts, :ws_url) do
-      url when is_binary(url) ->
-        {:ok, url, nil}
-
-      _ ->
-        # Default = spawn a Lightpanda server. The `lightpanda` hex
-        # package is `only: :test` so resolve lazily at runtime.
-        server_mod = Module.concat([Lightpanda, Server])
-
-        unless Code.ensure_loaded?(server_mod) do
-          raise "V2Driver requires either a :ws_url opt or the `lightpanda` package on the path"
-        end
-
-        {:ok, server} = apply(server_mod, :start_link, [[name: nil]])
-        ws_url = apply(server_mod, :ws_url, [server])
-        {:ok, ws_url, server}
-    end
-  end
-
-  defp teardown_resources(ws_pid, server_pid) do
-    try do
-      WebSocket.close(ws_pid)
-    catch
-      :exit, _ -> :ok
-    end
-
-    if is_pid(server_pid) do
-      try do
-        GenServer.stop(server_pid, :normal, 5_000)
-      catch
-        :exit, _ -> :ok
-      end
-    end
-
-    :ok
-  end
 
   defp ensure_query(%Wallabidi.Query{} = q), do: q
 
