@@ -56,4 +56,48 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
       assert {:error, {:js_exception, _details}} = CDPClient.evaluate(session, "this is not js")
     end
   end
+
+  describe "navigate/2" do
+    @url_for "index.html"
+
+    test "navigates to a URL and returns a loader_id", %{session: session} do
+      base = Application.fetch_env!(:wallabidi, :base_url)
+      url = base <> "/" <> @url_for
+
+      assert {:ok, %{loader_id: loader_id, frame_id: frame_id}} =
+               CDPClient.navigate(session, url)
+
+      assert is_binary(loader_id) or is_nil(loader_id)
+      assert is_binary(frame_id) or is_nil(frame_id)
+    end
+
+    test "the destination URL is reflected by location.href", %{session: session} do
+      base = Application.fetch_env!(:wallabidi, :base_url)
+      url = base <> "/" <> @url_for
+
+      {:ok, _} = CDPClient.navigate(session, url)
+      # Briefly wait for the load to settle. evaluate against the
+      # post-navigate page returns the new URL once the document is
+      # parsed; we poll up to ~500ms.
+      assert eventually(fn ->
+               case CDPClient.evaluate(session, "location.href") do
+                 {:ok, ^url} -> true
+                 _ -> false
+               end
+             end)
+    end
+  end
+
+  defp eventually(fun, attempts \\ 25, sleep \\ 20)
+
+  defp eventually(_fun, 0, _sleep), do: false
+
+  defp eventually(fun, attempts, sleep) do
+    if fun.() do
+      true
+    else
+      Process.sleep(sleep)
+      eventually(fun, attempts - 1, sleep)
+    end
+  end
 end

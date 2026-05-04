@@ -40,6 +40,38 @@ defmodule Wallabidi.V2.CDPClient do
     V2Session.cdp_send(session, method, params, send_opts(session))
   end
 
+  # ----- Page.navigate -----
+
+  @doc """
+  Navigates the session's target to `url`. Returns
+  `{:ok, %{loader_id: ..., frame_id: ...}}` on a successful nav.
+
+  Note: this is a blocking *send* — it returns once Chrome has
+  acknowledged the navigation request, NOT once the page has finished
+  loading. To wait for `loadEventFired`, layer
+  `await_page_load/2` (TBA) on top.
+
+  Errors:
+    * `{:error, {:navigate_failed, reason}}` for protocol-level errors
+      surfaced via the `errorText` field
+    * `{:error, term}` for transport/timeouts
+  """
+  @spec navigate(Session.t(), String.t()) ::
+          {:ok, %{loader_id: String.t() | nil, frame_id: String.t() | nil}}
+          | {:error, term}
+  def navigate(%Session{} = session, url) when is_binary(url) do
+    case cdp_send(session, "Page.navigate", %{url: url}) do
+      {:ok, %{"errorText" => msg}} when is_binary(msg) and msg != "" ->
+        {:error, {:navigate_failed, msg}}
+
+      {:ok, result} when is_map(result) ->
+        {:ok, %{loader_id: result["loaderId"], frame_id: result["frameId"]}}
+
+      error ->
+        error
+    end
+  end
+
   # ----- Runtime.evaluate -----
 
   @doc """
