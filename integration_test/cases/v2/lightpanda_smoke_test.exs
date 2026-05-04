@@ -117,6 +117,55 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
     end
   end
 
+  describe "find waiter round-trip" do
+    test "register_find + JS binding call resolves the waiter", %{session: session} do
+      base = Application.fetch_env!(:wallabidi, :base_url)
+      :ok = CDPClient.visit(session, base <> "index.html")
+
+      query_id = "v2-test-#{System.unique_integer([:positive])}"
+
+      # Register the waiter BEFORE firing the binding — register_find
+      # must precede the JS that triggers the callback.
+      :ok = V2Session.register_find(session, query_id, 1_000)
+
+      # Fire the binding from JS with a payload that V2.Session knows
+      # how to route ({"id": query_id, "count": N}).
+      js =
+        "__wallabidi(JSON.stringify({id: #{Jason.encode!(query_id)}, count: 7}))"
+
+      {:ok, _} = CDPClient.evaluate(session, js)
+
+      assert {:ok, 7, _meta} = V2Session.await_find_result(session, query_id, 1_000)
+    end
+
+    test "register_find times out when the binding never fires", %{session: session} do
+      base = Application.fetch_env!(:wallabidi, :base_url)
+      :ok = CDPClient.visit(session, base <> "index.html")
+
+      query_id = "v2-timeout-#{System.unique_integer([:positive])}"
+      :ok = V2Session.register_find(session, query_id, 50)
+
+      # Don't fire the binding. Wait long enough that the timeout
+      # fires, then verify the await returns the timeout shape.
+      assert {:timeout, 0} = V2Session.await_find_result(session, query_id, 200)
+    end
+
+    test "register_find surfaces invalid_selector errors", %{session: session} do
+      base = Application.fetch_env!(:wallabidi, :base_url)
+      :ok = CDPClient.visit(session, base <> "index.html")
+
+      query_id = "v2-err-#{System.unique_integer([:positive])}"
+      :ok = V2Session.register_find(session, query_id, 1_000)
+
+      js =
+        "__wallabidi(JSON.stringify({id: #{Jason.encode!(query_id)}, count: 0, error: 'bad selector'}))"
+
+      {:ok, _} = CDPClient.evaluate(session, js)
+
+      assert {:error, :invalid_selector} = V2Session.await_find_result(session, query_id, 1_000)
+    end
+  end
+
   describe "page introspection" do
     setup %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)
