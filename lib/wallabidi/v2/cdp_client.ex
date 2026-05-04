@@ -17,7 +17,8 @@ defmodule Wallabidi.V2.CDPClient do
   # Operations are added one at a time, each with an integration test
   # against a live Lightpanda server. See test/wallabidi/v2/.
 
-  alias Wallabidi.Session
+  alias Wallabidi.{Bootstrap, Element, Session}
+  alias Wallabidi.CDP.Ops
   alias Wallabidi.V2.Session, as: V2Session
 
   @doc """
@@ -119,6 +120,56 @@ defmodule Wallabidi.V2.CDPClient do
 
       error ->
         error
+    end
+  end
+
+  # ----- Element finding -----
+
+  @doc """
+  Find elements matching a Wallabidi.Query.
+
+  Uses the existing browser-side bootstrap (`window.__w`) and
+  `Bootstrap.register_js/4` to push-register a query whose match the
+  bootstrap reports back via the `__wallabidi` binding. The waiter
+  resolves when the binding fires with the matching query id.
+
+  Returns `{:ok, [%Wallabidi.Element{}]}` on success. Each element
+  has the count from the bootstrap; this initial implementation
+  produces placeholder elements without `bidi_shared_id` (real
+  CDP objectIds come in a follow-up that wires `Runtime.getProperties`
+  on the matched array).
+  """
+  @spec find_elements(Session.t(), Wallabidi.Query.t(), keyword) ::
+          {:ok, [Element.t()]} | {:error, term}
+  def find_elements(%Session{} = session, %Wallabidi.Query{} = query, opts \\ []) do
+    timeout = Keyword.get(opts, :timeout, 5_000)
+    count = Wallabidi.Query.count(query)
+
+    with {:ok, ops, _validated} <- Ops.from_wallaby(session, query, nil) do
+      query_id = "v2-q-#{System.unique_integer([:positive])}"
+      ops_json = Jason.encode!(ops.ops)
+      count_js = if is_integer(count), do: Integer.to_string(count), else: "null"
+      root_js = if ops.parent_id, do: "this", else: "null"
+      register_js = Bootstrap.register_js(query_id, ops_json, count_js, root_js)
+
+      :ok = V2Session.register_find(session, query_id, timeout)
+
+      # Fire-and-forget: register the query and call W.check(). The
+      # actual result arrives via the binding callback, not the
+      # evaluate response — so we ignore the eval result.
+      _ = cdp_send(session, "Runtime.evaluate", %{expression: register_js, returnByValue: true})
+
+      case V2Session.await_find_result(session, query_id, timeout) do
+        {:ok, count, _meta} ->
+          # Placeholder elements — real objectIds come later.
+          {:ok, List.duplicate(%Element{parent: session, driver: session.driver}, count)}
+
+        {:error, :invalid_selector} ->
+          {:error, :invalid_selector}
+
+        {:timeout, _} ->
+          {:ok, []}
+      end
     end
   end
 

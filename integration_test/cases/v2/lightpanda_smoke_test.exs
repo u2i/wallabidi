@@ -12,6 +12,7 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
   @moduletag :v2
 
   alias Wallabidi.Integration.V2SessionHelper
+  alias Wallabidi.Query
   alias Wallabidi.V2.CDPClient
   alias Wallabidi.V2.Session, as: V2Session
 
@@ -163,6 +164,37 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
       {:ok, _} = CDPClient.evaluate(session, js)
 
       assert {:error, :invalid_selector} = V2Session.await_find_result(session, query_id, 1_000)
+    end
+  end
+
+  describe "find_elements/2" do
+    setup %{session: session} do
+      base = Application.fetch_env!(:wallabidi, :base_url)
+      :ok = CDPClient.visit(session, base <> "index.html")
+      :ok
+    end
+
+    test "finds elements matching a CSS query", %{session: session} do
+      assert {:ok, [_]} = CDPClient.find_elements(session, Query.css("#header"))
+    end
+
+    test "finds multiple elements", %{session: session} do
+      assert {:ok, results} = CDPClient.find_elements(session, Query.css("li", count: :any))
+      assert length(results) >= 1
+    end
+
+    test "returns invalid_selector for a bad CSS selector", %{session: session} do
+      assert {:error, :invalid_selector} =
+               CDPClient.find_elements(session, Query.css(":::not-a-selector", count: :any))
+    end
+
+    test "returns empty list for selectors that match nothing", %{session: session} do
+      assert {:ok, []} =
+               CDPClient.find_elements(
+                 session,
+                 Query.css(".does-not-exist-anywhere", count: :any),
+                 timeout: 200
+               )
     end
   end
 
