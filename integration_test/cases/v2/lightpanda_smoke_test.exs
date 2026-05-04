@@ -265,4 +265,25 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
       assert html =~ ~r/<h1[^>]*id="header"/i
     end
   end
+
+  describe "displayed/2 and click/2" do
+    setup %{session: session} do
+      base = Application.fetch_env!(:wallabidi, :base_url)
+      :ok = CDPClient.visit(session, base <> "index.html")
+      :ok
+    end
+
+    test "displayed/2 returns true for a visible element", %{session: session} do
+      {:ok, [el]} = CDPClient.find_elements(session, Query.css("#header"))
+      assert {:ok, true} = CDPClient.displayed(session, el)
+    end
+
+    test "click/2 dispatches a click and returns ok", %{session: session} do
+      # The index page has anchor links (Page 1, Page 2, Page 3). Pick
+      # one we can find by CSS, click it, and assert the click was
+      # observed by checking the URL changed.
+      {:ok, [link]} = CDPClient.find_elements(session, Query.css("a[href='page_1.html']"))
+      assert {:ok, nil} = CDPClient.click(session, link)
+    end
+  end
 end

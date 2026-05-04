@@ -203,6 +203,66 @@ defmodule Wallabidi.V2.CDPClient do
     )
   end
 
+  @doc """
+  Returns whether the element would be considered visible to a user.
+
+  Mirrors the existing CDPClient.displayed/1 contract:
+    * isConnected (still in document tree)
+    * own display/visibility not hidden
+    * non-empty rect OR offsetParent OR fixed position
+    * OPTION special-case (closed selects have no layout but are clickable)
+  """
+  @spec displayed(Session.t(), Element.t()) :: {:ok, boolean} | {:error, term}
+  def displayed(%Session{} = session, %Element{} = element) do
+    call_on_element(
+      session,
+      element,
+      """
+      function() {
+        if (!this.isConnected) return false;
+        if (this.tagName === 'OPTION') {
+          var sel = this.closest('select');
+          if (!sel) return true;
+          var ss = window.getComputedStyle(sel);
+          return ss.display !== 'none' && ss.visibility !== 'hidden';
+        }
+        var st = window.getComputedStyle(this);
+        if (st.display === 'none' || st.visibility === 'hidden') return false;
+        var r = this.getBoundingClientRect();
+        if (r.width === 0 && r.height === 0 && this.offsetParent === null && st.position !== 'fixed') return false;
+        return true;
+      }
+      """
+    )
+  end
+
+  @doc """
+  Click an element. Scrolls into view, focuses, then dispatches the
+  click via the DOM API.
+
+  This is a *simple* click — no LV-aware classification or
+  prepare_patch wiring. Layered semantics (await_patch / await_load /
+  full_page) come later.
+  """
+  @spec click(Session.t(), Element.t()) :: {:ok, nil} | {:error, term}
+  def click(%Session{} = session, %Element{} = element) do
+    case call_on_element(
+           session,
+           element,
+           """
+           function() {
+             this.scrollIntoView({block: 'center', inline: 'nearest'});
+             if (typeof this.focus === 'function') this.focus();
+             this.click();
+             return null;
+           }
+           """
+         ) do
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
+  end
+
   # ----- Element finding -----
 
   @doc """
