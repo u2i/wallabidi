@@ -29,6 +29,14 @@ defmodule Wallabidi.Driver.LogChecker do
 
       {:bidi_event, "Runtime.exceptionThrown", event} ->
         [translate_cdp_exception(event) | drain_log_events()]
+
+      # V2 transport delivers events as `:v2_event` rather than
+      # `:bidi_event`. Same payload shape, different envelope.
+      {:v2_event, "Runtime.consoleAPICalled", event} ->
+        [translate_cdp_console(event) | drain_log_events()]
+
+      {:v2_event, "Runtime.exceptionThrown", event} ->
+        [translate_cdp_exception(event) | drain_log_events()]
     after
       0 -> []
     end

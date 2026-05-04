@@ -247,9 +247,63 @@ defmodule Wallabidi.V2.CDPClient do
   """
   @spec set_value(Session.t(), Element.t(), term) :: {:ok, nil} | {:error, term}
   def set_value(%Session{} = session, %Element{} = element, value) do
-    # Element-type-aware: checkboxes/radios toggle .checked, <option>s
-    # toggle .selected on the option (and update the select), everything
-    # else sets .value.
+    # File inputs reject `.value = x` for security reasons. The only
+    # programmatic way to populate them is CDP's DOM.setFileInputFiles.
+    case file_input?(session, element) do
+      {:ok, true} ->
+        set_file_input(session, element, value)
+
+      _ ->
+        set_value_dom(session, element, value)
+    end
+  end
+
+  defp file_input?(%Session{} = session, %Element{} = element) do
+    call_on_element(
+      session,
+      element,
+      "function() { return this.tagName === 'INPUT' && (this.type || '').toLowerCase() === 'file'; }"
+    )
+  end
+
+  defp set_file_input(%Session{} = session, %Element{bidi_shared_id: object_id} = element, value) do
+    raw_paths =
+      case value do
+        list when is_list(list) -> list
+        v when is_binary(v) and v != "" -> [v]
+        _ -> []
+      end
+
+    # Filter out non-existent paths so a missing file is a no-op,
+    # matching legacy behavior. Tests rely on `Wallabidi.Element.value`
+    # being empty when the file doesn't exist on disk.
+    paths = Enum.filter(raw_paths, &File.exists?/1)
+
+    with {:ok, %{"node" => %{"backendNodeId" => bid}}} <-
+           cdp_send(session, "DOM.describeNode", %{objectId: object_id}),
+         {:ok, _} <-
+           cdp_send(session, "DOM.setFileInputFiles", %{
+             files: paths,
+             backendNodeId: bid
+           }) do
+      _ =
+        call_on_element(
+          session,
+          element,
+          """
+          function() {
+            this.dispatchEvent(new Event('input', {bubbles: true}));
+            this.dispatchEvent(new Event('change', {bubbles: true}));
+            return null;
+          }
+          """
+        )
+
+      {:ok, nil}
+    end
+  end
+
+  defp set_value_dom(%Session{} = session, %Element{} = element, value) do
     case call_on_element(
            session,
            element,
@@ -259,9 +313,6 @@ defmodule Wallabidi.V2.CDPClient do
              var ty = (this.type || '').toLowerCase();
 
              if (t === 'INPUT' && (ty === 'checkbox' || ty === 'radio')) {
-               // Wallaby semantics: passing the input's `value` checks it
-               // (used by Browser.click for radios/checkboxes); falsy
-               // unchecks. Treating any non-empty truthy value as "check".
                this.checked = !!v;
                this.dispatchEvent(new Event('input', {bubbles: true}));
                this.dispatchEvent(new Event('change', {bubbles: true}));
@@ -590,9 +641,23 @@ defmodule Wallabidi.V2.CDPClient do
   @spec cookies(Session.t()) :: {:ok, [map]} | {:error, term}
   def cookies(%Session{} = session) do
     case cdp_send(session, "Network.getCookies", %{}) do
-      {:ok, %{"cookies" => cookies}} when is_list(cookies) -> {:ok, cookies}
-      {:ok, _} -> {:ok, []}
-      error -> error
+      {:ok, %{"cookies" => cookies}} when is_list(cookies) ->
+        {:ok, Enum.map(cookies, &normalize_cookie/1)}
+
+      {:ok, _} ->
+        {:ok, []}
+
+      error ->
+        error
+    end
+  end
+
+  # CDP returns `expires`, WebDriver tests assert `expiry`.
+  defp normalize_cookie(cookie) do
+    case Map.pop(cookie, "expires") do
+      {nil, c} -> c
+      {-1, c} -> c
+      {expires, c} -> Map.put(c, "expiry", trunc(expires))
     end
   end
 
@@ -607,8 +672,15 @@ defmodule Wallabidi.V2.CDPClient do
   def set_cookie(%Session{} = session, name, value, attrs \\ %{})
       when is_binary(name) and is_binary(value) do
     # Network.setCookie requires either `url` or `domain` — pad in the
-    # current URL when callers haven't supplied one.
+    # current URL when callers haven't supplied one. Also translate
+    # WebDriver-style `:expiry` → CDP's `:expires`.
     attrs = Map.new(attrs)
+
+    attrs =
+      case Map.pop(attrs, :expiry) do
+        {nil, m} -> m
+        {expiry, m} -> Map.put_new(m, :expires, expiry)
+      end
 
     attrs =
       if Map.has_key?(attrs, :url) or Map.has_key?(attrs, "url") or

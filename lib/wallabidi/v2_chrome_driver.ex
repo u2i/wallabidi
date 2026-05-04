@@ -26,6 +26,7 @@ defmodule Wallabidi.V2ChromeDriver do
   alias Wallabidi.V2.Session, as: V2Session
   alias Wallabidi.V2.WebSocket
   alias Wallabidi.V2Chrome.SharedConnection
+  import Wallabidi.Driver.LogChecker
 
   @base_user_agent "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 " <>
                      "(KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36"
@@ -103,15 +104,40 @@ defmodule Wallabidi.V2ChromeDriver do
 
       teardown = fn _session -> teardown_browser_context(ws_pid, ctx_id) end
 
+      caller = Keyword.get(opts, :owner, self())
+
       case V2Session.start_link(
              ws_pid: ws_pid,
              init_fun: fn -> {:ok, session_struct} end,
-             teardown_fun: teardown
+             teardown_fun: teardown,
+             owner: caller
            ) do
         {:ok, session} ->
           :ok = CDPClient.enable_page_lifecycle_events(session)
           :ok = CDPClient.install_bootstrap(session)
           :ok = CDPClient.enable_frame_tracking(session)
+
+          # Forward console + exception events to the test caller's
+          # mailbox so LogChecker.check_logs! can drain them after each
+          # operation. Subscribe at the V2.WebSocket layer so the test
+          # process is the direct subscriber (V2.Session normally
+          # consumes events itself, but LogChecker reads from the
+          # caller's mailbox).
+          _ =
+            WebSocket.subscribe(
+              ws_pid,
+              "Runtime.consoleAPICalled",
+              session_id,
+              caller
+            )
+
+          _ =
+            WebSocket.subscribe(
+              ws_pid,
+              "Runtime.exceptionThrown",
+              session_id,
+              caller
+            )
 
           if metadata = Keyword.get(opts, :metadata) do
             ua = Metadata.append(@base_user_agent, metadata)
@@ -160,7 +186,50 @@ defmodule Wallabidi.V2ChromeDriver do
   # ----- Driver behaviour delegation (same shape as V2Driver) -----
 
   @impl true
-  def visit(%Session{} = session, url), do: CDPClient.visit(session, url)
+  def visit(%Session{} = session, url) do
+    check_logs!(session, fn ->
+      result = CDPClient.visit(session, url)
+      _ = await_liveview_connected_v2(session)
+      result
+    end)
+  end
+
+  # V2 equivalent of LiveViewAware.await_liveview_connected/2 that
+  # doesn't depend on Wallabidi.Protocol (V2 sessions have
+  # protocol: nil). Returns quickly when no LiveView marker is in the
+  # DOM; otherwise polls liveSocket.main.joinPending up to `timeout`.
+  defp await_liveview_connected_v2(%Session{} = session) do
+    timeout = 5_000
+
+    js = """
+    new Promise(function(resolve) {
+      var deadline = Date.now() + #{timeout};
+      function check() {
+        if (document.readyState === 'loading') {
+          if (Date.now() > deadline) return resolve(false);
+          return setTimeout(check, 20);
+        }
+        if (!document.querySelector('[data-phx-session]')) {
+          return resolve('no-liveview');
+        }
+        var ls = window.liveSocket;
+        if (ls && ls.main && !ls.main.joinPending) return resolve(true);
+        if (Date.now() > deadline) return resolve(false);
+        setTimeout(check, 30);
+      }
+      check();
+    })
+    """
+
+    _ =
+      CDPClient.cdp_send(session, "Runtime.evaluate", %{
+        expression: js,
+        awaitPromise: true,
+        returnByValue: true
+      })
+
+    :ok
+  end
 
   @impl true
   def current_url(%Session{} = session), do: CDPClient.current_url(session)
@@ -210,8 +279,20 @@ defmodule Wallabidi.V2ChromeDriver do
     do: CDPClient.set_window_size(Element.root_session(parent), w, h)
 
   @impl true
-  def click(%Element{} = element),
-    do: CDPClient.click(Element.root_session(element), element)
+  def click(%Element{} = element) do
+    session = Element.root_session(element)
+
+    check_logs!(session, fn ->
+      # click_aware does pre_page_id capture + classify + click + page_ready
+      # await, which is what tests like ClickButton (form submit -> nav)
+      # expect. For non-navigating clicks classification is "none" and the
+      # await is skipped.
+      case CDPClient.click_aware(session, element) do
+        {:ok, _classification} -> {:ok, nil}
+        err -> err
+      end
+    end)
+  end
 
   @impl true
   def text(%Element{} = element),
@@ -331,6 +412,12 @@ defmodule Wallabidi.V2ChromeDriver do
   def element_location(%Element{} = element), do: CDPClient.element_location(element)
 
   def blank_page?(%Session{} = session), do: CDPClient.blank_page?(session)
+
+  # LogChecker calls driver.parse_log/1 on each drained log entry —
+  # Wallabidi.Chrome.Logger raises Wallabidi.JSError on SEVERE entries
+  # and prints console output, which is exactly what JSErrorsTest
+  # checks for.
+  defdelegate parse_log(log), to: Wallabidi.Chrome.Logger
 
   # ----- Dialog handling (uses Page.handleJavaScriptDialog) -----
   @impl true

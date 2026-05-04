@@ -92,14 +92,38 @@ defmodule Wallabidi.Protocol do
   def eval(%Session{protocol: mod} = session, js) when not is_nil(mod),
     do: mod.eval(session, js)
 
+  def eval(%Session{driver: driver} = session, js) when driver in [Wallabidi.V2Driver, Wallabidi.V2ChromeDriver],
+    do: Wallabidi.V2.CDPClient.evaluate(session, js)
+
   @spec eval_async(Session.t(), String.t(), timeout()) :: result
-  def eval_async(%Session{protocol: mod} = session, js, timeout \\ 10_000)
-      when not is_nil(mod),
-      do: mod.eval_async(session, js, timeout)
+  def eval_async(session, js, timeout \\ 10_000)
+
+  def eval_async(%Session{protocol: mod} = session, js, timeout) when not is_nil(mod),
+    do: mod.eval_async(session, js, timeout)
+
+  def eval_async(%Session{driver: driver} = session, js, _timeout)
+      when driver in [Wallabidi.V2Driver, Wallabidi.V2ChromeDriver] do
+    # V2.CDPClient.evaluate_async wraps the body so the caller's
+    # final `arguments[N]` resolves the awaited promise. The legacy
+    # eval_async expects the JS to itself be a Promise — unwrap.
+    case Wallabidi.V2.CDPClient.cdp_send(session, "Runtime.evaluate", %{
+           expression: js,
+           awaitPromise: true,
+           returnByValue: true
+         }) do
+      {:ok, %{"result" => %{"value" => v}}} -> {:ok, v}
+      {:ok, %{"result" => %{"type" => "undefined"}}} -> {:ok, nil}
+      other -> other
+    end
+  end
 
   @spec current_url(Session.t()) :: result
   def current_url(%Session{protocol: mod} = session) when not is_nil(mod),
     do: mod.current_url(session)
+
+  def current_url(%Session{driver: driver} = session)
+      when driver in [Wallabidi.V2Driver, Wallabidi.V2ChromeDriver],
+      do: Wallabidi.V2.CDPClient.current_url(session)
 
   @spec subscribe(Session.t(), semantic_event) :: :ok
   def subscribe(%Session{protocol: mod} = session, event)
