@@ -164,9 +164,22 @@ defmodule Wallabidi.V2.CDPClient do
       {:ok, _} = ok ->
         ok
 
+      {:error, {_code, msg}} = err when is_binary(msg) ->
+        # CDP signals a stale objectId via these messages. Translating
+        # to :stale_reference lets Element.handle_*_result raise the
+        # expected StaleReferenceError instead of a generic Runtime.
+        if stale_marker?(msg), do: {:error, :stale_reference}, else: err
+
       error ->
         error
     end
+  end
+
+  defp stale_marker?(msg) when is_binary(msg) do
+    String.contains?(msg, "Cannot find context") or
+      String.contains?(msg, "No node with given id") or
+      String.contains?(msg, "Could not find object with given id") or
+      String.contains?(msg, "Object has been released")
   end
 
   @doc "Returns the element's visible text content (`innerText` / fallback)."
@@ -533,11 +546,23 @@ defmodule Wallabidi.V2.CDPClient do
   """
   @spec click(Session.t(), Element.t()) :: {:ok, nil} | {:error, term}
   def click(%Session{} = session, %Element{} = element) do
+    # Route through the bootstrap's W.clickEl so <option> clicks
+    # update the parent <select>'s value + dispatch 'change' (a plain
+    # `el.click()` on an option doesn't change selection in headless
+    # Chrome). For everything else this is the same scroll+focus+click.
     case call_on_element(
            session,
            element,
            """
            function() {
+             if (window.__w && window.__w.clickEl) {
+               if (this.tagName !== 'OPTION') {
+                 this.scrollIntoView({block: 'center', inline: 'nearest'});
+                 if (typeof this.focus === 'function') this.focus();
+               }
+               window.__w.clickEl(this);
+               return null;
+             }
              this.scrollIntoView({block: 'center', inline: 'nearest'});
              if (typeof this.focus === 'function') this.focus();
              this.click();
@@ -840,19 +865,19 @@ defmodule Wallabidi.V2.CDPClient do
   defp final_sync_exec(%Session{} = session, ops_json, parent_id) do
     # When the original query was scoped to a parent element, run the
     # final exec via callFunctionOn so `this` is the parent — keeping
-    # the scoping intent intact.
-    body = "function() { return window.__w ? window.__w.exec(#{ops_json}, this).els : []; }"
-
+    # the scoping intent intact. Document scope passes null root so
+    # the bootstrap's `ctx = root || document` falls through to document.
     eval_result =
       if parent_id do
         cdp_send(session, "Runtime.callFunctionOn", %{
           objectId: parent_id,
-          functionDeclaration: body,
+          functionDeclaration:
+            "function() { return window.__w ? window.__w.exec(#{ops_json}, this).els : []; }",
           returnByValue: false
         })
       else
         cdp_send(session, "Runtime.evaluate", %{
-          expression: "(#{body})()",
+          expression: "(window.__w ? window.__w.exec(#{ops_json}, null).els : [])",
           returnByValue: false
         })
       end

@@ -372,6 +372,18 @@ defmodule Wallabidi.V2.Session do
 
     case init_fun.() do
       {:ok, %Wallabidi.Session{} = session} ->
+        # Tag with this GenServer's pid so callers can find/stop it.
+        # Register with SessionStore so Wallabidi.Feature can discover
+        # active sessions when taking failure screenshots / sandbox
+        # cleanup. Mirrors what SessionProcess does for legacy drivers.
+        session = %{session | pid: self()}
+
+        try do
+          Wallabidi.SessionStore.register(session, owner)
+        catch
+          :exit, _ -> :ok
+        end
+
         state = %__MODULE__{
           session: session,
           ws_pid: ws_pid,
@@ -636,6 +648,12 @@ defmodule Wallabidi.V2.Session do
 
   @impl true
   def terminate(_reason, %{teardown_fun: fun, session: session}) when is_function(fun, 1) do
+    try do
+      Wallabidi.SessionStore.unregister(session)
+    catch
+      :exit, _ -> :ok
+    end
+
     try do
       fun.(session)
     rescue

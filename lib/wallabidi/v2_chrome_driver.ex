@@ -266,6 +266,15 @@ defmodule Wallabidi.V2ChromeDriver do
     end
   end
 
+  def take_screenshot(%Element{} = element) do
+    # Element-scoped screenshot — fall back to a full-page capture on
+    # the element's session. Cropping to the element's bounding rect
+    # would require Page.captureScreenshot's `clip` option threaded
+    # through V2.CDPClient; not strictly required for the tests we
+    # gate on today.
+    take_screenshot(Element.root_session(element))
+  end
+
   @impl true
   def get_window_size(%Session{} = parent) do
     case CDPClient.get_window_size(Element.root_session(parent)) do
