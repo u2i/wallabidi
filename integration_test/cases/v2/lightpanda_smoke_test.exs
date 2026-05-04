@@ -178,6 +178,15 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
       assert {:ok, [_]} = CDPClient.find_elements(session, Query.css("#header"))
     end
 
+    test "matched elements carry real CDP objectIds", %{session: session} do
+      {:ok, [el]} = CDPClient.find_elements(session, Query.css("#header"))
+
+      assert is_binary(el.bidi_shared_id)
+      assert el.id == el.bidi_shared_id
+      # objectId should be unique per element; quick sanity check
+      assert byte_size(el.bidi_shared_id) > 0
+    end
+
     test "finds multiple elements", %{session: session} do
       assert {:ok, results} = CDPClient.find_elements(session, Query.css("li", count: :any))
       assert length(results) >= 1

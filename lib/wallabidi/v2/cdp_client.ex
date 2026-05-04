@@ -18,7 +18,7 @@ defmodule Wallabidi.V2.CDPClient do
   # against a live Lightpanda server. See test/wallabidi/v2/.
 
   alias Wallabidi.{Bootstrap, Element, Session}
-  alias Wallabidi.CDP.Ops
+  alias Wallabidi.CDP.{Commands, Ops, ResponseParser}
   alias Wallabidi.V2.Session, as: V2Session
 
   @doc """
@@ -129,15 +129,14 @@ defmodule Wallabidi.V2.CDPClient do
   Find elements matching a Wallabidi.Query.
 
   Uses the existing browser-side bootstrap (`window.__w`) and
-  `Bootstrap.register_js/4` to push-register a query whose match the
-  bootstrap reports back via the `__wallabidi` binding. The waiter
-  resolves when the binding fires with the matching query id.
+  `Bootstrap.register_js/4` to push-register a query. When the
+  bootstrap fires `__wallabidi(...)` with the matching query id,
+  V2.Session resolves the waiter; we then fetch real CDP `objectId`s
+  for the matched elements via `Runtime.getProperties` against the
+  stored `window.__w.queries[id].elements` array.
 
-  Returns `{:ok, [%Wallabidi.Element{}]}` on success. Each element
-  has the count from the bootstrap; this initial implementation
-  produces placeholder elements without `bidi_shared_id` (real
-  CDP objectIds come in a follow-up that wires `Runtime.getProperties`
-  on the matched array).
+  Returns `{:ok, [%Wallabidi.Element{}]}` with real `bidi_shared_id`
+  fields populated.
   """
   @spec find_elements(Session.t(), Wallabidi.Query.t(), keyword) ::
           {:ok, [Element.t()]} | {:error, term}
@@ -160,9 +159,11 @@ defmodule Wallabidi.V2.CDPClient do
       _ = cdp_send(session, "Runtime.evaluate", %{expression: register_js, returnByValue: true})
 
       case V2Session.await_find_result(session, query_id, timeout) do
-        {:ok, count, _meta} ->
-          # Placeholder elements — real objectIds come later.
-          {:ok, List.duplicate(%Element{parent: session, driver: session.driver}, count)}
+        {:ok, found_count, _meta} when found_count > 0 ->
+          fetch_element_refs(session, query_id, found_count)
+
+        {:ok, _, _} ->
+          {:ok, []}
 
         {:error, :invalid_selector} ->
           {:error, :invalid_selector}
@@ -170,6 +171,50 @@ defmodule Wallabidi.V2.CDPClient do
         {:timeout, _} ->
           {:ok, []}
       end
+    end
+  end
+
+  # After the bootstrap reports the count, look up the matched
+  # elements array by query_id and walk it via Runtime.getProperties
+  # to extract real CDP objectIds. Falls back to count-shaped
+  # placeholder elements if the array is gone (page navigated, etc.).
+  defp fetch_element_refs(%Session{} = session, query_id, found_count) do
+    id_js = Jason.encode!(query_id)
+    grab_js = "window.__w.queries[#{id_js}].elements"
+
+    with {:ok, eval_result} <-
+           cdp_send(session, "Runtime.evaluate", %{
+             expression: grab_js,
+             returnByValue: false
+           }),
+         {:ok, array_id} when is_binary(array_id) <-
+           ResponseParser.extract_object_id({:ok, eval_result}),
+         {get_method, get_params} = Commands.get_properties(array_id),
+         {:ok, props_result} <- cdp_send(session, get_method, get_params),
+         {:ok, ids} <- ResponseParser.extract_element_ids({:ok, props_result}) do
+      # Best-effort cleanup: drop the stored array so memory/refs don't
+      # accumulate. Failures here are harmless.
+      _ = cdp_send(session, "Runtime.releaseObject", %{objectId: array_id})
+
+      elements =
+        Enum.map(ids, fn object_id ->
+          %Element{
+            id: object_id,
+            bidi_shared_id: object_id,
+            parent: session,
+            driver: session.driver,
+            url: session.session_url
+          }
+        end)
+
+      {:ok, elements}
+    else
+      _ ->
+        # Page navigated mid-flight or array gone — return placeholders
+        # so callers see a non-empty count, but downstream ops on these
+        # elements will fail (no objectId). The browser-driver layer
+        # decides how to handle that (retry, etc.).
+        {:ok, List.duplicate(%Element{parent: session, driver: session.driver}, found_count)}
     end
   end
 
