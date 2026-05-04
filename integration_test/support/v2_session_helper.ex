@@ -58,6 +58,7 @@ defmodule Wallabidi.Integration.V2SessionHelper do
 
     :ok = Wallabidi.V2.CDPClient.enable_page_lifecycle_events(session)
     :ok = Wallabidi.V2.CDPClient.install_bootstrap(session)
+    :ok = Wallabidi.V2.CDPClient.enable_frame_tracking(session)
 
     ExUnit.Callbacks.on_exit(fn ->
       cleanup(session, ws_pid, server)

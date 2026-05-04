@@ -56,7 +56,17 @@ defmodule Wallabidi.V2.Session do
     # click flow can capture pre_page_id BEFORE issuing the click and
     # await_page_ready_after BLOCKs until a different pageId arrives.
     last_page_id: nil,
-    page_ready_waiter: nil
+    page_ready_waiter: nil,
+    # Frame stack. Empty list = root frame (`document`); nested entries
+    # represent each `focus_frame` push. Each entry is the frame's
+    # `executionContextId` (CDP-assigned int) so subsequent JS evals
+    # can target it via Runtime.evaluate's `contextId` parameter.
+    frame_stack: [],
+    # Map of `frameId` → `executionContextId`, populated as
+    # Runtime.executionContextCreated events arrive. We need this
+    # because Page.frameNavigated gives us a `frameId` but
+    # Runtime.evaluate wants an `executionContextId`.
+    frame_contexts: %{}
   ]
 
   @type t :: %__MODULE__{}
@@ -228,6 +238,71 @@ defmodule Wallabidi.V2.Session do
   end
 
   @doc """
+  Returns the currently-focused frame's `executionContextId` (or
+  `nil` for the root frame).
+
+  Used internally by V2.CDPClient to target Runtime.evaluate /
+  callFunctionOn at the right frame after `focus_frame/2`.
+  """
+  @spec current_context_id(Wallabidi.Session.t()) :: integer | nil
+  def current_context_id(%Wallabidi.Session{pid: pid}) when is_pid(pid) do
+    GenServer.call(pid, :current_context_id)
+  catch
+    :exit, _ -> nil
+  end
+
+  @doc """
+  Pushes a frame onto the focus stack. Subsequent JS evaluations run
+  inside that frame's realm.
+
+  `context_id` is the frame's `executionContextId` (an integer
+  assigned by Chrome's `Runtime.executionContextCreated` event).
+  V2.CDPClient resolves the right context_id from a frame element
+  before calling this.
+  """
+  @spec push_frame(Wallabidi.Session.t(), integer) :: :ok
+  def push_frame(%Wallabidi.Session{pid: pid}, context_id)
+      when is_pid(pid) and is_integer(context_id) do
+    GenServer.call(pid, {:push_frame, context_id})
+  catch
+    :exit, _ -> :ok
+  end
+
+  @doc "Pops the top frame off the focus stack (no-op at root)."
+  @spec pop_frame(Wallabidi.Session.t()) :: :ok
+  def pop_frame(%Wallabidi.Session{pid: pid}) when is_pid(pid) do
+    GenServer.call(pid, :pop_frame)
+  catch
+    :exit, _ -> :ok
+  end
+
+  @doc """
+  Records the `frameId → executionContextId` mapping for a frame.
+  V2.CDPClient calls this when handling `Runtime.executionContextCreated`
+  events so future `focus_frame` calls can resolve a frame element to
+  its execution context.
+  """
+  @spec record_frame_context(Wallabidi.Session.t(), String.t(), integer) :: :ok
+  def record_frame_context(%Wallabidi.Session{pid: pid}, frame_id, context_id)
+      when is_pid(pid) and is_binary(frame_id) and is_integer(context_id) do
+    GenServer.call(pid, {:record_frame_context, frame_id, context_id})
+  catch
+    :exit, _ -> :ok
+  end
+
+  @doc """
+  Looks up the `executionContextId` for a given frameId. Returns
+  `nil` if not yet recorded.
+  """
+  @spec lookup_frame_context(Wallabidi.Session.t(), String.t()) :: integer | nil
+  def lookup_frame_context(%Wallabidi.Session{pid: pid}, frame_id)
+      when is_pid(pid) and is_binary(frame_id) do
+    GenServer.call(pid, {:lookup_frame_context, frame_id})
+  catch
+    :exit, _ -> nil
+  end
+
+  @doc """
   Stops the Session GenServer. `terminate/2` runs the teardown_fun.
   """
   def stop(%Wallabidi.Session{pid: pid}) when is_pid(pid) do
@@ -328,6 +403,32 @@ defmodule Wallabidi.V2.Session do
     end
   end
 
+  def handle_call(:current_context_id, _from, state) do
+    {:reply, List.first(state.frame_stack), state}
+  end
+
+  def handle_call({:push_frame, context_id}, _from, state) do
+    {:reply, :ok, %{state | frame_stack: [context_id | state.frame_stack]}}
+  end
+
+  def handle_call(:pop_frame, _from, state) do
+    new_stack =
+      case state.frame_stack do
+        [] -> []
+        [_ | rest] -> rest
+      end
+
+    {:reply, :ok, %{state | frame_stack: new_stack}}
+  end
+
+  def handle_call({:record_frame_context, frame_id, context_id}, _from, state) do
+    {:reply, :ok, %{state | frame_contexts: Map.put(state.frame_contexts, frame_id, context_id)}}
+  end
+
+  def handle_call({:lookup_frame_context, frame_id}, _from, state) do
+    {:reply, Map.get(state.frame_contexts, frame_id), state}
+  end
+
   @impl true
   def handle_info({:v2_response, wire_id, result}, state) do
     case Map.pop(state.pending_calls, wire_id) do
@@ -364,6 +465,45 @@ defmodule Wallabidi.V2.Session do
     else
       {:noreply, state}
     end
+  end
+
+  def handle_info({:v2_event, "Runtime.executionContextCreated", event}, state) do
+    # Chrome assigns a fresh executionContextId for each frame's main
+    # JS realm. Record `auxData.frameId → contextId` so focus_frame
+    # can resolve a frame element to its execution context.
+    ctx = get_in(event, ["params", "context"]) || %{}
+    aux = Map.get(ctx, "auxData", %{})
+    context_id = ctx["id"]
+    frame_id = aux["frameId"]
+
+    state =
+      if is_integer(context_id) and is_binary(frame_id) do
+        %{state | frame_contexts: Map.put(state.frame_contexts, frame_id, context_id)}
+      else
+        state
+      end
+
+    {:noreply, state}
+  end
+
+  def handle_info({:v2_event, "Runtime.executionContextDestroyed", event}, state) do
+    # Drop the destroyed contextId from frame_contexts. This prevents
+    # focus_frame from handing out stale contexts after a navigation.
+    destroyed = get_in(event, ["params", "executionContextId"])
+
+    state =
+      if is_integer(destroyed) do
+        contexts =
+          state.frame_contexts
+          |> Enum.reject(fn {_frame_id, ctx_id} -> ctx_id == destroyed end)
+          |> Map.new()
+
+        %{state | frame_contexts: contexts}
+      else
+        state
+      end
+
+    {:noreply, state}
   end
 
   def handle_info({:v2_event, _method, _event}, state) do

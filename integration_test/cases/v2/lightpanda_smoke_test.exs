@@ -422,6 +422,59 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
     end
   end
 
+  describe "frame switching (mechanics)" do
+    setup %{session: session} do
+      base = Application.fetch_env!(:wallabidi, :base_url)
+      :ok = CDPClient.visit(session, base <> "index.html")
+      :ok
+    end
+
+    test "current_context_id is nil at root", %{session: session} do
+      assert nil == V2Session.current_context_id(session)
+    end
+
+    test "push_frame + pop_frame manipulates the stack", %{session: session} do
+      :ok = V2Session.push_frame(session, 42)
+      assert 42 == V2Session.current_context_id(session)
+
+      :ok = V2Session.push_frame(session, 99)
+      assert 99 == V2Session.current_context_id(session)
+
+      :ok = V2Session.pop_frame(session)
+      assert 42 == V2Session.current_context_id(session)
+
+      :ok = V2Session.pop_frame(session)
+      assert nil == V2Session.current_context_id(session)
+    end
+
+    test "pop_frame at root is a no-op", %{session: session} do
+      :ok = V2Session.pop_frame(session)
+      assert nil == V2Session.current_context_id(session)
+    end
+
+    test "focus_frame_by_id with an unknown frame returns :unknown_frame", %{
+      session: session
+    } do
+      assert {:error, :unknown_frame} =
+               CDPClient.focus_frame_by_id(session, "no-such-frame-id")
+    end
+
+    test "evaluate/2 honours the current frame context", %{session: session} do
+      # At root: evaluate works as usual.
+      assert {:ok, "object"} = CDPClient.evaluate(session, "typeof window.__w")
+
+      # Push a bogus frame context. evaluate now targets that contextId,
+      # which doesn't exist → CDP returns an error rather than running
+      # against root. This proves the contextId is being threaded
+      # through the params.
+      :ok = V2Session.push_frame(session, 999_999)
+      assert {:error, _} = CDPClient.evaluate(session, "1 + 1")
+
+      :ok = V2Session.pop_frame(session)
+      assert {:ok, 2} = CDPClient.evaluate(session, "1 + 1")
+    end
+  end
+
   describe "input ops (set_value, clear, send_keys)" do
     setup %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)

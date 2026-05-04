@@ -420,6 +420,52 @@ defmodule Wallabidi.V2.CDPClient do
     end
   end
 
+  # ----- Frame switching -----
+
+  @doc """
+  Enables CDP's Page domain (already done by enable_page_lifecycle_events)
+  AND subscribes to Runtime execution-context events so V2.Session can
+  track the frameId → executionContextId mapping needed by
+  focus_frame_by_id/2.
+
+  Idempotent. Best to call once at session bootstrap, after
+  install_bootstrap/1.
+  """
+  @spec enable_frame_tracking(Session.t()) :: :ok | {:error, term}
+  def enable_frame_tracking(%Session{} = session) do
+    with :ok <- V2Session.subscribe(session, "Runtime.executionContextCreated"),
+         :ok <- V2Session.subscribe(session, "Runtime.executionContextDestroyed") do
+      :ok
+    end
+  end
+
+  @doc """
+  Push a frame's `executionContextId` (resolved from its `frameId`)
+  onto the focus stack. Subsequent JS evaluations target this frame.
+
+  Returns `:ok` on success, `{:error, :unknown_frame}` if no
+  execution context has been observed for `frame_id` yet — typically
+  because the frame hasn't loaded.
+  """
+  @spec focus_frame_by_id(Session.t(), String.t()) :: :ok | {:error, term}
+  def focus_frame_by_id(%Session{} = session, frame_id) when is_binary(frame_id) do
+    case V2Session.lookup_frame_context(session, frame_id) do
+      nil ->
+        {:error, :unknown_frame}
+
+      context_id when is_integer(context_id) ->
+        V2Session.push_frame(session, context_id)
+        :ok
+    end
+  end
+
+  @doc "Pops the top frame off the focus stack (no-op at root)."
+  @spec focus_parent_frame(Session.t()) :: :ok
+  def focus_parent_frame(%Session{} = session) do
+    V2Session.pop_frame(session)
+    :ok
+  end
+
   # ----- Cookies -----
 
   @doc """
@@ -713,10 +759,13 @@ defmodule Wallabidi.V2.CDPClient do
   """
   @spec evaluate(Session.t(), String.t()) :: {:ok, term} | {:error, term}
   def evaluate(%Session{} = session, expression) when is_binary(expression) do
-    case cdp_send(session, "Runtime.evaluate", %{
-           expression: expression,
-           returnByValue: true
-         }) do
+    params =
+      case V2Session.current_context_id(session) do
+        nil -> %{expression: expression, returnByValue: true}
+        ctx -> %{expression: expression, returnByValue: true, contextId: ctx}
+      end
+
+    case cdp_send(session, "Runtime.evaluate", params) do
       {:ok, %{"result" => %{"value" => value}}} ->
         {:ok, value}
 
