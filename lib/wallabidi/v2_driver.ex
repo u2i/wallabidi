@@ -55,9 +55,11 @@ defmodule Wallabidi.V2Driver do
 
   # Lightpanda's --cdp-max-connections defaults to 16, which gets hit
   # at mc=16 plus a few session-isolation tests creating extra
-  # sessions. Bump it so the shared-binary PerSessionWS model can run
-  # safely at peak ExUnit concurrency.
-  @cdp_max_connections 64
+  # sessions. Bump it so the shared-binary PerSession model can run
+  # safely at peak ExUnit concurrency. Higher values (e.g. 64) caused
+  # measurable per-session slowdown in benchmarks, so we keep this
+  # as low as it can go while still passing the suite.
+  @cdp_max_connections 24
 
   @impl Supervisor
   def init(_) do
@@ -89,8 +91,55 @@ defmodule Wallabidi.V2Driver do
 
   @impl true
   def start_session(opts \\ []) do
-    {transport_mod, transport_opts} = pick_transport(opts)
+    case pick_transport(opts) do
+      {:per_session, ws_url} ->
+        # Single-actor-per-session — actor IS the WebSocket. One hop
+        # per CDP call. See V2.Transport.PerSession.
+        start_per_session(opts, ws_url)
 
+      {transport_mod, transport_opts} ->
+        # Two-actor shape: separate V2.WebSocket (acquired by the
+        # transport) + V2.Session linked to it. SharedWS / IsolatedProcess.
+        start_legacy(opts, transport_mod, transport_opts)
+    end
+  end
+
+  defp start_per_session(opts, ws_url) do
+    session_struct = %Session{
+      id: "v2drv-#{System.unique_integer([:positive])}",
+      url: "about:blank",
+      session_url: "about:blank",
+      driver: __MODULE__,
+      protocol: nil,
+      browsing_context: nil,
+      capabilities: %{
+        flat_session_id: true,
+        # Lightpanda's JS engine doesn't ship a real document.evaluate
+        # — V2.CDPClient.visit injects wgxpath after each page load.
+        needs_xpath_polyfill: true
+      }
+    }
+
+    with {:ok, session} <-
+           Transport.PerSession.start_session(
+             ws_url: ws_url,
+             session_struct: session_struct,
+             owner: Keyword.get(opts, :owner, self())
+           ) do
+      if window_size = Keyword.get(opts, :window_size) do
+        _ =
+          CDPClient.set_window_size(
+            session,
+            window_size[:width],
+            window_size[:height]
+          )
+      end
+
+      {:ok, session}
+    end
+  end
+
+  defp start_legacy(opts, transport_mod, transport_opts) do
     with {:ok, acquired} <- transport_mod.acquire(transport_opts) do
       session_struct = %Session{
         id: "v2drv-#{System.unique_integer([:positive])}",
@@ -120,8 +169,8 @@ defmodule Wallabidi.V2Driver do
 
   # Pick the transport based on what's running:
   #
-  #   * `:ws_url` opt    → IsolatedProcess (caller already has a URL)
-  #   * shared LP server → PerSessionWS (multiplex over the singleton)
+  #   * shared LP server → PerSession (single-actor model — fast path)
+  #   * `:ws_url` opt    → IsolatedProcess fallback
   #   * lightpanda dep   → IsolatedProcess (spawn a fresh binary)
   defp pick_transport(opts) do
     base_caps = %{
@@ -132,16 +181,15 @@ defmodule Wallabidi.V2Driver do
 
     cond do
       url = Keyword.get(opts, :ws_url) ->
+        # Caller-supplied URL: ad-hoc test or external Lightpanda. Use
+        # IsolatedProcess (pre-existing two-actor shape) — it's the
+        # safe choice when we don't own the binary.
         {Transport.IsolatedProcess, [ws_url: url, extra_capabilities: base_caps]}
 
       Process.whereis(@lightpanda_server_name) ->
-        {Transport.PerSessionWS,
-         [
-           url_fun: fn ->
-             apply(@lightpanda_server, :ws_url, [@lightpanda_server_name])
-           end,
-           extra_capabilities: base_caps
-         ]}
+        # Shared singleton spawned by the supervisor — fast path.
+        ws_url = apply(@lightpanda_server, :ws_url, [@lightpanda_server_name])
+        {:per_session, ws_url}
 
       Code.ensure_loaded?(@lightpanda_server) ->
         {Transport.IsolatedProcess,

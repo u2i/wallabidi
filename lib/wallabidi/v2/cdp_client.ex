@@ -954,30 +954,30 @@ defmodule Wallabidi.V2.CDPClient do
 
       :ok = Protocol.register_find(session, query_id, timeout)
 
-      # Fire-and-forget: register the query and call W.check(). For
-      # element-scoped searches we use Runtime.callFunctionOn so the
-      # bootstrap's `this` is the parent element. Document-level
-      # searches use plain Runtime.evaluate.
-      _ =
-        if ops.parent_id do
-          cdp_send(session, "Runtime.callFunctionOn", %{
-            objectId: ops.parent_id,
-            functionDeclaration: "function() { #{register_js} }",
-            returnByValue: true
-          })
-        else
-          # Thread the active frame's executionContextId so find runs
-          # inside the focused iframe (set via focus_frame_by_id).
-          base = %{expression: register_js, returnByValue: true}
+      # Fire-and-forget: register the query and call W.check(). The
+      # response carries no info we need — what matters is the binding
+      # event (Runtime.bindingCalled), which V2.Transport.PerSession
+      # sees on its own mailbox. CDP serializes commands per session,
+      # so subsequent operations still observe this register's effect.
+      if ops.parent_id do
+        cdp_cast(session, "Runtime.callFunctionOn", %{
+          objectId: ops.parent_id,
+          functionDeclaration: "function() { #{register_js} }",
+          returnByValue: true
+        })
+      else
+        # Thread the active frame's executionContextId so find runs
+        # inside the focused iframe (set via focus_frame_by_id).
+        base = %{expression: register_js, returnByValue: true}
 
-          params =
-            case Protocol.current_context_id(session) do
-              nil -> base
-              ctx -> Map.put(base, :contextId, ctx)
-            end
+        params =
+          case Protocol.current_context_id(session) do
+            nil -> base
+            ctx -> Map.put(base, :contextId, ctx)
+          end
 
-          cdp_send(session, "Runtime.evaluate", params)
-        end
+        cdp_cast(session, "Runtime.evaluate", params)
+      end
 
       case Protocol.await_find_result(session, query_id, timeout) do
         {:ok, found_count, _meta} when found_count > 0 ->
@@ -1073,8 +1073,8 @@ defmodule Wallabidi.V2.CDPClient do
          {:ok, props_result} <- cdp_send(session, get_method, get_params),
          {:ok, ids} <- ResponseParser.extract_element_ids({:ok, props_result}) do
       # Best-effort cleanup: drop the stored array so memory/refs don't
-      # accumulate. Failures here are harmless.
-      _ = cdp_send(session, "Runtime.releaseObject", %{objectId: array_id})
+      # accumulate. Fire-and-forget — we don't act on the response.
+      cdp_cast(session, "Runtime.releaseObject", %{objectId: array_id})
 
       elements =
         Enum.map(ids, fn object_id ->
