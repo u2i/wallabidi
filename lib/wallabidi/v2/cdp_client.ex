@@ -268,6 +268,12 @@ defmodule Wallabidi.V2.CDPClient do
   @doc """
   Find elements matching a Wallabidi.Query.
 
+  `parent` is either a `Session` (search from `document`) or an
+  `Element` (search within that element's subtree). Element-scoped
+  searches use the bootstrap's `root_js="this"` form, which compiles
+  to `callFunctionOn(parent.objectId)` so the query runs against the
+  parent in its own realm.
+
   Uses the existing browser-side bootstrap (`window.__w`) and
   `Bootstrap.register_js/4` to push-register a query. When the
   bootstrap fires `__wallabidi(...)` with the matching query id,
@@ -278,13 +284,14 @@ defmodule Wallabidi.V2.CDPClient do
   Returns `{:ok, [%Wallabidi.Element{}]}` with real `bidi_shared_id`
   fields populated.
   """
-  @spec find_elements(Session.t(), Wallabidi.Query.t(), keyword) ::
+  @spec find_elements(Session.t() | Element.t(), Wallabidi.Query.t(), keyword) ::
           {:ok, [Element.t()]} | {:error, term}
-  def find_elements(%Session{} = session, %Wallabidi.Query{} = query, opts \\ []) do
+  def find_elements(parent, %Wallabidi.Query{} = query, opts \\ []) do
+    session = Element.root_session(parent)
     timeout = Keyword.get(opts, :timeout, 5_000)
     count = Wallabidi.Query.count(query)
 
-    with {:ok, ops, _validated} <- Ops.from_wallaby(session, query, nil) do
+    with {:ok, ops, _validated} <- Ops.from_wallaby(parent, query, nil) do
       query_id = "v2-q-#{System.unique_integer([:positive])}"
       ops_json = Jason.encode!(ops.ops)
       count_js = if is_integer(count), do: Integer.to_string(count), else: "null"
@@ -293,10 +300,20 @@ defmodule Wallabidi.V2.CDPClient do
 
       :ok = V2Session.register_find(session, query_id, timeout)
 
-      # Fire-and-forget: register the query and call W.check(). The
-      # actual result arrives via the binding callback, not the
-      # evaluate response — so we ignore the eval result.
-      _ = cdp_send(session, "Runtime.evaluate", %{expression: register_js, returnByValue: true})
+      # Fire-and-forget: register the query and call W.check(). For
+      # element-scoped searches we use Runtime.callFunctionOn so the
+      # bootstrap's `this` is the parent element. Document-level
+      # searches use plain Runtime.evaluate.
+      _ =
+        if ops.parent_id do
+          cdp_send(session, "Runtime.callFunctionOn", %{
+            objectId: ops.parent_id,
+            functionDeclaration: "function() { #{register_js} }",
+            returnByValue: true
+          })
+        else
+          cdp_send(session, "Runtime.evaluate", %{expression: register_js, returnByValue: true})
+        end
 
       case V2Session.await_find_result(session, query_id, timeout) do
         {:ok, found_count, _meta} when found_count > 0 ->

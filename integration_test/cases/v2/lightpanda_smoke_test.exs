@@ -286,4 +286,29 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
       assert {:ok, nil} = CDPClient.click(session, link)
     end
   end
+
+  describe "element-scoped find_elements" do
+    setup %{session: session} do
+      base = Application.fetch_env!(:wallabidi, :base_url)
+      :ok = CDPClient.visit(session, base <> "index.html")
+      :ok
+    end
+
+    test "finds within a parent element", %{session: session} do
+      {:ok, [parent]} = CDPClient.find_elements(session, Query.css("#parent"))
+      {:ok, [child]} = CDPClient.find_elements(parent, Query.css("#child"))
+
+      assert {:ok, "The Child"} = CDPClient.text(session, child)
+    end
+
+    test "scoped find ignores siblings outside the parent", %{session: session} do
+      # `<ul>` contains `<li>`s with anchor links; #parent is a separate
+      # subtree with no anchors. A scoped search for `a` inside
+      # #parent should match nothing.
+      {:ok, [parent]} = CDPClient.find_elements(session, Query.css("#parent"))
+
+      assert {:ok, []} =
+               CDPClient.find_elements(parent, Query.css("a", count: :any), timeout: 200)
+    end
+  end
 end
