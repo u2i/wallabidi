@@ -89,6 +89,50 @@ defmodule Wallabidi.V2.Transport.BiDiTest do
     assert :timeout = Protocol.await_page_load(session, "no-such-nav", "load", 200)
   end
 
+  test "bootstrap channel routes a find result", %{base_url: base_url} do
+    {:ok, session} = start(base_url)
+
+    # Navigate to a tiny page with two .item divs so the bootstrap
+    # has something to find. wait: complete so the page is interactive
+    # before we register the query.
+    html = "<html><body><div class='item'>a</div><div class='item'>b</div></body></html>"
+    data_url = "data:text/html;charset=utf-8," <> URI.encode(html)
+
+    {:ok, _} =
+      Protocol.cdp_send(
+        session,
+        "browsingContext.navigate",
+        %{
+          "context" => session.browsing_context,
+          "url" => data_url,
+          "wait" => "complete"
+        },
+        []
+      )
+
+    query_id = "q1"
+    ops_json = ~s'[["query", "css", ".item"]]'
+    register_snippet = Wallabidi.Bootstrap.register_js(query_id, ops_json, "null", "null")
+
+    fn_decl = "() => { #{register_snippet} }"
+
+    :ok = Protocol.register_find(session, query_id, 5_000)
+
+    {:ok, _} =
+      Protocol.cdp_send(
+        session,
+        "script.callFunction",
+        %{
+          "functionDeclaration" => fn_decl,
+          "awaitPromise" => false,
+          "target" => %{"context" => session.browsing_context}
+        },
+        []
+      )
+
+    assert {:ok, 2, _meta} = Protocol.await_find_result(session, query_id, 5_000)
+  end
+
   test "session shuts down cleanly when owner exits", %{base_url: base_url} do
     test_pid = self()
 

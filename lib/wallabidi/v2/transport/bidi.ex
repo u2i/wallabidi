@@ -60,7 +60,8 @@ defmodule Wallabidi.V2.Transport.BiDi do
              owner: owner
            ),
          {:ok, %{"context" => context_id}} <-
-           Protocol.cdp_send(session, "browsingContext.create", %{"type" => "tab"}, []) do
+           Protocol.cdp_send(session, "browsingContext.create", %{"type" => "tab"}, []),
+         :ok <- install_bootstrap(session) do
       session = %{session | browsing_context: context_id}
 
       # Mirror the actor's session-struct view so subsequent reads
@@ -68,6 +69,25 @@ defmodule Wallabidi.V2.Transport.BiDi do
       :ok = GenServer.call(session.pid, {:update_browsing_context, nil, context_id})
 
       {:ok, session}
+    end
+  end
+
+  # Install the shared Wallabidi.Bootstrap as a BiDi preload script.
+  # The script receives `__wallabidi` as a channel callback parameter;
+  # any payload it sends comes back as a `script.message` event that
+  # the SessionActor decodes into find / page_ready dispatches.
+  defp install_bootstrap(session) do
+    fn_decl = Wallabidi.Bootstrap.bidi_preload()
+    channel_arg = [%{"type" => "channel", "value" => %{"channel" => "__wallabidi"}}]
+
+    case Protocol.cdp_send(
+           session,
+           "script.addPreloadScript",
+           %{"functionDeclaration" => fn_decl, "arguments" => channel_arg},
+           []
+         ) do
+      {:ok, _} -> :ok
+      err -> err
     end
   end
 end

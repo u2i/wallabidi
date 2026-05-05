@@ -38,7 +38,16 @@ defmodule Wallabidi.V2.Transport.BiDi.SessionActor do
     # arrived before any caller asked. `load_waiters` is a list of
     # `{from, navigation_id_or_:any, milestone_name, timer_ref}`.
     loads: %{},
-    load_waiters: []
+    load_waiters: [],
+    # Bootstrap channel bookkeeping (Phase C). Each find_waiter is
+    # keyed by query_id, valued by `{:pending, timer_ref, from_or_nil}`
+    # or `{:resolved, result}` once the bootstrap channel has fired.
+    find_waiters: %{},
+    # The most recent pageId reported by the bootstrap.
+    last_page_id: nil,
+    # `{from, pre_page_id, timer_ref}` when someone's awaiting a
+    # page_ready transition; `nil` otherwise.
+    page_ready_waiter: nil
   ]
 
   # ----- Public API -----
@@ -93,11 +102,15 @@ defmodule Wallabidi.V2.Transport.BiDi.SessionActor do
     end
   end
 
-  # Subscribe to load milestones at session start. Server-side
-  # `session.subscribe` plus WSC-side forward-to-this-pid.
+  # Subscribe to load milestones + bootstrap channel at session start.
+  # Server-side `session.subscribe` plus WSC-side forward-to-this-pid.
   # Idempotent on the BiDi server side — calling it twice is harmless.
   defp subscribe_load_events(ws_pid) do
-    events = ["browsingContext.load", "browsingContext.domContentLoaded"]
+    events = [
+      "browsingContext.load",
+      "browsingContext.domContentLoaded",
+      "script.message"
+    ]
 
     Enum.each(events, fn ev ->
       WebSocketClient.subscribe(ws_pid, ev, self(), :global)
@@ -229,16 +242,40 @@ defmodule Wallabidi.V2.Transport.BiDi.SessionActor do
     end
   end
 
-  # ----- Phase C stub (bootstrap channel) -----
+  # ----- Bootstrap channel (Phase C) -----
 
-  def handle_call({:await_page_ready_after, _pre_page_id, _timeout_ms}, _from, state),
-    do: {:reply, :ok, state}
+  def handle_call({:await_page_ready_after, pre_page_id, timeout_ms}, from, state) do
+    cond do
+      pre_page_id != nil and state.last_page_id != nil and
+          state.last_page_id != pre_page_id ->
+        {:reply, :ok, state}
 
-  def handle_call({:register_find, _query_id, _timeout_ms}, _from, state),
-    do: {:reply, :ok, state}
+      true ->
+        timer_ref = Process.send_after(self(), {:page_ready_timeout, from}, timeout_ms)
+        {:noreply, %{state | page_ready_waiter: {from, pre_page_id, timer_ref}}}
+    end
+  end
 
-  def handle_call({:await_find_result, _query_id}, _from, state),
-    do: {:reply, {:timeout, 0}, state}
+  def handle_call({:register_find, query_id, timeout_ms}, _from, state) do
+    timer_ref = Process.send_after(self(), {:find_timeout, query_id}, timeout_ms)
+    waiters = Map.put(state.find_waiters, query_id, {:pending, timer_ref, nil})
+    {:reply, :ok, %{state | find_waiters: waiters}}
+  end
+
+  def handle_call({:await_find_result, query_id}, from, state) do
+    case Map.get(state.find_waiters, query_id) do
+      {:resolved, result} ->
+        waiters = Map.delete(state.find_waiters, query_id)
+        {:reply, result, %{state | find_waiters: waiters}}
+
+      {:pending, timer_ref, nil} ->
+        waiters = Map.put(state.find_waiters, query_id, {:pending, timer_ref, from})
+        {:noreply, %{state | find_waiters: waiters}}
+
+      nil ->
+        {:reply, {:timeout, 0}, state}
+    end
+  end
 
   # ----- Cast -----
 
@@ -271,10 +308,50 @@ defmodule Wallabidi.V2.Transport.BiDi.SessionActor do
     end
   end
 
+  def handle_info({:bidi_event, "script.message", event}, state) do
+    params = Map.get(event, "params", %{})
+
+    if params["channel"] == "__wallabidi" do
+      payload = get_in(params, ["data", "value"]) || ""
+      {:noreply, route_channel_payload(state, payload)}
+    else
+      {:noreply, state}
+    end
+  end
+
   def handle_info({:bidi_event, _method, _event}, state) do
-    # Other events (script.message, log.entryAdded, etc.) — Phase C
-    # will route script.message; the rest stay no-op for now.
+    # log.entryAdded, browsingContext.userPromptOpened, etc. — not
+    # handled at the transport level; consumers can subscribe directly.
     {:noreply, state}
+  end
+
+  def handle_info({:find_timeout, query_id}, state) do
+    case Map.pop(state.find_waiters, query_id) do
+      {nil, _} ->
+        {:noreply, state}
+
+      {{:resolved, _}, _rest} ->
+        # Already resolved — keep the entry; the awaiter will pop it.
+        {:noreply, state}
+
+      {{:pending, _ref, nil}, rest} ->
+        {:noreply, %{state | find_waiters: rest}}
+
+      {{:pending, _ref, from}, rest} ->
+        GenServer.reply(from, {:timeout, 0})
+        {:noreply, %{state | find_waiters: rest}}
+    end
+  end
+
+  def handle_info({:page_ready_timeout, from}, state) do
+    case state.page_ready_waiter do
+      {^from, _pre, _ref} ->
+        GenServer.reply(from, :timeout)
+        {:noreply, %{state | page_ready_waiter: nil}}
+
+      _ ->
+        {:noreply, state}
+    end
   end
 
   def handle_info({:page_load_timeout, from}, state) do
@@ -343,6 +420,60 @@ defmodule Wallabidi.V2.Transport.BiDi.SessionActor do
   end
 
   defp normalize_params(other), do: other
+
+  # Decode a __wallabidi channel payload (JSON-stringified by the
+  # bootstrap) and dispatch to find_waiters or page_ready_waiter.
+  # Format mirrors the legacy SessionProcess decoder so the bootstrap
+  # JS doesn't need a BiDi-specific variant.
+  defp route_channel_payload(state, payload) when is_binary(payload) do
+    case Jason.decode(payload) do
+      {:ok, %{"id" => query_id, "error" => err}} when is_binary(err) ->
+        resolve_find(state, query_id, {:error, :invalid_selector})
+
+      {:ok, %{"id" => query_id, "count" => count} = msg} ->
+        resolve_find(state, query_id, {:ok, count, msg["meta"]})
+
+      {:ok, %{"type" => "page_ready", "pageId" => page_id}} ->
+        state = %{state | last_page_id: page_id}
+        wake_page_ready_waiter(state, page_id)
+
+      _ ->
+        state
+    end
+  end
+
+  defp route_channel_payload(state, _), do: state
+
+  defp resolve_find(state, query_id, result) do
+    case Map.get(state.find_waiters, query_id) do
+      nil ->
+        state
+
+      {:pending, timer_ref, nil} ->
+        Process.cancel_timer(timer_ref)
+        %{state | find_waiters: Map.put(state.find_waiters, query_id, {:resolved, result})}
+
+      {:pending, timer_ref, from} ->
+        Process.cancel_timer(timer_ref)
+        GenServer.reply(from, result)
+        %{state | find_waiters: Map.delete(state.find_waiters, query_id)}
+
+      {:resolved, _} ->
+        state
+    end
+  end
+
+  defp wake_page_ready_waiter(state, page_id) do
+    case state.page_ready_waiter do
+      {from, pre_page_id, timer_ref} when pre_page_id != page_id ->
+        Process.cancel_timer(timer_ref)
+        GenServer.reply(from, :ok)
+        %{state | page_ready_waiter: nil}
+
+      _ ->
+        state
+    end
+  end
 
   # Wake any waiter whose (navigation_id, milestone) matches — or
   # whose loader is the `:any` wildcard (await_next_page_load).
