@@ -51,27 +51,28 @@ end
 # --- ExUnit config: exclude tags unsupported by this driver ---
 excludes = [pending: true]
 
+# WALLABIDI_AUDIT=1 strips driver-specific excludes and runs every
+# non-pending test on whichever driver is selected. Used to discover
+# which tests genuinely need which capabilities (we then assign
+# tags accordingly). Don't use this in CI — many tests will
+# legitimately fail under drivers that lack their needed features.
+audit? = System.get_env("WALLABIDI_AUDIT") == "1"
+
 excludes =
-  case driver do
-    :live_view ->
+  cond do
+    audit? ->
+      excludes
+
+    driver == :live_view ->
       excludes ++ [browser: true, headless: true, cdp_only: true]
 
-    :lightpanda ->
+    driver in [:lightpanda, :lightpanda_v2] ->
       excludes ++ [browser: true, lightpanda_ni: true, live_view_only: true, cdp_only: true]
 
-    :lightpanda_v2 ->
-      excludes ++ [browser: true, lightpanda_ni: true, live_view_only: true, cdp_only: true]
-
-    :chrome_cdp_v2 ->
+    driver in [:chrome_cdp_v2, :chrome_bidi_v2, :chrome] ->
       excludes ++ [live_view_only: true, cdp_only: true]
 
-    :chrome_bidi_v2 ->
-      excludes ++ [live_view_only: true, cdp_only: true]
-
-    :chrome ->
-      excludes ++ [live_view_only: true, cdp_only: true]
-
-    _ ->
+    true ->
       excludes ++ [live_view_only: true]
   end
 
