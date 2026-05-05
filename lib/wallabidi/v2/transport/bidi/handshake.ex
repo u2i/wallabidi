@@ -15,10 +15,17 @@ defmodule Wallabidi.V2.Transport.BiDi.Handshake do
   # driver and lets `mix test.chrome.bidi_v2` finish suites without
   # piling visible windows on the user's desktop. Override via
   # `:capabilities` opt to opt in to a visible browser.
+  #
+  # `unhandledPromptBehavior: "ignore"` keeps user prompts (alert /
+  # confirm / prompt) on screen until the test explicitly handles
+  # them via browsingContext.handleUserPrompt — without this Chrome's
+  # default policy auto-dismisses unhandled prompts before the
+  # `userPromptOpened` event handler can react.
   @default_capabilities %{
     "alwaysMatch" => %{
       "browserName" => "chrome",
       "webSocketUrl" => true,
+      "unhandledPromptBehavior" => "ignore",
       "goog:chromeOptions" => %{
         "args" => ["--headless=new"]
       }

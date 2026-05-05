@@ -18,7 +18,7 @@ defmodule Wallabidi.V2.BiDiClient do
   # bootstrap channel) are reused from V2.Transport.Protocol — they
   # were verified end-to-end in V2.Transport.BiDi phases A/B/C.
 
-  alias Wallabidi.BiDi.{Commands, ResponseParser}
+  alias Wallabidi.BiDi.{Commands, ResponseParser, WebSocketClient}
   alias Wallabidi.Bootstrap
   alias Wallabidi.CDP.Ops
   alias Wallabidi.Element
@@ -1103,5 +1103,99 @@ defmodule Wallabidi.V2.BiDiClient do
         {:ok,
          List.duplicate(%Element{parent: session, driver: session.driver}, found_count)}
     end
+  end
+
+  # ----- Dialog handling -----
+  #
+  # BiDi: subscribe to `browsingContext.userPromptOpened`, fire an
+  # action that triggers the dialog, catch the event in a spawned
+  # handler, send `browsingContext.handleUserPrompt` to accept or
+  # dismiss. Returns the dialog's message string.
+  #
+  # The handler runs in a separate process so that `fun.(session)`
+  # can block without deadlocking — some BiDi implementations don't
+  # return the click response until the dialog is handled.
+
+  @spec accept_alert(Session.t(), (Session.t() -> any)) :: String.t()
+  def accept_alert(%Session{} = session, fun), do: handle_dialog(session, fun, true)
+
+  @spec dismiss_alert(Session.t(), (Session.t() -> any)) :: String.t()
+  def dismiss_alert(%Session{} = session, fun), do: handle_dialog(session, fun, true)
+
+  @spec accept_confirm(Session.t(), (Session.t() -> any)) :: String.t()
+  def accept_confirm(%Session{} = session, fun), do: handle_dialog(session, fun, true)
+
+  @spec dismiss_confirm(Session.t(), (Session.t() -> any)) :: String.t()
+  def dismiss_confirm(%Session{} = session, fun), do: handle_dialog(session, fun, false)
+
+  @spec accept_prompt(Session.t(), String.t() | nil, (Session.t() -> any)) :: String.t()
+  def accept_prompt(%Session{} = session, nil, fun), do: handle_dialog(session, fun, true)
+
+  def accept_prompt(%Session{} = session, input, fun) when is_binary(input),
+    do: handle_dialog(session, fun, true, input)
+
+  @spec dismiss_prompt(Session.t(), (Session.t() -> any)) :: String.t()
+  def dismiss_prompt(%Session{} = session, fun), do: handle_dialog(session, fun, false)
+
+  defp handle_dialog(%Session{bidi_pid: ws_pid, browsing_context: ctx} = session, fun, accept,
+         user_text \\ nil) do
+    caller = self()
+
+    # Subscribe at the BiDi protocol level once — chromium-bidi makes
+    # this idempotent. Scope to the session's browsing context so a
+    # sibling test's dialog can't land in our handler.
+    {sub_method, sub_params} =
+      Commands.subscribe(["browsingContext.userPromptOpened"], [ctx])
+
+    WebSocketClient.send_command(ws_pid, sub_method, sub_params)
+
+    # Spawn a handler so fun.(session) can block on a click that
+    # only returns once the dialog is handled. Sync via :ready so
+    # the WSC subscription is in place BEFORE we trigger the click —
+    # otherwise the event can arrive before the handler subscribes
+    # and Chrome auto-dismisses the unhandled prompt.
+    self_pid = self()
+
+    handler =
+      spawn_link(fn ->
+        WebSocketClient.subscribe(ws_pid, "browsingContext.userPromptOpened", self(), ctx)
+        send(self_pid, {:ready, self()})
+
+        {message, default_value} =
+          receive do
+            {:bidi_event, "browsingContext.userPromptOpened", event} ->
+              msg = get_in(event, ["params", "message"]) || ""
+              default = get_in(event, ["params", "defaultValue"])
+              {msg, default}
+          after
+            5_000 -> {"", nil}
+          end
+
+        effective_text = user_text || default_value
+        {m, p} = Commands.handle_user_prompt(ctx, accept, effective_text)
+        WebSocketClient.send_command(ws_pid, m, p) |> ResponseParser.check_error()
+
+        send(caller, {:dialog_handled, message})
+      end)
+
+    receive do
+      {:ready, ^handler} -> :ok
+    after
+      1_000 -> :ok
+    end
+
+    # Trigger the dialog.
+    fun.(session)
+
+    message =
+      receive do
+        {:dialog_handled, msg} -> msg
+      after
+        10_000 -> ""
+      end
+
+    Process.unlink(handler)
+
+    message
   end
 end

@@ -264,29 +264,20 @@ defmodule Wallabidi.V2BiDiDriver do
   # ----- Dialog stubs -----
 
   @impl true
-  def accept_alert(session, fun) do
-    {:ok, [fun.(session)]}
-  end
+  def accept_alert(%Session{} = session, fun), do: BiDiClient.accept_alert(session, fun)
 
   @impl true
-  def accept_confirm(session, fun) do
-    {:ok, [fun.(session)]}
-  end
+  def accept_confirm(%Session{} = session, fun), do: BiDiClient.accept_confirm(session, fun)
 
   @impl true
-  def accept_prompt(session, _text, fun) do
-    {:ok, [fun.(session)]}
-  end
+  def accept_prompt(%Session{} = session, text, fun),
+    do: BiDiClient.accept_prompt(session, text, fun)
 
   @impl true
-  def dismiss_confirm(session, fun) do
-    {:ok, [fun.(session)]}
-  end
+  def dismiss_confirm(%Session{} = session, fun), do: BiDiClient.dismiss_confirm(session, fun)
 
   @impl true
-  def dismiss_prompt(session, fun) do
-    {:ok, [fun.(session)]}
-  end
+  def dismiss_prompt(%Session{} = session, fun), do: BiDiClient.dismiss_prompt(session, fun)
 
   # ----- Window / frame stubs -----
 
