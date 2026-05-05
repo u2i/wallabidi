@@ -175,6 +175,7 @@ defmodule Wallabidi.Feature do
           "chrome",
           "chrome_cdp",
           "chrome_cdp_v2",
+          "chrome_bidi_v2",
           "lightpanda",
           "lightpanda_v2"
         ] ->

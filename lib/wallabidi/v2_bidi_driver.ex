@@ -75,7 +75,7 @@ defmodule Wallabidi.V2BiDiDriver do
       driver: __MODULE__,
       protocol: nil,
       browsing_context: nil,
-      capabilities: %{}
+      capabilities: Keyword.get(opts, :capabilities, %{}) |> Map.new()
     }
 
     with {:ok, session} <-

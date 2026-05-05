@@ -88,6 +88,15 @@ defmodule Wallabidi.V2.Transport.BiDi.SessionActor do
       # what V2.Transport.Protocol callers will dispatch through.
       session = %{session_struct | pid: self(), bidi_pid: ws_pid}
 
+      # Register with SessionStore so Wallabidi.Feature can discover
+      # this session for failure-screenshot / sandbox cleanup. Same
+      # contract V2.Session honors for the two-actor model.
+      try do
+        Wallabidi.SessionStore.register(session, owner)
+      catch
+        :exit, _ -> :ok
+      end
+
       {:ok,
        %__MODULE__{
          ws_pid: ws_pid,
@@ -391,6 +400,12 @@ defmodule Wallabidi.V2.Transport.BiDi.SessionActor do
 
   @impl true
   def terminate(_reason, state) do
+    try do
+      Wallabidi.SessionStore.unregister(state.session)
+    catch
+      :exit, _ -> :ok
+    end
+
     if state.ws_pid && Process.alive?(state.ws_pid) do
       try do
         WebSocketClient.close(state.ws_pid)
