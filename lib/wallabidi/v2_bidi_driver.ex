@@ -128,8 +128,8 @@ defmodule Wallabidi.V2BiDiDriver do
     do: BiDiClient.evaluate(session, script, args || [])
 
   @impl true
-  def execute_script_async(%Session{} = _session, _script, _args),
-    do: {:error, :not_implemented}
+  def execute_script_async(%Session{} = session, script, args),
+    do: BiDiClient.evaluate_async(session, script, args || [])
 
   # ----- Element-scoped callbacks -----
 
@@ -229,16 +229,28 @@ defmodule Wallabidi.V2BiDiDriver do
   def element_size(%Element{} = element), do: BiDiClient.element_size(element)
   def element_location(%Element{} = element), do: BiDiClient.element_location(element)
 
+  def blank_page?(%Session{} = session) do
+    case BiDiClient.current_url(session) do
+      {:ok, url} -> url in ["about:blank", "", nil]
+      _ -> false
+    end
+  end
+
   # ----- Cookies / screenshot / window — not implemented yet -----
 
   @impl true
-  def cookies(%Session{}), do: {:error, :not_implemented}
+  def cookies(%Session{} = session), do: BiDiClient.cookies(session)
 
   @impl true
-  def set_cookie(%Session{}, _name, _value), do: {:error, :not_implemented}
+  def set_cookie(%Session{} = session, name, value),
+    do: cookie_result(BiDiClient.set_cookie(session, name, value))
 
   @impl true
-  def set_cookie(%Session{}, _name, _value, _attrs), do: {:error, :not_implemented}
+  def set_cookie(%Session{} = session, name, value, attrs),
+    do: cookie_result(BiDiClient.set_cookie(session, name, value, Map.new(attrs)))
+
+  defp cookie_result({:ok, _}), do: {:ok, nil}
+  defp cookie_result(other), do: other
 
   @impl true
   def take_screenshot(%Session{}), do: ""

@@ -18,7 +18,7 @@ defmodule Wallabidi.V2.BiDiClient do
   # bootstrap channel) are reused from V2.Transport.Protocol — they
   # were verified end-to-end in V2.Transport.BiDi phases A/B/C.
 
-  alias Wallabidi.BiDi.Commands
+  alias Wallabidi.BiDi.{Commands, ResponseParser}
   alias Wallabidi.Bootstrap
   alias Wallabidi.CDP.Ops
   alias Wallabidi.Element
@@ -146,6 +146,31 @@ defmodule Wallabidi.V2.BiDiClient do
     end
   end
 
+  @doc """
+  Run an asynchronous user script — the user's snippet is wrapped so
+  the final `arguments[arguments.length - 1]` is a `__resolve`
+  callback they invoke with the eventual value. Mirrors
+  V2.CDPClient.evaluate_async/3.
+  """
+  @spec evaluate_async(Session.t(), String.t(), list) :: {:ok, term} | {:error, term}
+  def evaluate_async(%Session{} = session, expression, args)
+      when is_binary(expression) and is_list(args) do
+    args_json = Jason.encode!(args)
+
+    wrapped = """
+    new Promise(function(__resolve, __reject) {
+      try {
+        (function() {
+          var __args = #{args_json}.concat([__resolve]);
+          (function() { #{expression} }).apply(this, __args);
+        })();
+      } catch (e) { __reject(e); }
+    })
+    """
+
+    evaluate_async(session, wrapped)
+  end
+
   defp do_eval_function(%Session{browsing_context: ctx} = session, expression, args) do
     fn_decl = "function() { #{expression} }"
 
@@ -250,6 +275,69 @@ defmodule Wallabidi.V2.BiDiClient do
   @spec current_path(Session.t()) :: {:ok, String.t()} | {:error, term}
   def current_path(%Session{} = session) do
     evaluate(session, "location.pathname")
+  end
+
+  # ----- Cookies -----
+
+  @doc """
+  Fetch cookies for the session's browsing context. Partitioned by
+  context, mirroring the legacy BiDi driver — sessions can't see
+  each other's cookies even when sharing the underlying server.
+  """
+  @spec cookies(Session.t()) :: {:ok, [map]} | {:error, term}
+  def cookies(%Session{browsing_context: ctx} = session) do
+    {method, params} =
+      Commands.get_cookies(%{partition: %{type: "context", context: ctx}})
+
+    case Protocol.cdp_send(session, method, params, []) do
+      {:ok, result} -> ResponseParser.extract_cookies(result)
+      error -> error
+    end
+  end
+
+  @doc """
+  Set a cookie scoped to the session's browsing context. Accepts
+  the standard WebDriver attribute keys (`:domain`, `:path`,
+  `:secure`, `:httpOnly`, `:expiry`).
+  """
+  @spec set_cookie(Session.t(), String.t(), String.t(), map | keyword) ::
+          {:ok, list} | {:error, term}
+  def set_cookie(%Session{browsing_context: ctx} = session, name, value, attrs \\ %{})
+      when is_binary(name) and is_binary(value) do
+    attrs = if is_list(attrs), do: Map.new(attrs), else: attrs
+
+    cookie =
+      %{
+        name: name,
+        value: %{type: "string", value: value},
+        domain: get_attr(attrs, :domain, "localhost"),
+        path: get_attr(attrs, :path, "/")
+      }
+      |> maybe_put_attr(:secure, attrs)
+      |> maybe_put_attr(:httpOnly, attrs)
+      |> maybe_put_attr(:expiry, attrs)
+
+    {method, params} =
+      Commands.set_cookie(cookie, %{partition: %{type: "context", context: ctx}})
+
+    case Protocol.cdp_send(session, method, params, []) do
+      {:ok, _} -> {:ok, []}
+      error -> error
+    end
+  end
+
+  defp get_attr(attrs, key, default) do
+    case Map.get(attrs, key) do
+      nil -> Map.get(attrs, to_string(key), default)
+      v -> v
+    end
+  end
+
+  defp maybe_put_attr(cookie, key, attrs) do
+    case Map.get(attrs, key) || Map.get(attrs, to_string(key)) do
+      nil -> cookie
+      v -> Map.put(cookie, key, v)
+    end
   end
 
   # ----- Element-scoped ops -----
@@ -827,11 +915,30 @@ defmodule Wallabidi.V2.BiDiClient do
   end
 
   defp final_sync_exec(%Session{browsing_context: ctx} = session, ops_json, parent_shared_id) do
+    # Return BOTH elements and the error string. When window.__w is
+    # available we use its full opcode interpreter (handles visibility,
+    # text filters, etc). When it's not — e.g. about:blank where the
+    # preload hasn't run — we fall back to a bare querySelectorAll on
+    # just the `query` ops so syntax errors still surface as
+    # invalid_selector.
+    fallback_body = """
+    var r = {els: [], error: null};
+    try {
+      var ops = #{ops_json};
+      for (var i = 0; i < ops.length; i++) {
+        var op = ops[i];
+        if (op[0] === 'query') {
+          r.els = Array.from(document.querySelectorAll(op[2]));
+        }
+      }
+    } catch (e) { r.error = e.message; r.els = []; }
+    """
+
     fn_decl =
       if parent_shared_id do
-        "function() { return window.__w ? window.__w.exec(#{ops_json}, this).els : []; }"
+        ~s'function() { if (window.__w) { var r = window.__w.exec(#{ops_json}, this); return {els: r.els, error: r.error}; } #{fallback_body} return {els: r.els, error: r.error}; }'
       else
-        "() => window.__w ? window.__w.exec(#{ops_json}, null).els : []"
+        ~s'() => { if (window.__w) { var r = window.__w.exec(#{ops_json}, null); return {els: r.els, error: r.error}; } #{fallback_body} return {els: r.els, error: r.error}; }'
       end
 
     base_params = %{
@@ -849,8 +956,32 @@ defmodule Wallabidi.V2.BiDiClient do
       end
 
     case Protocol.cdp_send(session, "script.callFunction", params, []) do
-      {:ok, %{"type" => "success", "result" => %{"type" => "array", "value" => items}}}
-      when is_list(items) ->
+      {:ok, %{"type" => "success", "result" => %{"type" => "object", "value" => pairs}}}
+      when is_list(pairs) ->
+        decode_final_exec(pairs, session)
+
+      _ ->
+        {:ok, []}
+    end
+  end
+
+  defp decode_final_exec(pairs, session) do
+    map = pairs_to_map(pairs)
+
+    case Map.get(map, "error") do
+      %{"type" => "string", "value" => err} when is_binary(err) and err != "" ->
+        {:error, :invalid_selector}
+
+      err when is_binary(err) and err != "" ->
+        {:error, :invalid_selector}
+
+      _ ->
+        items =
+          case Map.get(map, "els") do
+            %{"type" => "array", "value" => items} when is_list(items) -> items
+            _ -> []
+          end
+
         elements =
           items
           |> Enum.map(fn
@@ -869,10 +1000,17 @@ defmodule Wallabidi.V2.BiDiClient do
           |> Enum.reject(&is_nil/1)
 
         {:ok, elements}
-
-      _ ->
-        {:ok, []}
     end
+  end
+
+  # BiDi `object` RemoteValue serializes as a list of [key, val] pairs.
+  # The key is a bare string (not wrapped in a RemoteValue envelope).
+  defp pairs_to_map(pairs) do
+    Enum.reduce(pairs, %{}, fn
+      [k, v], acc when is_binary(k) -> Map.put(acc, k, v)
+      [%{"value" => k}, v], acc when is_binary(k) -> Map.put(acc, k, v)
+      _, acc -> acc
+    end)
   end
 
   defp cast_register(%Session{browsing_context: ctx} = session, nil, register_js) do
