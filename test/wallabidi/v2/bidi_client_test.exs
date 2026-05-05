@@ -132,6 +132,124 @@ defmodule Wallabidi.V2.BiDiClientTest do
     els
   end
 
+  describe "click/2" do
+    test "click on a checkbox toggles checked + fires change", %{base_url: base_url} do
+      {:ok, session} = start(base_url)
+
+      :ok =
+        BiDiClient.visit(
+          session,
+          data_url("""
+          <input type="checkbox" id="c">
+          <script>
+            window.__last_change = null;
+            document.getElementById('c').addEventListener('change', function() {
+              window.__last_change = this.checked;
+            });
+          </script>
+          """)
+        )
+
+      [c] = find_one(session, "#c")
+      assert {:ok, nil} = BiDiClient.click(session, c)
+      assert {:ok, true} = BiDiClient.evaluate(session, "window.__last_change")
+    end
+  end
+
+  describe "set_value/3 + clear/3" do
+    test "set_value populates a text input + fires input/change", %{base_url: base_url} do
+      {:ok, session} = start(base_url)
+
+      :ok =
+        BiDiClient.visit(
+          session,
+          data_url("""
+          <input id="t">
+          <script>
+            window.__events = [];
+            var t = document.getElementById('t');
+            ['input', 'change'].forEach(function(e) {
+              t.addEventListener(e, function() { window.__events.push(e); });
+            });
+          </script>
+          """)
+        )
+
+      [t] = find_one(session, "#t")
+      assert {:ok, nil} = BiDiClient.set_value(session, t, "hello")
+      assert {:ok, "hello"} = BiDiClient.attribute(session, t, "value")
+      assert {:ok, ["input", "change"]} = BiDiClient.evaluate(session, "window.__events")
+    end
+
+    test "clear silent (default) wipes value without firing events", %{base_url: base_url} do
+      {:ok, session} = start(base_url)
+
+      :ok =
+        BiDiClient.visit(
+          session,
+          data_url("""
+          <input id="t" value="prefilled">
+          <script>
+            window.__fired = false;
+            document.getElementById('t').addEventListener('change', function() {
+              window.__fired = true;
+            });
+          </script>
+          """)
+        )
+
+      [t] = find_one(session, "#t")
+      assert {:ok, nil} = BiDiClient.clear(session, t)
+      assert {:ok, ""} = BiDiClient.attribute(session, t, "value")
+      assert {:ok, false} = BiDiClient.evaluate(session, "window.__fired")
+    end
+  end
+
+  describe "send_keys/3 (text-only)" do
+    test "appends text and fires input/change", %{base_url: base_url} do
+      {:ok, session} = start(base_url)
+
+      :ok =
+        BiDiClient.visit(
+          session,
+          data_url("""
+          <input id="t" value="ab">
+          <script>
+            window.__events = [];
+            ['input', 'change'].forEach(function(e) {
+              document.getElementById('t').addEventListener(e, function() {
+                window.__events.push(e);
+              });
+            });
+          </script>
+          """)
+        )
+
+      [t] = find_one(session, "#t")
+      assert {:ok, nil} = BiDiClient.send_keys(session, t, "cd")
+      assert {:ok, "abcd"} = BiDiClient.attribute(session, t, "value")
+      assert {:ok, ["input", "change"]} = BiDiClient.evaluate(session, "window.__events")
+    end
+  end
+
+  describe "page_source/1, current_path/1" do
+    test "page_source returns outer HTML of document element", %{base_url: base_url} do
+      {:ok, session} = start(base_url)
+      :ok = BiDiClient.visit(session, data_url("<html><body><p id='x'>hi</p></body></html>"))
+
+      assert {:ok, html} = BiDiClient.page_source(session)
+      assert html =~ ~s{<p id="x">hi</p>}
+    end
+
+    test "current_path returns the path component of the URL", %{base_url: base_url} do
+      {:ok, session} = start(base_url)
+      :ok = BiDiClient.visit(session, "about:blank")
+      # data: URLs have an empty path, but about:blank gives a clean test
+      assert {:ok, path} = BiDiClient.current_path(session)
+      assert path == "blank" or path == "" or path == "/"
+    end
+  end
+
   describe "current_url/1, page_title/1" do
     test "current_url returns the navigated URL", %{base_url: base_url} do
       {:ok, session} = start(base_url)

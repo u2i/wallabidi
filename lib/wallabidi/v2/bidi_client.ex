@@ -210,6 +210,16 @@ defmodule Wallabidi.V2.BiDiClient do
     evaluate(session, "document.title")
   end
 
+  @spec page_source(Session.t()) :: {:ok, String.t()} | {:error, term}
+  def page_source(%Session{} = session) do
+    evaluate(session, "document.documentElement.outerHTML")
+  end
+
+  @spec current_path(Session.t()) :: {:ok, String.t()} | {:error, term}
+  def current_path(%Session{} = session) do
+    evaluate(session, "location.pathname")
+  end
+
   # ----- Element-scoped ops -----
 
   @doc """
@@ -332,6 +342,159 @@ defmodule Wallabidi.V2.BiDiClient do
       }
       """
     )
+  end
+
+  # ----- Interactions -----
+
+  @spec click(Session.t(), Element.t()) :: {:ok, nil} | {:error, term}
+  def click(%Session{} = session, %Element{} = element) do
+    case call_on_element(
+           session,
+           element,
+           """
+           function() {
+             if (window.__w && window.__w.clickEl) {
+               if (this.tagName !== 'OPTION') {
+                 this.scrollIntoView({block: 'center', inline: 'nearest'});
+                 if (typeof this.focus === 'function') this.focus();
+               }
+               window.__w.clickEl(this);
+               return null;
+             }
+             this.scrollIntoView({block: 'center', inline: 'nearest'});
+             if (typeof this.focus === 'function') this.focus();
+             this.click();
+             return null;
+           }
+           """
+         ) do
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
+  end
+
+  @doc """
+  DOM-based set_value. Mirrors V2.CDPClient.set_value's DOM path —
+  handles checkboxes, radios, options, and text inputs.
+
+  File inputs are NOT supported on this BiDi client yet (the CDP
+  client uses DOM.setFileInputFiles, which has no direct BiDi
+  equivalent — chromium-bidi 0.4+ exposes
+  `input.setFiles` but support is uneven). Step 2 will fork a
+  separate code path for them.
+  """
+  @spec set_value(Session.t(), Element.t(), term) :: {:ok, nil} | {:error, term}
+  def set_value(%Session{} = session, %Element{} = element, value) do
+    case call_on_element(
+           session,
+           element,
+           """
+           function(v) {
+             var t = this.tagName;
+             var ty = (this.type || '').toLowerCase();
+
+             if (t === 'INPUT' && (ty === 'checkbox' || ty === 'radio')) {
+               this.checked = !!v;
+               this.dispatchEvent(new Event('input', {bubbles: true}));
+               this.dispatchEvent(new Event('change', {bubbles: true}));
+               return null;
+             }
+
+             if (t === 'OPTION') {
+               var sel = this.closest('select');
+               if (sel) {
+                 if (sel.multiple) {
+                   this.selected = !!v;
+                 } else {
+                   sel.value = this.value;
+                   for (var i = 0; i < sel.options.length; i++) {
+                     sel.options[i].selected = (sel.options[i] === this);
+                   }
+                 }
+                 sel.dispatchEvent(new Event('input', {bubbles: true}));
+                 sel.dispatchEvent(new Event('change', {bubbles: true}));
+               } else {
+                 this.selected = !!v;
+               }
+               return null;
+             }
+
+             this.value = v;
+             this.dispatchEvent(new Event('input', {bubbles: true}));
+             this.dispatchEvent(new Event('change', {bubbles: true}));
+             return null;
+           }
+           """,
+           [value]
+         ) do
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
+  end
+
+  @doc """
+  Clears the element's value. With `silent: true` (default), no
+  events are dispatched — used internally before fill_in to avoid
+  firing phx-change for the intermediate empty state.
+  """
+  @spec clear(Session.t(), Element.t(), keyword) :: {:ok, nil} | {:error, term}
+  def clear(%Session{} = session, %Element{} = element, opts \\ []) do
+    silent? = Keyword.get(opts, :silent, true)
+
+    fn_decl =
+      if silent? do
+        "function() { this.value = ''; return null; }"
+      else
+        """
+        function() {
+          this.value = '';
+          this.dispatchEvent(new Event('input', {bubbles: true}));
+          this.dispatchEvent(new Event('change', {bubbles: true}));
+          return null;
+        }
+        """
+      end
+
+    case call_on_element(session, element, fn_decl) do
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
+  end
+
+  @doc """
+  Send text to an element. List form joins; atom form (special keys
+  like :tab, :enter) is not supported on the BiDi path yet — would
+  require `input.performActions` with a key-source action sequence.
+  """
+  @spec send_keys(Session.t(), Element.t(), [String.t()] | String.t()) ::
+          {:ok, nil} | {:error, term}
+  def send_keys(%Session{} = session, %Element{} = element, keys) when is_binary(keys) do
+    send_keys(session, element, [keys])
+  end
+
+  def send_keys(%Session{} = session, %Element{} = element, keys) when is_list(keys) do
+    if Enum.all?(keys, &is_binary/1) do
+      text = Enum.join(keys, "")
+
+      case call_on_element(
+             session,
+             element,
+             """
+             function(s) {
+               this.value = (this.value || '') + s;
+               this.dispatchEvent(new Event('input', {bubbles: true}));
+               this.dispatchEvent(new Event('change', {bubbles: true}));
+               return null;
+             }
+             """,
+             [text]
+           ) do
+        {:ok, _} -> {:ok, nil}
+        error -> error
+      end
+    else
+      {:error, {:unsupported_keys, "BiDi send_keys does not yet support special-key atoms"}}
+    end
   end
 
   # ----- Element finding -----
