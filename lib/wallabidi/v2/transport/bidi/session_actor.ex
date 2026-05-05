@@ -209,6 +209,15 @@ defmodule Wallabidi.V2.Transport.BiDi.SessionActor do
     {:reply, :ok, %{state | frame_stack: stack}}
   end
 
+  # Pop and return the head value, so the driver can switch the
+  # browsing_context back to the parent in one round-trip.
+  def handle_call(:pop_frame_value, _from, state) do
+    case state.frame_stack do
+      [] -> {:reply, :empty, state}
+      [head | rest] -> {:reply, {:ok, head}, %{state | frame_stack: rest}}
+    end
+  end
+
   def handle_call(:reset_frame_stack, _from, state),
     do: {:reply, :ok, %{state | frame_stack: []}}
 

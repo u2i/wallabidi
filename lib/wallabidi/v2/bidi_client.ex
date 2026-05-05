@@ -25,6 +25,18 @@ defmodule Wallabidi.V2.BiDiClient do
   alias Wallabidi.Session
   alias Wallabidi.V2.Transport.Protocol
 
+  # Frame focus stores an override in the test process dictionary
+  # (BiDi V2BiDiDriver.focus_frame writes it). When set, subsequent
+  # BiDi commands target the focused iframe's browsing context
+  # instead of the session struct's root one. Per-process so that
+  # concurrent tests don't interfere.
+  defp ctx(%Session{id: id, browsing_context: root}) do
+    case Process.get({:wallabidi_bidi_v2_frame, id}) do
+      nil -> root
+      override when is_binary(override) -> override
+    end
+  end
+
   # ----- Navigation -----
 
   @doc """
@@ -38,11 +50,11 @@ defmodule Wallabidi.V2.BiDiClient do
   """
   @spec navigate(Session.t(), String.t()) ::
           {:ok, %{loader_id: String.t() | nil, url: String.t()}} | {:error, term}
-  def navigate(%Session{browsing_context: ctx} = session, url) when is_binary(url) do
+  def navigate(%Session{} = session, url) when is_binary(url) do
     case Protocol.cdp_send(
            session,
            "browsingContext.navigate",
-           %{"context" => ctx, "url" => url, "wait" => "none"},
+           %{"context" => ctx(session), "url" => url, "wait" => "none"},
            []
          ) do
       {:ok, %{"navigation" => nav, "url" => resolved}} ->
@@ -114,11 +126,11 @@ defmodule Wallabidi.V2.BiDiClient do
       String.contains?(expression, "arguments[")
   end
 
-  defp do_eval_expression(%Session{browsing_context: ctx} = session, expression) do
+  defp do_eval_expression(%Session{} = session, expression) do
     params = %{
       "expression" => expression,
       "awaitPromise" => false,
-      "target" => %{"context" => ctx}
+      "target" => %{"context" => ctx(session)}
     }
 
     case Protocol.cdp_send(session, "script.evaluate", params, []) do
@@ -132,12 +144,11 @@ defmodule Wallabidi.V2.BiDiClient do
   `evaluate/2` for the case where the expression yields a thenable.
   """
   @spec evaluate_async(Session.t(), String.t()) :: {:ok, term} | {:error, term}
-  def evaluate_async(%Session{browsing_context: ctx} = session, expression)
-      when is_binary(expression) do
+  def evaluate_async(%Session{} = session, expression) when is_binary(expression) do
     params = %{
       "expression" => expression,
       "awaitPromise" => true,
-      "target" => %{"context" => ctx}
+      "target" => %{"context" => ctx(session)}
     }
 
     case Protocol.cdp_send(session, "script.evaluate", params, []) do
@@ -171,14 +182,14 @@ defmodule Wallabidi.V2.BiDiClient do
     evaluate_async(session, wrapped)
   end
 
-  defp do_eval_function(%Session{browsing_context: ctx} = session, expression, args) do
+  defp do_eval_function(%Session{} = session, expression, args) do
     fn_decl = "function() { #{expression} }"
 
     params = %{
       "functionDeclaration" => fn_decl,
       "arguments" => Enum.map(args, &encode_arg/1),
       "awaitPromise" => false,
-      "target" => %{"context" => ctx}
+      "target" => %{"context" => ctx(session)}
     }
 
     case Protocol.cdp_send(session, "script.callFunction", params, []) do
@@ -319,6 +330,131 @@ defmodule Wallabidi.V2.BiDiClient do
     end
   end
 
+  # ----- Frame focus -----
+
+  @doc """
+  Resolve the iframe element to its child browsing-context id.
+
+  Strategy: walk `browsingContext.getTree` rooted at the session's
+  current context. Match each child against the iframe's contentWindow
+  via a JS test that compares window references. The matching child's
+  `context` field is the BiDi browsing-context id we'll switch to.
+  """
+  @spec child_context_for_iframe(Session.t(), Element.t()) ::
+          {:ok, String.t()} | {:error, term}
+  def child_context_for_iframe(%Session{browsing_context: parent} = session, %Element{} = element) do
+    with {:ok, %{"contexts" => contexts}} <-
+           Protocol.cdp_send(session, "browsingContext.getTree", %{"root" => parent, "maxDepth" => 1}, []),
+         children when is_list(children) <- get_children(contexts, parent) do
+      find_matching_child(session, element, children)
+    else
+      _ -> {:error, :no_iframe_context}
+    end
+  end
+
+  defp get_children([%{"context" => ctx, "children" => children}], ctx) when is_list(children),
+    do: children
+
+  defp get_children([%{"children" => children}], _) when is_list(children), do: children
+
+  defp get_children(_, _), do: nil
+
+  defp find_matching_child(_session, _element, []), do: {:error, :no_iframe_context}
+
+  defp find_matching_child(session, %Element{bidi_shared_id: sid} = element, [child | rest]) do
+    child_ctx = child["context"]
+
+    # Run a tiny script in the child context that returns its own
+    # window. Then run another in the parent context that compares
+    # the iframe's contentWindow to the captured ref. If they match,
+    # this is the right child.
+    case child_url(session, child_ctx) do
+      {:ok, child_url} ->
+        case iframe_src(session, sid) do
+          {:ok, src} when is_binary(src) and src == child_url ->
+            {:ok, child_ctx}
+
+          {:ok, src} when is_binary(src) ->
+            # URL might differ if iframe loaded a different URL after
+            # init. Fall through and try the next child by matching
+            # the iframe's contentWindow location against this child's
+            # current location.
+            if same_origin_match?(src, child_url) do
+              {:ok, child_ctx}
+            else
+              find_matching_child(session, element, rest)
+            end
+
+          _ ->
+            find_matching_child(session, element, rest)
+        end
+
+      _ ->
+        find_matching_child(session, element, rest)
+    end
+  end
+
+  defp child_url(%Session{} = session, child_ctx) do
+    params = %{
+      "expression" => "location.href",
+      "awaitPromise" => false,
+      "target" => %{"context" => child_ctx}
+    }
+
+    case Protocol.cdp_send(session, "script.evaluate", params, []) do
+      {:ok, result} -> decode_eval_result(result)
+      err -> err
+    end
+  end
+
+  defp iframe_src(%Session{} = session, shared_id) do
+    parent = %Element{bidi_shared_id: shared_id}
+
+    call_on_element(
+      session,
+      parent,
+      "function() { try { return this.contentWindow.location.href; } catch(e) { return this.src || ''; } }"
+    )
+  end
+
+  defp same_origin_match?(a, b) when is_binary(a) and is_binary(b) do
+    # Loose match: same origin or same path. Tests typically use
+    # files-on-test-server, so the URL should match exactly except
+    # for trailing slashes / fragments.
+    String.starts_with?(a, b) or String.starts_with?(b, a)
+  end
+
+  defp same_origin_match?(_, _), do: false
+
+  @doc """
+  Walk up the browsing-context tree to the topmost ancestor. Used by
+  focus_default_frame to escape out of nested iframes.
+  """
+  @spec root_context_for(Session.t()) :: {:ok, String.t()} | {:error, term}
+  def root_context_for(%Session{browsing_context: ctx} = session) do
+    case Protocol.cdp_send(session, "browsingContext.getTree", %{}, []) do
+      {:ok, %{"contexts" => contexts}} when is_list(contexts) ->
+        # Each top-level entry is a root context. Find the one whose
+        # subtree contains our current ctx, then that entry's
+        # `context` IS the root.
+        case Enum.find(contexts, &subtree_contains?(&1, ctx)) do
+          %{"context" => root} -> {:ok, root}
+          _ -> {:error, :no_root_context}
+        end
+
+      _ ->
+        {:error, :no_root_context}
+    end
+  end
+
+  defp subtree_contains?(%{"context" => c}, target) when c == target, do: true
+
+  defp subtree_contains?(%{"children" => children}, target) when is_list(children) do
+    Enum.any?(children, &subtree_contains?(&1, target))
+  end
+
+  defp subtree_contains?(_, _), do: false
+
   # ----- Cookies -----
 
   @doc """
@@ -394,7 +530,7 @@ defmodule Wallabidi.V2.BiDiClient do
   @spec call_on_element(Session.t(), Element.t(), String.t(), [term]) ::
           {:ok, term} | {:error, term}
   def call_on_element(
-        %Session{browsing_context: ctx} = session,
+        %Session{} = session,
         %Element{bidi_shared_id: shared_id},
         fn_decl,
         args \\ []
@@ -405,7 +541,7 @@ defmodule Wallabidi.V2.BiDiClient do
       "this" => %{"sharedId" => shared_id},
       "arguments" => Enum.map(args, &encode_arg/1),
       "awaitPromise" => false,
-      "target" => %{"context" => ctx}
+      "target" => %{"context" => ctx(session)}
     }
 
     case Protocol.cdp_send(session, "script.callFunction", params, []) do
@@ -1052,7 +1188,8 @@ defmodule Wallabidi.V2.BiDiClient do
     end
   end
 
-  defp final_sync_exec(%Session{browsing_context: ctx} = session, ops_json, parent_shared_id) do
+  defp final_sync_exec(%Session{} = session, ops_json, parent_shared_id) do
+    ctx = ctx(session)
     # Return BOTH elements and the error string. When window.__w is
     # available we use its full opcode interpreter (handles visibility,
     # text filters, etc). When it's not — e.g. about:blank where the
@@ -1151,20 +1288,20 @@ defmodule Wallabidi.V2.BiDiClient do
     end)
   end
 
-  defp cast_register(%Session{browsing_context: ctx} = session, nil, register_js) do
+  defp cast_register(%Session{} = session, nil, register_js) do
     Protocol.cdp_cast(
       session,
       "script.callFunction",
       %{
         "functionDeclaration" => "() => { #{register_js} }",
         "awaitPromise" => false,
-        "target" => %{"context" => ctx}
+        "target" => %{"context" => ctx(session)}
       },
       []
     )
   end
 
-  defp cast_register(%Session{browsing_context: ctx} = session, parent_shared_id, register_js)
+  defp cast_register(%Session{} = session, parent_shared_id, register_js)
        when is_binary(parent_shared_id) do
     Protocol.cdp_cast(
       session,
@@ -1173,7 +1310,7 @@ defmodule Wallabidi.V2.BiDiClient do
         "functionDeclaration" => "function() { #{register_js} }",
         "this" => %{"sharedId" => parent_shared_id},
         "awaitPromise" => false,
-        "target" => %{"context" => ctx}
+        "target" => %{"context" => ctx(session)}
       },
       []
     )
@@ -1182,7 +1319,8 @@ defmodule Wallabidi.V2.BiDiClient do
   # Fetch the resolved query's element list as an array of sharedIds.
   # `resultOwnership: "root"` keeps node references alive on the
   # remote side so we can hold them past this call.
-  defp fetch_element_refs(%Session{browsing_context: ctx} = session, query_id, found_count) do
+  defp fetch_element_refs(%Session{} = session, query_id, found_count) do
+    ctx = ctx(session)
     id_js = Jason.encode!(query_id)
 
     fn_decl = """
