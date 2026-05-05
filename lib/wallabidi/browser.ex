@@ -755,16 +755,17 @@ defmodule Wallabidi.Browser do
     session = get_session(parent)
 
     cond do
-      session && session.driver in [Wallabidi.V2Driver, Wallabidi.V2BiDiDriver] &&
+      session && session.driver == Wallabidi.V2Driver &&
           not in_frame?(session) && not in_switched_window?(session) ->
-        # V2 native click_aware: capture pre_page_id, classify, click,
-        # await page_ready — one bootstrap-driven RPC chain instead of
-        # the polling fallback. CDP path picks V2.CDPClient.click_aware,
-        # BiDi path picks V2.BiDiClient.click_aware; same return shape.
+        # V2Driver (Lightpanda): route through V2.CDPClient.click_aware
+        # which captures pre_page_id, classifies, clicks, awaits
+        # page_ready — same shape as do_post_click but in one native
+        # V2 call. Avoids the post-click `find` polling fallback that
+        # cost LP ~3s per submit-form click.
         #
-        # V2ChromeDriver intentionally NOT routed here — it has
-        # nav-timeout / slow-dest-mount-fallback logic in its own
-        # click impl that needs to run via Element.click + driver.click.
+        # V2ChromeDriver and V2BiDiDriver are NOT routed here — they
+        # both have nav-timeout / patch-aware orchestration in their
+        # own click impl that needs Element.click + driver.click.
         v2_click_with_await(parent, query)
 
       session && not is_nil(session.protocol) &&
