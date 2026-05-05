@@ -4,6 +4,7 @@ defmodule Wallabidi.Integration.Browser.SessionIsolationTest do
 
   import Wallabidi.Integration.SessionCase, only: [start_test_session: 0]
 
+  @moduletag :headless
   @moduletag :isolation
 
   @tag :polling

@@ -273,6 +273,44 @@ defmodule Wallabidi.V2.CDPClient do
         )
 
       {:ok, nil}
+    else
+      # Lightpanda doesn't implement DOM.setFileInputFiles. Fall back
+      # to the DataTransfer trick — fabricate a File and assign it
+      # via el.files. The browser exposes .value as
+      # 'C:\\fakepath\\<basename>' which is what Wallabidi tests
+      # check for. File contents aren't read.
+      {:error, {-31998, "UnknownMethod"}} ->
+        set_file_input_via_data_transfer(session, element, paths)
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  defp set_file_input_via_data_transfer(_session, _element, []) do
+    # No valid paths — WebDriver contract is to no-op.
+    {:ok, nil}
+  end
+
+  defp set_file_input_via_data_transfer(session, element, [path | _]) do
+    case call_on_element(
+           session,
+           element,
+           """
+           function(p) {
+             var dt = new DataTransfer();
+             var name = p.split('/').pop() || p.split('\\\\').pop();
+             var f = new File([''], name, {type: 'application/octet-stream'});
+             dt.items.add(f);
+             this.files = dt.files;
+             this.dispatchEvent(new Event('change', {bubbles: true}));
+             return null;
+           }
+           """,
+           [path]
+         ) do
+      {:ok, _} -> {:ok, nil}
+      err -> err
     end
   end
 
