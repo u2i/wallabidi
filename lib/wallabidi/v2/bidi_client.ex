@@ -426,6 +426,33 @@ defmodule Wallabidi.V2.BiDiClient do
 
   defp same_origin_match?(_, _), do: false
 
+  # ----- Window / tab handles -----
+
+  @doc """
+  List all top-level browsing contexts (BiDi's notion of windows /
+  tabs). Each returned context id is a "handle" that can be passed
+  to V2BiDiDriver.focus_window.
+  """
+  @spec window_handles(Session.t()) :: {:ok, [String.t()]} | {:error, term}
+  def window_handles(%Session{} = session) do
+    case Protocol.cdp_send(session, "browsingContext.getTree", %{}, []) do
+      {:ok, %{"contexts" => contexts}} when is_list(contexts) ->
+        {:ok, Enum.map(contexts, & &1["context"])}
+
+      err ->
+        err
+    end
+  end
+
+  @doc "Close a specific browsing context."
+  @spec close_window(Session.t(), String.t()) :: :ok | {:error, term}
+  def close_window(%Session{} = session, context_id) when is_binary(context_id) do
+    case Protocol.cdp_send(session, "browsingContext.close", %{"context" => context_id}, []) do
+      {:ok, _} -> :ok
+      err -> err
+    end
+  end
+
   @doc """
   Walk up the browsing-context tree to the topmost ancestor. Used by
   focus_default_frame to escape out of nested iframes.

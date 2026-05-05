@@ -59,8 +59,7 @@ defmodule Wallabidi.V2.Transport.BiDi do
              teardown_fun: teardown_fun,
              owner: owner
            ),
-         {:ok, %{"context" => context_id}} <-
-           Protocol.cdp_send(session, "browsingContext.create", %{"type" => "tab"}, []),
+         {:ok, context_id} <- find_or_create_initial_context(session),
          :ok <- install_bootstrap(session) do
       session = %{session | browsing_context: context_id}
 
@@ -69,6 +68,23 @@ defmodule Wallabidi.V2.Transport.BiDi do
       :ok = GenServer.call(session.pid, {:update_browsing_context, nil, context_id})
 
       {:ok, session}
+    end
+  end
+
+  # Chrome launches with a default about:blank tab. Reuse it instead
+  # of creating a sibling — otherwise window_handles sees TWO tabs at
+  # session start (the leftover plus our newly-created one), which
+  # confuses tests that check tab counts.
+  defp find_or_create_initial_context(session) do
+    case Protocol.cdp_send(session, "browsingContext.getTree", %{}, []) do
+      {:ok, %{"contexts" => [%{"context" => existing} | _]}} when is_binary(existing) ->
+        {:ok, existing}
+
+      _ ->
+        case Protocol.cdp_send(session, "browsingContext.create", %{"type" => "tab"}, []) do
+          {:ok, %{"context" => context_id}} -> {:ok, context_id}
+          err -> err
+        end
     end
   end
 

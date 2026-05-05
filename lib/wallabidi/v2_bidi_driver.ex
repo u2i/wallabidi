@@ -366,17 +366,48 @@ defmodule Wallabidi.V2BiDiDriver do
 
   # ----- Window / frame stubs -----
 
-  @impl true
-  def window_handle(_), do: {:ok, "main"}
+  # The "handle" in BiDi is just the top-level browsing-context id.
+  # Tracking which one is "focused" is a per-test concern handled
+  # via the same process-dictionary override frames use.
 
   @impl true
-  def window_handles(_), do: {:ok, ["main"]}
+  def window_handle(%Session{} = session) do
+    {:ok, current_window(session)}
+  end
 
   @impl true
-  def focus_window(_, _), do: {:ok, nil}
+  def window_handles(%Session{} = session) do
+    BiDiClient.window_handles(session)
+  end
 
   @impl true
-  def close_window(_), do: {:ok, nil}
+  def focus_window(%Session{} = session, handle) when is_binary(handle) do
+    Process.put({:wallabidi_bidi_v2_window, session.id}, handle)
+    # Reset frame state: switching tabs invalidates iframe focus.
+    Process.delete({:wallabidi_bidi_v2_frame_stack, session.id})
+    Process.put({:wallabidi_bidi_v2_frame, session.id}, handle)
+    {:ok, nil}
+  end
+
+  @impl true
+  def close_window(%Session{} = session) do
+    handle = current_window(session)
+
+    case BiDiClient.close_window(session, handle) do
+      :ok ->
+        Process.delete({:wallabidi_bidi_v2_window, session.id})
+        Process.delete({:wallabidi_bidi_v2_frame, session.id})
+        Process.delete({:wallabidi_bidi_v2_frame_stack, session.id})
+        {:ok, nil}
+
+      err ->
+        err
+    end
+  end
+
+  defp current_window(%Session{id: id, browsing_context: root}) do
+    Process.get({:wallabidi_bidi_v2_window, id}, root)
+  end
 
   @impl true
   def maximize_window(_), do: {:ok, nil}
