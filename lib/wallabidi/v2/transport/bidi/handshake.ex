@@ -11,10 +11,17 @@ defmodule Wallabidi.V2.Transport.BiDi.Handshake do
   # See: https://w3c.github.io/webdriver-bidi/#transport
   #      priv/bidi-server/node_modules/chromium-bidi/lib/esm/bidiServer/WebSocketServer.js
 
+  # Chrome runs headless by default — matches the legacy Chrome (BiDi)
+  # driver and lets `mix test.chrome.bidi_v2` finish suites without
+  # piling visible windows on the user's desktop. Override via
+  # `:capabilities` opt to opt in to a visible browser.
   @default_capabilities %{
     "alwaysMatch" => %{
       "browserName" => "chrome",
-      "webSocketUrl" => true
+      "webSocketUrl" => true,
+      "goog:chromeOptions" => %{
+        "args" => ["--headless=new"]
+      }
     }
   }
 

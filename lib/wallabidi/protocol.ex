@@ -95,6 +95,9 @@ defmodule Wallabidi.Protocol do
   def eval(%Session{driver: driver} = session, js) when driver in [Wallabidi.V2Driver, Wallabidi.V2ChromeDriver],
     do: Wallabidi.V2.CDPClient.evaluate(session, js)
 
+  def eval(%Session{driver: Wallabidi.V2BiDiDriver} = session, js),
+    do: Wallabidi.V2.BiDiClient.evaluate(session, js)
+
   @spec eval_async(Session.t(), String.t(), timeout()) :: result
   def eval_async(session, js, timeout \\ 10_000)
 
@@ -117,6 +120,9 @@ defmodule Wallabidi.Protocol do
     end
   end
 
+  def eval_async(%Session{driver: Wallabidi.V2BiDiDriver} = session, js, _timeout),
+    do: Wallabidi.V2.BiDiClient.evaluate_async(session, js)
+
   @spec current_url(Session.t()) :: result
   def current_url(%Session{protocol: mod} = session) when not is_nil(mod),
     do: mod.current_url(session)
@@ -124,6 +130,9 @@ defmodule Wallabidi.Protocol do
   def current_url(%Session{driver: driver} = session)
       when driver in [Wallabidi.V2Driver, Wallabidi.V2ChromeDriver],
       do: Wallabidi.V2.CDPClient.current_url(session)
+
+  def current_url(%Session{driver: Wallabidi.V2BiDiDriver} = session),
+    do: Wallabidi.V2.BiDiClient.current_url(session)
 
   @spec subscribe(Session.t(), semantic_event) :: :ok
   def subscribe(%Session{protocol: mod} = session, event)

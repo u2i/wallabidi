@@ -126,6 +126,25 @@ defmodule Wallabidi.V2.BiDiClient do
     end
   end
 
+  @doc """
+  Evaluate a JS expression and await its returned Promise. Mirrors
+  `evaluate/2` for the case where the expression yields a thenable.
+  """
+  @spec evaluate_async(Session.t(), String.t()) :: {:ok, term} | {:error, term}
+  def evaluate_async(%Session{browsing_context: ctx} = session, expression)
+      when is_binary(expression) do
+    params = %{
+      "expression" => expression,
+      "awaitPromise" => true,
+      "target" => %{"context" => ctx}
+    }
+
+    case Protocol.cdp_send(session, "script.evaluate", params, []) do
+      {:ok, result} -> decode_eval_result(result)
+      error -> error
+    end
+  end
+
   defp do_eval_function(%Session{browsing_context: ctx} = session, expression, args) do
     fn_decl = "function() { #{expression} }"
 
@@ -345,6 +364,107 @@ defmodule Wallabidi.V2.BiDiClient do
   end
 
   # ----- Interactions -----
+
+  @doc """
+  Run the bootstrap's classifier on the element. Returns one of
+  `"none" | "patch" | "navigate" | "full_page"` for `:click`, or
+  the equivalent for `:change`. Caller uses this to decide whether
+  to await a page_ready signal after the interaction.
+  """
+  @spec classify(Session.t(), Element.t(), :click | :change) ::
+          {:ok, String.t()} | {:error, term}
+  def classify(%Session{} = session, %Element{} = element, interaction)
+      when interaction in [:click, :change] do
+    call_on_element(
+      session,
+      element,
+      "function(t) { return window.__w.classify(this, t); }",
+      [Atom.to_string(interaction)]
+    )
+  end
+
+  @doc """
+  LV-aware click. Captures `pre_page_id` BEFORE the click, classifies
+  the element to decide what to await, then issues the click and
+  blocks for the appropriate signal. Mirrors V2.CDPClient.click_aware
+  shape — same primitive contract, BiDi underneath.
+
+  Returns `{:ok, classification}` on success, `{:error, :timeout}`
+  if the expected signal didn't arrive, or `{:error, term}` for
+  transport errors.
+  """
+  @spec click_aware(Session.t(), Element.t(), keyword) ::
+          {:ok, String.t()} | {:error, term}
+  def click_aware(%Session{} = session, %Element{} = element, opts \\ []) do
+    timeout = Keyword.get(opts, :timeout, 5_000)
+    pre_page_id = Protocol.get_page_id(session)
+
+    with :ok <- await_lv_ready(session, timeout),
+         {:ok, classification} <- classify(session, element, :click),
+         {:ok, _} <- click(session, element) do
+      case classification do
+        "none" ->
+          {:ok, classification}
+
+        _ ->
+          case Protocol.await_page_ready_after(session, pre_page_id, timeout) do
+            :ok -> {:ok, classification}
+            :timeout -> {:error, :timeout}
+          end
+      end
+    end
+  end
+
+  @doc """
+  Like `click_aware/3` but returns a status tag (`:ready` or
+  `:timeout`) so callers can handle patch-classified timeouts
+  silently — same shape as V2.CDPClient.click_aware_with_classification.
+  """
+  @spec click_aware_with_classification(Session.t(), Element.t(), keyword) ::
+          {:ok, String.t(), :ready | :timeout} | {:error, term}
+  def click_aware_with_classification(%Session{} = session, %Element{} = element, opts \\ []) do
+    timeout = Keyword.get(opts, :timeout, 5_000)
+    pre_page_id = Protocol.get_page_id(session)
+
+    with :ok <- await_lv_ready(session, timeout),
+         {:ok, classification} <- classify(session, element, :click),
+         {:ok, _} <- click(session, element) do
+      case classification do
+        "none" ->
+          {:ok, classification, :ready}
+
+        _ ->
+          case Protocol.await_page_ready_after(session, pre_page_id, timeout) do
+            :ok -> {:ok, classification, :ready}
+            :timeout -> {:ok, classification, :timeout}
+          end
+      end
+    end
+  end
+
+  # Block until liveSocket.main has finished joining (or there's no
+  # LiveView). Mirrors CDPClient.await_lv_ready — without it, clicks
+  # fired during the join window get dropped.
+  defp await_lv_ready(%Session{} = session, timeout_ms) do
+    js = """
+    new Promise(function(resolve) {
+      var deadline = Date.now() + #{timeout_ms};
+      function check() {
+        var ls = window.liveSocket;
+        if (!ls || !ls.main) return resolve(true);
+        if (ls.main.joinPending !== true) return resolve(true);
+        if (Date.now() > deadline) return resolve(false);
+        setTimeout(check, 20);
+      }
+      check();
+    })
+    """
+
+    case evaluate_async(session, js) do
+      {:ok, _} -> :ok
+      _ -> :ok
+    end
+  end
 
   @spec click(Session.t(), Element.t()) :: {:ok, nil} | {:error, term}
   def click(%Session{} = session, %Element{} = element) do

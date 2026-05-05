@@ -755,13 +755,12 @@ defmodule Wallabidi.Browser do
     session = get_session(parent)
 
     cond do
-      session && session.driver == Wallabidi.V2Driver &&
+      session && session.driver in [Wallabidi.V2Driver, Wallabidi.V2BiDiDriver] &&
           not in_frame?(session) && not in_switched_window?(session) ->
-        # V2Driver (Lightpanda): route through V2.CDPClient.click_aware
-        # which captures pre_page_id, classifies, clicks, awaits
-        # page_ready — same shape as do_post_click but in one native
-        # V2 call. Avoids the post-click `find` polling fallback that
-        # cost LP ~3s per submit-form click.
+        # V2 native click_aware: capture pre_page_id, classify, click,
+        # await page_ready — one bootstrap-driven RPC chain instead of
+        # the polling fallback. CDP path picks V2.CDPClient.click_aware,
+        # BiDi path picks V2.BiDiClient.click_aware; same return shape.
         #
         # V2ChromeDriver intentionally NOT routed here — it has
         # nav-timeout / slow-dest-mount-fallback logic in its own
@@ -828,7 +827,7 @@ defmodule Wallabidi.Browser do
   defp v2_click_with_await(parent, query) do
     case find(parent, query) do
       %Wallabidi.Element{} = element ->
-        case Wallabidi.V2.CDPClient.click_aware(element.parent, element) do
+        case v2_click_module(element.parent).click_aware(element.parent, element) do
           {:ok, _classification} ->
             parent
 
@@ -852,6 +851,14 @@ defmodule Wallabidi.Browser do
         end)
     end
   end
+
+  # Pick the V2 client module that owns a given session's transport.
+  # CDP and BiDi expose the same `click_aware/2` shape, so callers
+  # can invoke `mod.click_aware(...)` uniformly.
+  defp v2_click_module(%Wallabidi.Session{driver: Wallabidi.V2BiDiDriver}),
+    do: Wallabidi.V2.BiDiClient
+
+  defp v2_click_module(_), do: Wallabidi.V2.CDPClient
 
   # BiDi pipeline click: Pipeline.click_full via script.evaluate.
   # Returns {count, classification, prepared} by value in 1 RPC.
