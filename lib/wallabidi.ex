@@ -86,6 +86,7 @@ defmodule Wallabidi do
       :lightpanda_v2 -> Wallabidi.V2Driver.start_session(opts)
       :lightpanda -> Wallabidi.Lightpanda.start_session(opts)
       :chrome_cdp_v2 -> Wallabidi.V2ChromeDriver.start_session(opts)
+      :chrome_bidi_v2 -> Wallabidi.V2BiDiDriver.start_session(opts)
       :chrome_cdp -> Wallabidi.ChromeCDP.start_session(opts)
       _browser -> Wallabidi.Chrome.start_session(opts)
     end
@@ -123,6 +124,7 @@ defmodule Wallabidi do
       :lightpanda_v2 -> Wallabidi.V2Driver
       :lightpanda -> Wallabidi.Lightpanda
       :chrome_cdp_v2 -> Wallabidi.V2ChromeDriver
+      :chrome_bidi_v2 -> Wallabidi.V2BiDiDriver
       :chrome_cdp -> Wallabidi.ChromeCDP
       :live_view -> Wallabidi.LiveViewDriver
       _ -> Wallabidi.Chrome

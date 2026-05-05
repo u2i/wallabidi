@@ -1790,7 +1790,8 @@ defmodule Wallabidi.Browser do
     session = get_session(parent)
 
     cond do
-      session && session.driver in [Wallabidi.V2Driver, Wallabidi.V2ChromeDriver] &&
+      session &&
+        session.driver in [Wallabidi.V2Driver, Wallabidi.V2ChromeDriver, Wallabidi.V2BiDiDriver] &&
           not in_frame?(session) && not in_switched_window?(session) ->
         # V2 transport uses the same ops pipeline shape (push-based finds
         # via Runtime.addBinding). Routes through V2.CDPClient.
@@ -1822,6 +1823,12 @@ defmodule Wallabidi.Browser do
 
       result =
         cond do
+          session.driver == Wallabidi.V2BiDiDriver ->
+            # V2 BiDi: same push-based bootstrap pipeline as the CDP
+            # path, just speaking BiDi commands underneath. Returns
+            # {:ok, [Element]} keyed by sharedId.
+            Wallabidi.V2.BiDiClient.find_elements(parent, validated, timeout: timeout)
+
           session.driver in [Wallabidi.V2Driver, Wallabidi.V2ChromeDriver] ->
             # V2 transport: V2.CDPClient.find_elements/3 reuses the
             # same Bootstrap+register_js pipeline but routes through

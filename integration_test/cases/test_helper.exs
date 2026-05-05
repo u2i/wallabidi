@@ -13,6 +13,7 @@ Logger.configure(level: :warning)
 driver =
   case System.get_env("WALLABIDI_DRIVER") do
     "chrome" -> :chrome
+    "chrome_bidi_v2" -> :chrome_bidi_v2
     "live_view" -> :live_view
     "lightpanda" -> :lightpanda
     "lightpanda_v2" -> :lightpanda_v2
@@ -62,6 +63,9 @@ excludes =
       excludes ++ [browser: true, lightpanda_ni: true, live_view_only: true, cdp_only: true]
 
     :chrome_cdp_v2 ->
+      excludes ++ [live_view_only: true, cdp_only: true]
+
+    :chrome_bidi_v2 ->
       excludes ++ [live_view_only: true, cdp_only: true]
 
     :chrome ->
