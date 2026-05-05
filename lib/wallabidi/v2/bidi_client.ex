@@ -25,6 +25,12 @@ defmodule Wallabidi.V2.BiDiClient do
   alias Wallabidi.Session
   alias Wallabidi.V2.Transport.Protocol
 
+  # Pulls in shared op bodies (text/2, attribute/3, displayed/2,
+  # click/2, set_value_dom/3, clear/2, send_keys_text/3, page-info
+  # ops). They call this module's call_on_element/4 + evaluate/2,3
+  # for the wire layer.
+  use Wallabidi.V2.OpsShared
+
   # Frame focus stores an override in the test process dictionary
   # (BiDi V2BiDiDriver.focus_frame writes it). When set, subsequent
   # BiDi commands target the focused iframe's browsing context
@@ -597,77 +603,7 @@ defmodule Wallabidi.V2.BiDiClient do
 
   defp stale_marker?(_), do: false
 
-  @extract_text_js """
-  function() {
-    var blocks = ['DIV','P','H1','H2','H3','H4','H5','H6','LI','TR','BR',
-                  'SECTION','ARTICLE','HEADER','FOOTER','NAV','MAIN','UL','OL','DL',
-                  'BLOCKQUOTE','PRE','TABLE','THEAD','TBODY','TFOOT','FORM','FIELDSET','HR'];
-    function walk(node) {
-      if (node.nodeType === 3) return node.nodeValue.replace(/\\s+/g, ' ');
-      if (node.nodeType !== 1) return '';
-      if (node.tagName === 'BR') return '\\n';
-      var parts = [];
-      for (var i = 0; i < node.childNodes.length; i++) {
-        parts.push(walk(node.childNodes[i]));
-      }
-      var text = parts.join('');
-      if (blocks.indexOf(node.tagName) >= 0) text = '\\n' + text + '\\n';
-      return text;
-    }
-    var result = walk(this);
-    return result.split('\\n').map(function(l) { return l.trim(); }).filter(Boolean).join('\\n');
-  }
-  """
-
-  @spec text(Session.t(), Element.t()) :: {:ok, String.t()} | {:error, term}
-  def text(%Session{} = session, %Element{} = element) do
-    call_on_element(session, element, @extract_text_js)
-  end
-
-  @spec attribute(Session.t(), Element.t(), String.t()) ::
-          {:ok, String.t() | nil} | {:error, term}
-  def attribute(%Session{} = session, %Element{} = element, name) when is_binary(name) do
-    call_on_element(
-      session,
-      element,
-      """
-      function(name) {
-        if (this && !this.isConnected) return {__wallabidi_stale: true};
-        if (name === 'value' && 'value' in this) return this.value;
-        if (name === 'checked') return this.checked ? 'true' : null;
-        if (name === 'selected') return this.selected ? 'true' : null;
-        if (name === 'outerHTML') return this.outerHTML;
-        if (name === 'innerHTML') return this.innerHTML;
-        return this.getAttribute(name);
-      }
-      """,
-      [name]
-    )
-  end
-
-  @spec displayed(Session.t(), Element.t()) :: {:ok, boolean} | {:error, term}
-  def displayed(%Session{} = session, %Element{} = element) do
-    call_on_element(
-      session,
-      element,
-      """
-      function() {
-        if (!this.isConnected) return false;
-        if (this.tagName === 'OPTION') {
-          var sel = this.closest('select');
-          if (!sel) return true;
-          var ss = window.getComputedStyle(sel);
-          return ss.display !== 'none' && ss.visibility !== 'hidden';
-        }
-        var st = window.getComputedStyle(this);
-        if (st.display === 'none' || st.visibility === 'hidden') return false;
-        var r = this.getBoundingClientRect();
-        if (r.width === 0 && r.height === 0 && this.offsetParent === null && st.position !== 'fixed') return false;
-        return true;
-      }
-      """
-    )
-  end
+  # text/2, attribute/3, displayed/2 — provided by Wallabidi.V2.OpsShared.
 
   # ----- Interactions -----
 

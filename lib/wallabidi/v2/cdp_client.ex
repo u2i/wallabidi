@@ -22,6 +22,12 @@ defmodule Wallabidi.V2.CDPClient do
   alias Wallabidi.V2.Transport.Protocol
   alias Wallabidi.V2.WebSocket
 
+  # Pulls in shared op bodies (text/2, attribute/3, displayed/2,
+  # click/2, set_value_dom/3, clear/2, send_keys_text/3, page-info
+  # ops). They call this module's call_on_element/4 + evaluate/2,3
+  # for the wire layer.
+  use Wallabidi.V2.OpsShared
+
   @doc """
   Returns the CDP send opts (`:flat_session_id` + `:session_id`) for
   a given Session. Used internally by every CDP call.
@@ -166,6 +172,12 @@ defmodule Wallabidi.V2.CDPClient do
            arguments: encoded_args,
            returnByValue: true
          }) do
+      {:ok, %{"result" => %{"value" => %{"__wallabidi_stale" => true}}}} ->
+        # JS opted into the stale sentinel by returning a flag map
+        # — translate to :stale_reference so callers don't all repeat
+        # the same pattern. Mirrors V2.BiDiClient.call_on_element.
+        {:error, :stale_reference}
+
       {:ok, %{"result" => %{"value" => value}}} ->
         {:ok, value}
 
@@ -196,110 +208,7 @@ defmodule Wallabidi.V2.CDPClient do
       String.contains?(msg, "Object has been released")
   end
 
-  @extract_text_js """
-  function() {
-    // Always use a DOM walker so the result is consistent across
-    // engines that *have* a layout pass (Chrome, where innerText
-    // already inserts newlines between blocks) and engines that
-    // *don't* (Lightpanda, where innerText would just whitespace-
-    // collapse). Mirrors what the legacy CDPClient.text does.
-    var blocks = ['DIV','P','H1','H2','H3','H4','H5','H6','LI','TR','BR',
-                  'SECTION','ARTICLE','HEADER','FOOTER','NAV','MAIN','UL','OL','DL',
-                  'BLOCKQUOTE','PRE','TABLE','THEAD','TBODY','TFOOT','FORM','FIELDSET','HR'];
-    function walk(node) {
-      if (node.nodeType === 3) return node.nodeValue.replace(/\\s+/g, ' ');
-      if (node.nodeType !== 1) return '';
-      if (node.tagName === 'BR') return '\\n';
-      var parts = [];
-      for (var i = 0; i < node.childNodes.length; i++) {
-        parts.push(walk(node.childNodes[i]));
-      }
-      var text = parts.join('');
-      if (blocks.indexOf(node.tagName) >= 0) text = '\\n' + text + '\\n';
-      return text;
-    }
-    var result = walk(this);
-    return result.split('\\n').map(function(l) { return l.trim(); }).filter(Boolean).join('\\n');
-  }
-  """
-
-  @doc "Returns the element's visible text content (`innerText` / fallback)."
-  @spec text(Session.t(), Element.t()) :: {:ok, String.t()} | {:error, term}
-  def text(%Session{} = session, %Element{} = element) do
-    # innerText handles whitespace/block-element newlines in real
-    # browsers (Chrome). Headless engines without a layout pass
-    # (Lightpanda) lack innerText, so fall back to a DOM walker that
-    # inserts newlines between block-level elements — matching
-    # Wallaby's contract for cross-engine text equality.
-    call_on_element(session, element, @extract_text_js)
-  end
-
-  @doc """
-  Returns the value of a named attribute on the element, or `nil` if
-  not set. Treats `value`, `checked`, and `selected` specially —
-  those map to live DOM properties rather than HTML attributes.
-  """
-  @spec attribute(Session.t(), Element.t(), String.t()) ::
-          {:ok, String.t() | nil} | {:error, term}
-  def attribute(%Session{} = session, %Element{} = element, name) when is_binary(name) do
-    # Detached nodes still hold a live JS reference, so call_on_element
-    # would happily run `this.getAttribute(...)` on them. To match
-    # Wallaby's "raise StaleReferenceError when the element has left
-    # the document" contract, we check `isConnected` and signal stale
-    # via a sentinel return value.
-    case call_on_element(
-           session,
-           element,
-           """
-           function(name) {
-             if (this && !this.isConnected) return {__wallabidi_stale: true};
-             if (name === 'value' && 'value' in this) return this.value;
-             if (name === 'checked') return this.checked ? 'true' : null;
-             if (name === 'selected') return this.selected ? 'true' : null;
-             if (name === 'outerHTML') return this.outerHTML;
-             if (name === 'innerHTML') return this.innerHTML;
-             return this.getAttribute(name);
-           }
-           """,
-           [name]
-         ) do
-      {:ok, %{"__wallabidi_stale" => true}} -> {:error, :stale_reference}
-      result -> result
-    end
-  end
-
-  @doc """
-  Returns whether the element would be considered visible to a user.
-
-  Mirrors the existing CDPClient.displayed/1 contract:
-    * isConnected (still in document tree)
-    * own display/visibility not hidden
-    * non-empty rect OR offsetParent OR fixed position
-    * OPTION special-case (closed selects have no layout but are clickable)
-  """
-  @spec displayed(Session.t(), Element.t()) :: {:ok, boolean} | {:error, term}
-  def displayed(%Session{} = session, %Element{} = element) do
-    call_on_element(
-      session,
-      element,
-      """
-      function() {
-        if (!this.isConnected) return false;
-        if (this.tagName === 'OPTION') {
-          var sel = this.closest('select');
-          if (!sel) return true;
-          var ss = window.getComputedStyle(sel);
-          return ss.display !== 'none' && ss.visibility !== 'hidden';
-        }
-        var st = window.getComputedStyle(this);
-        if (st.display === 'none' || st.visibility === 'hidden') return false;
-        var r = this.getBoundingClientRect();
-        if (r.width === 0 && r.height === 0 && this.offsetParent === null && st.position !== 'fixed') return false;
-        return true;
-      }
-      """
-    )
-  end
+  # text/2, attribute/3, displayed/2 — provided by Wallabidi.V2.OpsShared.
 
   @doc """
   Sets the value of an input element and dispatches `input` and
