@@ -61,6 +61,34 @@ defmodule Wallabidi.V2.Transport.BiDiTest do
     assert result["url"] == "about:blank"
   end
 
+  test "await_page_load resolves on browsingContext.load", %{base_url: base_url} do
+    {:ok, session} = start(base_url)
+
+    # Don't wait for "complete" — we want the navigation reply to
+    # come back BEFORE the load milestone, so we can prove that
+    # await_page_load actually waits for the event (or sees the
+    # buffered milestone, depending on timing).
+    {:ok, %{"navigation" => nav}} =
+      Protocol.cdp_send(
+        session,
+        "browsingContext.navigate",
+        %{
+          "context" => session.browsing_context,
+          "url" => "about:blank",
+          "wait" => "none"
+        },
+        []
+      )
+
+    assert is_binary(nav)
+    assert :ok = Protocol.await_page_load(session, nav, "load", 10_000)
+  end
+
+  test "await_page_load times out for unknown navigation id", %{base_url: base_url} do
+    {:ok, session} = start(base_url)
+    assert :timeout = Protocol.await_page_load(session, "no-such-nav", "load", 200)
+  end
+
   test "session shuts down cleanly when owner exits", %{base_url: base_url} do
     test_pid = self()
 

@@ -32,7 +32,13 @@ defmodule Wallabidi.V2.Transport.BiDi.SessionActor do
     :teardown_fun,
     page_id: nil,
     frame_stack: [],
-    frame_contexts: %{}
+    frame_contexts: %{},
+    # Page-load bookkeeping (Phase B). `loads` buffers
+    # `%{navigation_id => %{milestone_name => true}}` for events that
+    # arrived before any caller asked. `load_waiters` is a list of
+    # `{from, navigation_id_or_:any, milestone_name, timer_ref}`.
+    loads: %{},
+    load_waiters: []
   ]
 
   # ----- Public API -----
@@ -64,6 +70,7 @@ defmodule Wallabidi.V2.Transport.BiDi.SessionActor do
     owner = Keyword.get(opts, :owner, self())
 
     with {:ok, ws_pid} <- WebSocketClient.start_link(ws_url),
+         :ok <- subscribe_load_events(ws_pid),
          {:ok, session_struct} <- init_fun.() do
       ws_ref = Process.monitor(ws_pid)
       owner_ref = Process.monitor(owner)
@@ -83,6 +90,27 @@ defmodule Wallabidi.V2.Transport.BiDi.SessionActor do
        }}
     else
       {:error, reason} -> {:stop, reason}
+    end
+  end
+
+  # Subscribe to load milestones at session start. Server-side
+  # `session.subscribe` plus WSC-side forward-to-this-pid.
+  # Idempotent on the BiDi server side — calling it twice is harmless.
+  defp subscribe_load_events(ws_pid) do
+    events = ["browsingContext.load", "browsingContext.domContentLoaded"]
+
+    Enum.each(events, fn ev ->
+      WebSocketClient.subscribe(ws_pid, ev, self(), :global)
+    end)
+
+    case WebSocketClient.send_command(
+           ws_pid,
+           "session.subscribe",
+           %{"events" => events},
+           10_000
+         ) do
+      {:ok, _} -> :ok
+      {:error, reason} -> {:error, {:subscribe_failed, reason}}
     end
   end
 
@@ -172,13 +200,36 @@ defmodule Wallabidi.V2.Transport.BiDi.SessionActor do
     {:reply, :ok, %{state | session: session}}
   end
 
-  # ----- Phase B/C stubs (to be implemented) -----
+  # ----- Page-load awaits (Phase B) -----
 
-  def handle_call({:await_page_load, _loader_id, _name, _timeout_ms}, _from, state),
-    do: {:reply, :ok, state}
+  def handle_call({:await_page_load, loader_id, name, timeout_ms}, from, state) do
+    case get_in(state.loads, [loader_id, name]) do
+      true ->
+        {:reply, :ok, drop_load(state, loader_id, name)}
 
-  def handle_call({:await_next_page_load, _name, _timeout_ms}, _from, state),
-    do: {:reply, :ok, state}
+      _ ->
+        timer_ref = Process.send_after(self(), {:page_load_timeout, from}, timeout_ms)
+        waiters = [{from, loader_id, name, timer_ref} | state.load_waiters]
+        {:noreply, %{state | load_waiters: waiters}}
+    end
+  end
+
+  def handle_call({:await_next_page_load, name, timeout_ms}, from, state) do
+    already =
+      Enum.any?(state.loads, fn {_nav, milestones} ->
+        Map.get(milestones, name, false)
+      end)
+
+    if already do
+      {:reply, :ok, %{state | loads: %{}}}
+    else
+      timer_ref = Process.send_after(self(), {:page_load_timeout, from}, timeout_ms)
+      waiters = [{from, :any, name, timer_ref} | state.load_waiters]
+      {:noreply, %{state | loads: %{}, load_waiters: waiters}}
+    end
+  end
+
+  # ----- Phase C stub (bootstrap channel) -----
 
   def handle_call({:await_page_ready_after, _pre_page_id, _timeout_ms}, _from, state),
     do: {:reply, :ok, state}
@@ -200,9 +251,42 @@ defmodule Wallabidi.V2.Transport.BiDi.SessionActor do
   # ----- Inbound -----
 
   @impl true
+  def handle_info({:bidi_event, "browsingContext.load", event}, state) do
+    nav = get_in(event, ["params", "navigation"])
+
+    if is_binary(nav) do
+      {:noreply, record_load(state, nav, "load")}
+    else
+      {:noreply, state}
+    end
+  end
+
+  def handle_info({:bidi_event, "browsingContext.domContentLoaded", event}, state) do
+    nav = get_in(event, ["params", "navigation"])
+
+    if is_binary(nav) do
+      {:noreply, record_load(state, nav, "DOMContentLoaded")}
+    else
+      {:noreply, state}
+    end
+  end
+
   def handle_info({:bidi_event, _method, _event}, state) do
-    # Phase A: ignore. Phase B/C will route loads + script.message.
+    # Other events (script.message, log.entryAdded, etc.) — Phase C
+    # will route script.message; the rest stay no-op for now.
     {:noreply, state}
+  end
+
+  def handle_info({:page_load_timeout, from}, state) do
+    case Enum.split_with(state.load_waiters, fn {f, _, _, _} -> f == from end) do
+      {[{from, _, _, _}], rest} ->
+        GenServer.reply(from, :timeout)
+        {:noreply, %{state | load_waiters: rest}}
+
+      _ ->
+        # Already resolved — the timeout was racing the reply.
+        {:noreply, state}
+    end
   end
 
   def handle_info({:done_send, _pid}, state), do: {:noreply, state}
@@ -259,4 +343,47 @@ defmodule Wallabidi.V2.Transport.BiDi.SessionActor do
   end
 
   defp normalize_params(other), do: other
+
+  # Wake any waiter whose (navigation_id, milestone) matches — or
+  # whose loader is the `:any` wildcard (await_next_page_load).
+  # If no waiter is registered, buffer the milestone so a later
+  # caller sees it immediately.
+  defp record_load(state, nav, name) do
+    {matching, rest} =
+      Enum.split_with(state.load_waiters, fn {_from, lid, n, _ref} ->
+        (lid == nav or lid == :any) and n == name
+      end)
+
+    case matching do
+      [] ->
+        inner = Map.put(Map.get(state.loads, nav, %{}), name, true)
+        %{state | loads: Map.put(state.loads, nav, inner)}
+
+      _ ->
+        Enum.each(matching, fn {from, _, _, ref} ->
+          Process.cancel_timer(ref)
+          GenServer.reply(from, :ok)
+        end)
+
+        %{state | load_waiters: rest}
+    end
+  end
+
+  # After consuming a buffered (nav, milestone), drop it so a future
+  # caller for the same pair has to wait for a fresh event.
+  defp drop_load(state, nav, name) do
+    case Map.get(state.loads, nav) do
+      nil ->
+        state
+
+      inner ->
+        case Map.delete(inner, name) do
+          empty when map_size(empty) == 0 ->
+            %{state | loads: Map.delete(state.loads, nav)}
+
+          remaining ->
+            %{state | loads: Map.put(state.loads, nav, remaining)}
+        end
+    end
+  end
 end
