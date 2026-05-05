@@ -184,10 +184,10 @@ defmodule Wallabidi.V2BiDiDriver do
 
   @impl true
   def selected(%Element{} = element) do
-    BiDiClient.evaluate(
+    BiDiClient.call_on_element(
       Element.root_session(element),
-      "return arguments[0].checked === true || arguments[0].selected === true;",
-      [%{"sharedId" => element.bidi_shared_id}]
+      element,
+      "function() { return this.checked === true || this.selected === true; }"
     )
   end
 

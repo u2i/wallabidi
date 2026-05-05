@@ -535,8 +535,61 @@ defmodule Wallabidi.V2.BiDiClient do
           {:error, :invalid_selector}
 
         {:timeout, _} ->
-          {:ok, []}
+          # Push didn't fire (count-shape mismatch — query asked for
+          # exactly 1 but page has 2, etc). Run W.exec synchronously
+          # so callers see the *actual* element count for error
+          # messaging ("but found 2"). Mirrors CDPClient.final_sync_exec.
+          final_sync_exec(session, ops_json, ops.parent_id)
       end
+    end
+  end
+
+  defp final_sync_exec(%Session{browsing_context: ctx} = session, ops_json, parent_shared_id) do
+    fn_decl =
+      if parent_shared_id do
+        "function() { return window.__w ? window.__w.exec(#{ops_json}, this).els : []; }"
+      else
+        "() => window.__w ? window.__w.exec(#{ops_json}, null).els : []"
+      end
+
+    base_params = %{
+      "functionDeclaration" => fn_decl,
+      "awaitPromise" => false,
+      "resultOwnership" => "root",
+      "target" => %{"context" => ctx}
+    }
+
+    params =
+      if parent_shared_id do
+        Map.put(base_params, "this", %{"sharedId" => parent_shared_id})
+      else
+        base_params
+      end
+
+    case Protocol.cdp_send(session, "script.callFunction", params, []) do
+      {:ok, %{"type" => "success", "result" => %{"type" => "array", "value" => items}}}
+      when is_list(items) ->
+        elements =
+          items
+          |> Enum.map(fn
+            %{"sharedId" => sid} when is_binary(sid) ->
+              %Element{
+                id: sid,
+                bidi_shared_id: sid,
+                parent: session,
+                driver: session.driver,
+                url: session.session_url
+              }
+
+            _ ->
+              nil
+          end)
+          |> Enum.reject(&is_nil/1)
+
+        {:ok, elements}
+
+      _ ->
+        {:ok, []}
     end
   end
 
