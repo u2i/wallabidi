@@ -5,6 +5,10 @@ Logger.configure(level: :warning)
 driver =
   case System.get_env("WALLABIDI_DRIVER") do
     "chrome" -> :chrome
+    "chrome_bidi_v2" -> :chrome_bidi_v2
+    "chrome_cdp_v2" -> :chrome_cdp_v2
+    "lightpanda" -> :lightpanda
+    "lightpanda_v2" -> :lightpanda_v2
     "live_view" -> :live_view
     _ -> :chrome_cdp
   end
@@ -12,19 +16,37 @@ driver =
 Application.put_env(:wallabidi, :driver, driver)
 {:ok, _} = Application.ensure_all_started(:wallabidi)
 
-# Best-effort start secondary browser backend
-secondary =
+# For benchmarks we want EVERY available driver stack running, so
+# the "compare all drivers" test can ask Wallabidi.start_session/1
+# for each one without bringing up its supervisor on the fly. Each
+# secondary boots only if it's a different stack from the primary —
+# starting the primary's stack twice errors with :already_started
+# on the underlying ChromeServer/Lightpanda port.
+primary_mod =
   case driver do
-    :chrome_cdp -> {Wallabidi.Chrome, Wallabidi.Chrome.Supervisor}
-    :chrome -> {Wallabidi.ChromeCDP, Wallabidi.ChromeCDP.Supervisor}
+    :chrome -> Wallabidi.Chrome
+    :chrome_cdp -> Wallabidi.ChromeCDP
+    :chrome_bidi_v2 -> Wallabidi.V2BiDiDriver
+    :chrome_cdp_v2 -> Wallabidi.V2ChromeDriver
+    :lightpanda -> Wallabidi.Lightpanda
+    :lightpanda_v2 -> Wallabidi.V2Driver
     _ -> nil
   end
 
-if secondary do
-  {mod, name} = secondary
+secondaries =
+  [
+    {Wallabidi.Chrome, Wallabidi.Chrome.Supervisor},
+    {Wallabidi.ChromeCDP, Wallabidi.ChromeCDP.Supervisor},
+    {Wallabidi.V2BiDiDriver, Wallabidi.V2BiDiDriver},
+    {Wallabidi.V2ChromeDriver, Wallabidi.V2ChromeDriver},
+    {Wallabidi.V2Driver, Wallabidi.V2Driver},
+    {Wallabidi.Lightpanda, Wallabidi.Lightpanda.Supervisor}
+  ]
+  |> Enum.reject(fn {mod, _name} -> mod == primary_mod end)
 
+for {mod, name} <- secondaries do
   try do
-    mod.validate()
+    if function_exported?(mod, :validate, 0), do: mod.validate()
     mod.start_link(name: name)
   rescue
     _ -> :ok
