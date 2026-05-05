@@ -277,6 +277,48 @@ defmodule Wallabidi.V2.BiDiClient do
     evaluate(session, "location.pathname")
   end
 
+  # ----- Screenshot + viewport -----
+
+  @doc "Capture a PNG screenshot of the current viewport."
+  @spec take_screenshot(Session.t()) :: {:ok, binary} | {:error, term}
+  def take_screenshot(%Session{browsing_context: ctx} = session) do
+    {method, params} = Commands.capture_screenshot(ctx)
+
+    case Protocol.cdp_send(session, method, params, []) do
+      {:ok, result} -> ResponseParser.extract_screenshot(result)
+      error -> error
+    end
+  end
+
+  @doc "Set the browsing context's viewport size (CSS pixels)."
+  @spec set_viewport(Session.t(), non_neg_integer, non_neg_integer) ::
+          {:ok, nil} | {:error, term}
+  def set_viewport(%Session{browsing_context: ctx} = session, width, height)
+      when is_integer(width) and is_integer(height) do
+    {method, params} = Commands.set_viewport(ctx, width, height)
+
+    case Protocol.cdp_send(session, method, params, []) do
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
+  end
+
+  @doc "Read the current viewport size in CSS pixels."
+  @spec get_viewport(Session.t()) ::
+          {:ok, %{width: non_neg_integer, height: non_neg_integer}} | {:error, term}
+  def get_viewport(%Session{} = session) do
+    case evaluate(session, "JSON.stringify({width: window.innerWidth, height: window.innerHeight})") do
+      {:ok, json} when is_binary(json) ->
+        case Jason.decode(json) do
+          {:ok, %{"width" => w, "height" => h}} -> {:ok, %{width: w, height: h}}
+          _ -> {:error, :bad_size_response}
+        end
+
+      error ->
+        error
+    end
+  end
+
   # ----- Cookies -----
 
   @doc """

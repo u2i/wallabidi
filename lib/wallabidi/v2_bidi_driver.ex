@@ -75,11 +75,18 @@ defmodule Wallabidi.V2BiDiDriver do
       capabilities: %{}
     }
 
-    BiDi.start_session(
-      base_url: base_url,
-      session_struct: session_struct,
-      owner: Keyword.get(opts, :owner, self())
-    )
+    with {:ok, session} <-
+           BiDi.start_session(
+             base_url: base_url,
+             session_struct: session_struct,
+             owner: Keyword.get(opts, :owner, self())
+           ) do
+      if window_size = Keyword.get(opts, :window_size) do
+        _ = BiDiClient.set_viewport(session, window_size[:width], window_size[:height])
+      end
+
+      {:ok, session}
+    end
   end
 
   defp resolve_base_url(opts) do
@@ -253,13 +260,28 @@ defmodule Wallabidi.V2BiDiDriver do
   defp cookie_result(other), do: other
 
   @impl true
-  def take_screenshot(%Session{}), do: ""
+  def take_screenshot(%Session{} = session) do
+    case BiDiClient.take_screenshot(session) do
+      {:ok, binary} -> binary
+      _ -> ""
+    end
+  end
+
+  def take_screenshot(%Element{} = element) do
+    take_screenshot(Element.root_session(element))
+  end
 
   @impl true
-  def get_window_size(%Session{}), do: {:ok, %{"width" => 1024, "height" => 768}}
+  def get_window_size(%Session{} = session) do
+    case BiDiClient.get_viewport(session) do
+      {:ok, %{width: w, height: h}} -> {:ok, %{"width" => w, "height" => h}}
+      other -> other
+    end
+  end
 
   @impl true
-  def set_window_size(%Session{}, _w, _h), do: {:ok, nil}
+  def set_window_size(%Session{} = session, w, h),
+    do: BiDiClient.set_viewport(session, w, h)
 
   # ----- Dialog stubs -----
 
