@@ -174,8 +174,8 @@ defmodule Wallabidi.V2BiDiDriver do
   end
 
   @impl true
-  def send_keys(%Session{}, _keys) do
-    {:error, :not_implemented}
+  def send_keys(%Session{} = session, keys) when is_list(keys) do
+    BiDiClient.send_keys_to_session(session, keys)
   end
 
   def send_keys(%Element{} = element, keys) do
@@ -190,6 +190,44 @@ defmodule Wallabidi.V2BiDiDriver do
       "function() { return this.checked === true || this.selected === true; }"
     )
   end
+
+  # ----- Mouse / touch / geometry -----
+
+  def hover(%Element{} = element), do: BiDiClient.hover(element)
+  def tap(%Element{} = element), do: BiDiClient.tap(element)
+
+  def touch_down(parent, target, x, y),
+    do: BiDiClient.touch_down(Element.root_session(parent), target, x, y)
+
+  def touch_up(parent), do: BiDiClient.touch_up(parent)
+  def touch_move(parent, x, y), do: BiDiClient.touch_move(parent, x, y)
+
+  def touch_scroll(%Element{} = element, x_offset, y_offset) do
+    # Use JS scrollBy — touch pointer actions don't reliably trigger
+    # scroll in headless Chrome. Same workaround the legacy driver uses.
+    case BiDiClient.call_on_element(
+           Element.root_session(element),
+           element,
+           "function(dx, dy) { this.scrollIntoView(); window.scrollBy(dx, dy); return null; }",
+           [x_offset, y_offset]
+         ) do
+      {:ok, _} -> {:ok, nil}
+      err -> err
+    end
+  end
+
+  def click(parent, button) when button in [:left, :middle, :right],
+    do: BiDiClient.click_at_cursor(parent, button)
+
+  def double_click(parent), do: BiDiClient.double_click(parent)
+  def button_down(parent, button), do: BiDiClient.button_down(parent, button)
+  def button_up(parent, button), do: BiDiClient.button_up(parent, button)
+
+  def move_mouse_by(parent, x_offset, y_offset),
+    do: BiDiClient.move_mouse_by(parent, x_offset, y_offset)
+
+  def element_size(%Element{} = element), do: BiDiClient.element_size(element)
+  def element_location(%Element{} = element), do: BiDiClient.element_location(element)
 
   # ----- Cookies / screenshot / window — not implemented yet -----
 

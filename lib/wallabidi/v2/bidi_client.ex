@@ -18,6 +18,7 @@ defmodule Wallabidi.V2.BiDiClient do
   # bootstrap channel) are reused from V2.Transport.Protocol — they
   # were verified end-to-end in V2.Transport.BiDi phases A/B/C.
 
+  alias Wallabidi.BiDi.Commands
   alias Wallabidi.Bootstrap
   alias Wallabidi.CDP.Ops
   alias Wallabidi.Element
@@ -161,6 +162,8 @@ defmodule Wallabidi.V2.BiDiClient do
     end
   end
 
+  @web_element_identifier "element-6066-11e4-a52e-4f735466cecf"
+
   defp encode_arg(arg) when is_binary(arg), do: %{"type" => "string", "value" => arg}
   defp encode_arg(arg) when is_integer(arg), do: %{"type" => "number", "value" => arg}
   defp encode_arg(arg) when is_float(arg), do: %{"type" => "number", "value" => arg}
@@ -171,6 +174,16 @@ defmodule Wallabidi.V2.BiDiClient do
   defp encode_arg(arg) when is_list(arg) do
     %{"type" => "array", "value" => Enum.map(arg, &encode_arg/1)}
   end
+
+  # WebDriver-style element reference — translate to a BiDi node handle
+  # so `arguments[N]` is a live DOM element on the page side, not an
+  # opaque JSON object. Mirrors V2.CDPClient.encode_script_args's
+  # element detection.
+  defp encode_arg(%{@web_element_identifier => shared_id}) when is_binary(shared_id),
+    do: %{"sharedId" => shared_id}
+
+  defp encode_arg(%{"sharedId" => shared_id}) when is_binary(shared_id),
+    do: %{"sharedId" => shared_id}
 
   defp encode_arg(arg) when is_map(arg) do
     pairs =
@@ -613,7 +626,156 @@ defmodule Wallabidi.V2.BiDiClient do
         error -> error
       end
     else
-      {:error, {:unsupported_keys, "BiDi send_keys does not yet support special-key atoms"}}
+      # Mixed string + special-key atoms — focus the element, then
+      # dispatch a key-source action sequence via input.performActions.
+      with {:ok, _} <-
+             call_on_element(session, element, "function() { this.focus(); return null; }") do
+        send_keys_to_session(session, keys)
+      end
+    end
+  end
+
+  @doc """
+  Send a key sequence (text + special atoms like :tab, :enter) to
+  whatever element currently has focus. BiDi's input.performActions
+  with a key-source sequence handles this in one call.
+  """
+  @spec send_keys_to_session(Session.t(), list) :: {:ok, nil} | {:error, term}
+  def send_keys_to_session(%Session{browsing_context: ctx} = session, keys) when is_list(keys) do
+    actions = Commands.key_type_actions(keys)
+    {method, params} = Commands.perform_actions(ctx, actions)
+
+    case Protocol.cdp_send(session, method, params, []) do
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
+  end
+
+  # ----- Mouse & touch via input.performActions -----
+
+  @doc "Hover the mouse over an element (pointer move to its center)."
+  @spec hover(Element.t()) :: {:ok, nil} | {:error, term}
+  def hover(%Element{bidi_shared_id: sid} = element) when is_binary(sid) do
+    perform(element, Commands.pointer_move_actions(sid))
+  end
+
+  def hover(%Element{}), do: {:error, :no_bidi_shared_id}
+
+  @doc "Synthesize a tap at the element's center via touch input source."
+  @spec tap(Element.t()) :: {:ok, nil} | {:error, term}
+  def tap(%Element{bidi_shared_id: sid} = element) when is_binary(sid) do
+    perform(element, Commands.touch_tap_element_actions(sid))
+  end
+
+  def tap(%Element{}), do: {:error, :no_bidi_shared_id}
+
+  @doc """
+  Press a touch point. With an element, lands at the element's
+  top-left corner plus offsets; without one, lands at the supplied
+  absolute coordinates.
+  """
+  @spec touch_down(Session.t(), Element.t() | nil, number, number) ::
+          {:ok, nil} | {:error, term}
+  def touch_down(%Session{} = session, nil, x, y) do
+    perform(session, Commands.touch_down_actions(round(x), round(y)))
+  end
+
+  def touch_down(%Session{}, %Element{bidi_shared_id: sid} = element, x_offset, y_offset)
+      when is_binary(sid) do
+    case element_location(element) do
+      {:ok, {ex, ey}} ->
+        perform(element, Commands.touch_down_actions(round(ex + x_offset), round(ey + y_offset)))
+
+      err ->
+        err
+    end
+  end
+
+  def touch_down(%Session{}, %Element{}, _, _), do: {:error, :no_bidi_shared_id}
+
+  @doc "Release any active touch points."
+  @spec touch_up(Session.t() | Element.t()) :: {:ok, nil} | {:error, term}
+  def touch_up(parent), do: perform(parent, Commands.touch_up_actions())
+
+  @doc "Move the active touch point to absolute coordinates."
+  @spec touch_move(Session.t() | Element.t(), number, number) :: {:ok, nil} | {:error, term}
+  def touch_move(parent, x, y), do: perform(parent, Commands.touch_move_actions(x, y))
+
+  @doc "Press a mouse button at the cursor's current position."
+  @spec button_down(Session.t() | Element.t(), :left | :middle | :right) ::
+          {:ok, nil} | {:error, term}
+  def button_down(parent, button) do
+    perform(parent, Commands.pointer_button_down_actions(button))
+  end
+
+  @doc "Release a mouse button at the cursor's current position."
+  @spec button_up(Session.t() | Element.t(), :left | :middle | :right) ::
+          {:ok, nil} | {:error, term}
+  def button_up(parent, button) do
+    perform(parent, Commands.pointer_button_up_actions(button))
+  end
+
+  @doc "Press+release a mouse button at the cursor's current position."
+  @spec click_at_cursor(Session.t() | Element.t(), :left | :middle | :right) ::
+          {:ok, nil} | {:error, term}
+  def click_at_cursor(parent, button) do
+    perform(parent, Commands.pointer_click_at_position_actions(button))
+  end
+
+  @doc "Move the mouse cursor by an offset from its current position."
+  @spec move_mouse_by(Session.t() | Element.t(), number, number) ::
+          {:ok, nil} | {:error, term}
+  def move_mouse_by(parent, x_offset, y_offset) do
+    perform(parent, Commands.pointer_move_by_actions(x_offset, y_offset))
+  end
+
+  @doc "Double-click at the cursor's current position."
+  @spec double_click(Session.t() | Element.t()) :: {:ok, nil} | {:error, term}
+  def double_click(parent) do
+    perform(parent, Commands.pointer_double_click_actions())
+  end
+
+  defp perform(parent, actions) do
+    session = Element.root_session(parent)
+    {method, params} = Commands.perform_actions(session.browsing_context, actions)
+
+    case Protocol.cdp_send(session, method, params, []) do
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
+  end
+
+  # ----- Element geometry -----
+
+  @doc "Element width/height in CSS pixels via getBoundingClientRect."
+  @spec element_size(Element.t()) :: {:ok, {number, number}} | {:error, term}
+  def element_size(%Element{} = element) do
+    session = Element.root_session(element)
+
+    case call_on_element(
+           session,
+           element,
+           "function() { var r = this.getBoundingClientRect(); return [r.width, r.height]; }"
+         ) do
+      {:ok, [w, h]} -> {:ok, {w, h}}
+      {:ok, other} -> {:error, {:unexpected_size, other}}
+      err -> err
+    end
+  end
+
+  @doc "Element top-left coordinates relative to the viewport."
+  @spec element_location(Element.t()) :: {:ok, {number, number}} | {:error, term}
+  def element_location(%Element{} = element) do
+    session = Element.root_session(element)
+
+    case call_on_element(
+           session,
+           element,
+           "function() { var r = this.getBoundingClientRect(); return [r.left, r.top]; }"
+         ) do
+      {:ok, [x, y]} -> {:ok, {x, y}}
+      {:ok, other} -> {:error, {:unexpected_location, other}}
+      err -> err
     end
   end
 
