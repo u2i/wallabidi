@@ -276,91 +276,20 @@ defmodule Wallabidi.V2.CDPClient do
     end
   end
 
-  defp set_value_dom(%Session{} = session, %Element{} = element, value) do
-    case call_on_element(
-           session,
-           element,
-           """
-           function(v) {
-             var t = this.tagName;
-             var ty = (this.type || '').toLowerCase();
-
-             if (t === 'INPUT' && (ty === 'checkbox' || ty === 'radio')) {
-               this.checked = !!v;
-               this.dispatchEvent(new Event('input', {bubbles: true}));
-               this.dispatchEvent(new Event('change', {bubbles: true}));
-               return null;
-             }
-
-             if (t === 'OPTION') {
-               var sel = this.closest('select');
-               if (sel) {
-                 if (sel.multiple) {
-                   this.selected = !!v;
-                 } else {
-                   sel.value = this.value;
-                   for (var i = 0; i < sel.options.length; i++) {
-                     sel.options[i].selected = (sel.options[i] === this);
-                   }
-                 }
-                 sel.dispatchEvent(new Event('input', {bubbles: true}));
-                 sel.dispatchEvent(new Event('change', {bubbles: true}));
-               } else {
-                 this.selected = !!v;
-               }
-               return null;
-             }
-
-             this.value = v;
-             this.dispatchEvent(new Event('input', {bubbles: true}));
-             this.dispatchEvent(new Event('change', {bubbles: true}));
-             return null;
-           }
-           """,
-           [value]
-         ) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
-    end
-  end
+  # set_value_dom/3 (the DOM-based path) is provided by
+  # Wallabidi.V2.OpsShared. set_value/3 above dispatches between
+  # file-input handling (CDP-specific via DOM.setFileInputFiles)
+  # and the shared DOM path.
 
   @doc """
-  Clears the element's value. With `silent: true` (default), no events
-  are dispatched — used internally before fill_in to avoid firing
-  phx-change for the intermediate empty state.
-  """
-  @spec clear(Session.t(), Element.t(), keyword) :: {:ok, nil} | {:error, term}
-  def clear(%Session{} = session, %Element{} = element, opts \\ []) do
-    silent? = Keyword.get(opts, :silent, true)
-
-    fn_decl =
-      if silent? do
-        "function() { this.value = ''; return null; }"
-      else
-        """
-        function() {
-          this.value = '';
-          this.dispatchEvent(new Event('input', {bubbles: true}));
-          this.dispatchEvent(new Event('change', {bubbles: true}));
-          return null;
-        }
-        """
-      end
-
-    case call_on_element(session, element, fn_decl) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
-    end
-  end
+  # clear/3 — provided by Wallabidi.V2.OpsShared.
 
   @doc """
-  Sends keys to the element. `keys` is a list of string segments;
-  each segment is appended to the element's value, with `input` and
-  `change` events dispatched after each.
-
-  Special-key atoms (`:enter`, `:tab`, etc.) are NOT supported here —
-  full key mapping comes when we layer in CDP's
-  `Input.dispatchKeyEvent`. For now, just text input.
+  Sends keys to the element. `keys` is a list of string segments
+  or special-key atoms (`:enter`, `:tab`, ...). For pure-text
+  input we use the shared fast path (no CDP key events — keeps
+  Lightpanda working). For mixed input we focus the element and
+  dispatch real key events via `Input.dispatchKeyEvent`.
   """
   @spec send_keys(Session.t(), Element.t(), [String.t()] | String.t()) ::
           {:ok, nil} | {:error, term}
@@ -370,30 +299,11 @@ defmodule Wallabidi.V2.CDPClient do
 
   def send_keys(%Session{} = session, %Element{} = element, keys) when is_list(keys) do
     if Enum.all?(keys, &is_binary/1) do
-      # Plain text — fast path keeps Lightpanda working (Input.dispatchKeyEvent
-      # is broken there).
-      text = Enum.join(keys, "")
-
-      case call_on_element(
-             session,
-             element,
-             """
-             function(s) {
-               this.value = (this.value || '') + s;
-               this.dispatchEvent(new Event('input', {bubbles: true}));
-               this.dispatchEvent(new Event('change', {bubbles: true}));
-               return null;
-             }
-             """,
-             [text]
-           ) do
-        {:ok, _} -> {:ok, nil}
-        error -> error
-      end
+      send_keys_text(session, element, Enum.join(keys, ""))
     else
-      # Mixed string+atom — focus the element and dispatch real key events
-      # so :tab, :enter etc. fire. Requires a CDP browser that implements
-      # Input.dispatchKeyEvent (Chrome does; Lightpanda doesn't).
+      # Mixed string + atom — focus the element and dispatch real key
+      # events so :tab, :enter etc. fire. Requires a CDP browser that
+      # implements Input.dispatchKeyEvent (Chrome does; Lightpanda doesn't).
       _ =
         cdp_send(session, "Runtime.callFunctionOn", %{
           objectId: element.bidi_shared_id,
@@ -496,44 +406,10 @@ defmodule Wallabidi.V2.CDPClient do
     )
   end
 
-  @doc """
-  Click an element. Scrolls into view, focuses, then dispatches the
-  click via the DOM API.
-
-  This is a *simple* click — no LV-aware classification or
-  post-click await. Use `click_aware/3` when the click may trigger a
-  LiveView patch or navigation that the caller wants to wait for.
-  """
-  @spec click(Session.t(), Element.t()) :: {:ok, nil} | {:error, term}
-  def click(%Session{} = session, %Element{} = element) do
-    # Route through the bootstrap's W.clickEl so <option> clicks
-    # update the parent <select>'s value + dispatch 'change' (a plain
-    # `el.click()` on an option doesn't change selection in headless
-    # Chrome). For everything else this is the same scroll+focus+click.
-    case call_on_element(
-           session,
-           element,
-           """
-           function() {
-             if (window.__w && window.__w.clickEl) {
-               if (this.tagName !== 'OPTION') {
-                 this.scrollIntoView({block: 'center', inline: 'nearest'});
-                 if (typeof this.focus === 'function') this.focus();
-               }
-               window.__w.clickEl(this);
-               return null;
-             }
-             this.scrollIntoView({block: 'center', inline: 'nearest'});
-             if (typeof this.focus === 'function') this.focus();
-             this.click();
-             return null;
-           }
-           """
-         ) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
-    end
-  end
+  # click/2 — provided by Wallabidi.V2.OpsShared. Routes through
+  # window.__w.clickEl when the bootstrap is installed (handles
+  # <option> selection + change events) and falls back to
+  # scroll+focus+click otherwise.
 
   @doc """
   LV-aware click. Captures `pre_page_id` BEFORE the click, classifies
@@ -1008,42 +884,9 @@ defmodule Wallabidi.V2.CDPClient do
   end
 
   # ----- Page introspection -----
-
-  @doc """
-  Returns the page's current URL (`window.location.href`) as a string.
-  """
-  @spec current_url(Session.t()) :: {:ok, String.t()} | {:error, term}
-  def current_url(%Session{} = session) do
-    evaluate(session, "location.href")
-  end
-
-  @doc """
-  Returns the page's current path (the URL's path component, defaulting
-  to `"/"`).
-  """
-  @spec current_path(Session.t()) :: {:ok, String.t()} | {:error, term}
-  def current_path(%Session{} = session) do
-    case current_url(session) do
-      {:ok, url} -> {:ok, URI.parse(url).path || "/"}
-      error -> error
-    end
-  end
-
-  @doc """
-  Returns the page's `<title>` text.
-  """
-  @spec page_title(Session.t()) :: {:ok, String.t()} | {:error, term}
-  def page_title(%Session{} = session) do
-    evaluate(session, "document.title")
-  end
-
-  @doc """
-  Returns the page's full HTML source (`document.documentElement.outerHTML`).
-  """
-  @spec page_source(Session.t()) :: {:ok, String.t()} | {:error, term}
-  def page_source(%Session{} = session) do
-    evaluate(session, "document.documentElement.outerHTML")
-  end
+  #
+  # current_url/1, current_path/1, page_title/1, page_source/1 —
+  # provided by Wallabidi.V2.OpsShared.
 
   # ----- Visit (navigate + await load) -----
 

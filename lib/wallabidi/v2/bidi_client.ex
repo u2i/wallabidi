@@ -272,27 +272,8 @@ defmodule Wallabidi.V2.BiDiClient do
 
   defp decode_remote_value(other), do: other
 
-  # ----- Page introspection -----
-
-  @spec current_url(Session.t()) :: {:ok, String.t()} | {:error, term}
-  def current_url(%Session{} = session) do
-    evaluate(session, "location.href")
-  end
-
-  @spec page_title(Session.t()) :: {:ok, String.t()} | {:error, term}
-  def page_title(%Session{} = session) do
-    evaluate(session, "document.title")
-  end
-
-  @spec page_source(Session.t()) :: {:ok, String.t()} | {:error, term}
-  def page_source(%Session{} = session) do
-    evaluate(session, "document.documentElement.outerHTML")
-  end
-
-  @spec current_path(Session.t()) :: {:ok, String.t()} | {:error, term}
-  def current_path(%Session{} = session) do
-    evaluate(session, "location.pathname")
-  end
+  # current_url/1, current_path/1, page_title/1, page_source/1 —
+  # provided by Wallabidi.V2.OpsShared.
 
   # ----- Screenshot + viewport -----
 
@@ -761,32 +742,7 @@ defmodule Wallabidi.V2.BiDiClient do
     end
   end
 
-  @spec click(Session.t(), Element.t()) :: {:ok, nil} | {:error, term}
-  def click(%Session{} = session, %Element{} = element) do
-    case call_on_element(
-           session,
-           element,
-           """
-           function() {
-             if (window.__w && window.__w.clickEl) {
-               if (this.tagName !== 'OPTION') {
-                 this.scrollIntoView({block: 'center', inline: 'nearest'});
-                 if (typeof this.focus === 'function') this.focus();
-               }
-               window.__w.clickEl(this);
-               return null;
-             }
-             this.scrollIntoView({block: 'center', inline: 'nearest'});
-             if (typeof this.focus === 'function') this.focus();
-             this.click();
-             return null;
-           }
-           """
-         ) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
-    end
-  end
+  # click/2 — provided by Wallabidi.V2.OpsShared.
 
   @doc """
   DOM-based set_value. Handles checkboxes, radios, options, text
@@ -803,7 +759,7 @@ defmodule Wallabidi.V2.BiDiClient do
   def set_value(%Session{} = session, %Element{} = element, value) do
     case file_input?(session, element) do
       {:ok, true} -> set_file_value(session, element, to_string(value))
-      _ -> set_text_value(session, element, value)
+      _ -> set_value_dom(session, element, value)
     end
   end
 
@@ -842,82 +798,9 @@ defmodule Wallabidi.V2.BiDiClient do
     end
   end
 
-  defp set_text_value(%Session{} = session, %Element{} = element, value) do
-    case call_on_element(
-           session,
-           element,
-           """
-           function(v) {
-             var t = this.tagName;
-             var ty = (this.type || '').toLowerCase();
-
-             if (t === 'INPUT' && (ty === 'checkbox' || ty === 'radio')) {
-               this.checked = !!v;
-               this.dispatchEvent(new Event('input', {bubbles: true}));
-               this.dispatchEvent(new Event('change', {bubbles: true}));
-               return null;
-             }
-
-             if (t === 'OPTION') {
-               var sel = this.closest('select');
-               if (sel) {
-                 if (sel.multiple) {
-                   this.selected = !!v;
-                 } else {
-                   sel.value = this.value;
-                   for (var i = 0; i < sel.options.length; i++) {
-                     sel.options[i].selected = (sel.options[i] === this);
-                   }
-                 }
-                 sel.dispatchEvent(new Event('input', {bubbles: true}));
-                 sel.dispatchEvent(new Event('change', {bubbles: true}));
-               } else {
-                 this.selected = !!v;
-               }
-               return null;
-             }
-
-             this.value = v;
-             this.dispatchEvent(new Event('input', {bubbles: true}));
-             this.dispatchEvent(new Event('change', {bubbles: true}));
-             return null;
-           }
-           """,
-           [value]
-         ) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
-    end
-  end
-
-  @doc """
-  Clears the element's value. With `silent: true` (default), no
-  events are dispatched — used internally before fill_in to avoid
-  firing phx-change for the intermediate empty state.
-  """
-  @spec clear(Session.t(), Element.t(), keyword) :: {:ok, nil} | {:error, term}
-  def clear(%Session{} = session, %Element{} = element, opts \\ []) do
-    silent? = Keyword.get(opts, :silent, true)
-
-    fn_decl =
-      if silent? do
-        "function() { this.value = ''; return null; }"
-      else
-        """
-        function() {
-          this.value = '';
-          this.dispatchEvent(new Event('input', {bubbles: true}));
-          this.dispatchEvent(new Event('change', {bubbles: true}));
-          return null;
-        }
-        """
-      end
-
-    case call_on_element(session, element, fn_decl) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
-    end
-  end
+  # set_value_dom/3 (the DOM-based path) and clear/3 — provided by
+  # Wallabidi.V2.OpsShared. set_value/3 above dispatches between the
+  # file-input branch (DataTransfer trick) and the shared DOM path.
 
   @doc """
   Send text to an element. List form joins; atom form (special keys
@@ -932,24 +815,7 @@ defmodule Wallabidi.V2.BiDiClient do
 
   def send_keys(%Session{} = session, %Element{} = element, keys) when is_list(keys) do
     if Enum.all?(keys, &is_binary/1) do
-      text = Enum.join(keys, "")
-
-      case call_on_element(
-             session,
-             element,
-             """
-             function(s) {
-               this.value = (this.value || '') + s;
-               this.dispatchEvent(new Event('input', {bubbles: true}));
-               this.dispatchEvent(new Event('change', {bubbles: true}));
-               return null;
-             }
-             """,
-             [text]
-           ) do
-        {:ok, _} -> {:ok, nil}
-        error -> error
-      end
+      send_keys_text(session, element, Enum.join(keys, ""))
     else
       # Mixed string + special-key atoms — focus the element, then
       # dispatch a key-source action sequence via input.performActions.
