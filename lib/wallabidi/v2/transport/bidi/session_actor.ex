@@ -102,14 +102,17 @@ defmodule Wallabidi.V2.Transport.BiDi.SessionActor do
     end
   end
 
-  # Subscribe to load milestones + bootstrap channel at session start.
-  # Server-side `session.subscribe` plus WSC-side forward-to-this-pid.
-  # Idempotent on the BiDi server side — calling it twice is harmless.
+  # Subscribe to load milestones + bootstrap channel + log entries
+  # in a single server-side session.subscribe call. WSC-side
+  # forward-to-this-pid is set up for the events the actor needs to
+  # consume (loads + script.message); log.entryAdded is forwarded
+  # to other subscribers (e.g. the test process for LogChecker).
   defp subscribe_load_events(ws_pid) do
     events = [
       "browsingContext.load",
       "browsingContext.domContentLoaded",
-      "script.message"
+      "script.message",
+      "log.entryAdded"
     ]
 
     Enum.each(events, fn ev ->

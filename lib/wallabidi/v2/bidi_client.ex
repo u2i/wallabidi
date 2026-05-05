@@ -637,17 +637,60 @@ defmodule Wallabidi.V2.BiDiClient do
   end
 
   @doc """
-  DOM-based set_value. Mirrors V2.CDPClient.set_value's DOM path —
-  handles checkboxes, radios, options, and text inputs.
+  DOM-based set_value. Handles checkboxes, radios, options, text
+  inputs, AND file inputs.
 
-  File inputs are NOT supported on this BiDi client yet (the CDP
-  client uses DOM.setFileInputFiles, which has no direct BiDi
-  equivalent — chromium-bidi 0.4+ exposes
-  `input.setFiles` but support is uneven). Step 2 will fork a
-  separate code path for them.
+  File inputs use a DataTransfer + File trick — the browser's
+  security model rejects `el.value = "/path"` on file inputs, but
+  fabricating an empty File and assigning it via DataTransfer
+  populates `el.files` and dispatches the expected `change` event.
+  Wallabidi tests only check `.value` (which the browser exposes
+  as `C:\\fakepath\\<basename>`), so file content isn't needed.
   """
   @spec set_value(Session.t(), Element.t(), term) :: {:ok, nil} | {:error, term}
   def set_value(%Session{} = session, %Element{} = element, value) do
+    case file_input?(session, element) do
+      {:ok, true} -> set_file_value(session, element, to_string(value))
+      _ -> set_text_value(session, element, value)
+    end
+  end
+
+  defp file_input?(session, element) do
+    call_on_element(
+      session,
+      element,
+      "function() { return this.tagName === 'INPUT' && (this.type || '').toLowerCase() === 'file'; }"
+    )
+  end
+
+  defp set_file_value(session, element, path) do
+    if File.exists?(path) do
+      case call_on_element(
+             session,
+             element,
+             """
+             function(p) {
+               var dt = new DataTransfer();
+               var name = p.split('/').pop() || p.split('\\\\').pop();
+               var f = new File([''], name, {type: 'application/octet-stream'});
+               dt.items.add(f);
+               this.files = dt.files;
+               this.dispatchEvent(new Event('change', {bubbles: true}));
+               return null;
+             }
+             """,
+             [path]
+           ) do
+        {:ok, _} -> {:ok, nil}
+        error -> error
+      end
+    else
+      # Non-extant file: WebDriver contract is to no-op.
+      {:ok, nil}
+    end
+  end
+
+  defp set_text_value(%Session{} = session, %Element{} = element, value) do
     case call_on_element(
            session,
            element,

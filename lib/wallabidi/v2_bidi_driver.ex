@@ -23,6 +23,9 @@ defmodule Wallabidi.V2BiDiDriver do
 
   @behaviour Wallabidi.Driver
 
+  import Wallabidi.Driver.LogChecker
+
+  alias Wallabidi.BiDi.WebSocketClient
   alias Wallabidi.{Element, Session}
   alias Wallabidi.V2.BiDiClient
   alias Wallabidi.V2.Transport.BiDi
@@ -81,6 +84,14 @@ defmodule Wallabidi.V2BiDiDriver do
              session_struct: session_struct,
              owner: Keyword.get(opts, :owner, self())
            ) do
+      # Forward log.entryAdded events to the test process's mailbox
+      # so LogChecker.check_logs! can drain them after operations.
+      # The server-side session.subscribe is set up by SessionActor;
+      # we just register the test process as an additional WSC-side
+      # subscriber so the events fan out to the test mailbox too.
+      caller = Keyword.get(opts, :owner, self())
+      _ = WebSocketClient.subscribe(session.bidi_pid, "log.entryAdded", caller, :global)
+
       if window_size = Keyword.get(opts, :window_size) do
         _ = BiDiClient.set_viewport(session, window_size[:width], window_size[:height])
       end
@@ -116,10 +127,14 @@ defmodule Wallabidi.V2BiDiDriver do
   # ----- Session-scoped callbacks -----
 
   @impl true
-  def visit(%Session{} = session, url), do: BiDiClient.visit(session, url)
+  def visit(%Session{} = session, url) do
+    check_logs!(session, fn -> BiDiClient.visit(session, url) end)
+  end
 
   @impl true
-  def current_url(%Session{} = session), do: BiDiClient.current_url(session)
+  def current_url(%Session{} = session) do
+    check_logs!(session, fn -> BiDiClient.current_url(session) end)
+  end
 
   @impl true
   def current_path(%Session{} = session), do: BiDiClient.current_path(session)
@@ -128,7 +143,9 @@ defmodule Wallabidi.V2BiDiDriver do
   def page_source(%Session{} = session), do: BiDiClient.page_source(session)
 
   @impl true
-  def page_title(%Session{} = session), do: BiDiClient.page_title(session)
+  def page_title(%Session{} = session) do
+    check_logs!(session, fn -> BiDiClient.page_title(session) end)
+  end
 
   @impl true
   def execute_script(%Session{} = session, script, args),
@@ -242,6 +259,12 @@ defmodule Wallabidi.V2BiDiDriver do
       _ -> false
     end
   end
+
+  # LogChecker calls driver.parse_log/1 on each drained log entry.
+  # Wallabidi.Chrome.Logger raises Wallabidi.JSError on SEVERE entries
+  # and prints console output — same shape both V2 BiDi and V2 Chrome
+  # CDP need.
+  defdelegate parse_log(log), to: Wallabidi.Chrome.Logger
 
   # ----- Cookies / screenshot / window — not implemented yet -----
 
