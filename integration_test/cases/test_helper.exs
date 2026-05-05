@@ -75,7 +75,21 @@ excludes =
       excludes ++ [live_view_only: true]
   end
 
-ExUnit.configure(exclude: excludes)
+ex_unit_opts = [exclude: excludes]
+
+# chromium-bidi's session.subscribe handler stalls under high
+# concurrency — at default max_cases (System.schedulers_online()
+# = typically 16) we see intermittent 10s timeouts. Cap parallelism
+# so the BiDi V2 suite is reliable. CDP-based drivers don't have
+# this issue (single shared WS).
+ex_unit_opts =
+  if driver == :chrome_bidi_v2 and is_nil(System.get_env("WALLABIDI_MAX_CASES")) do
+    Keyword.put(ex_unit_opts, :max_cases, 8)
+  else
+    ex_unit_opts
+  end
+
+ExUnit.configure(ex_unit_opts)
 
 # SlowTestGuard flags tests that exceed a threshold without an
 # explicit @tag :polling. Tests intentionally relying on Wallabidi's

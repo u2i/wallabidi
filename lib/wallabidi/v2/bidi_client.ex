@@ -543,18 +543,74 @@ defmodule Wallabidi.V2.BiDiClient do
     pre_page_id = Protocol.get_page_id(session)
 
     with :ok <- await_lv_ready(session, timeout),
-         {:ok, classification} <- classify(session, element, :click),
-         {:ok, _} <- click(session, element) do
-      case classification do
-        "none" ->
-          {:ok, classification}
+         {:ok, classification} <- classify(session, element, :click) do
+      # For LV-aware classifications we need to capture a pre-ref AND
+      # install the patch promise BEFORE the click — otherwise the
+      # event ref counter has already moved on and patch detection
+      # races the patch itself.
+      patch? = classification in ["patch", "navigate"]
 
-        _ ->
-          case Protocol.await_page_ready_after(session, pre_page_id, timeout) do
-            :ok -> {:ok, classification}
-            :timeout -> {:error, :timeout}
+      pre_ref =
+        if patch? do
+          _ = Wallabidi.LiveViewAware.prepare_patch(session)
+
+          case evaluate(session, "(window.liveSocket && window.liveSocket.main) ? window.liveSocket.main.ref : null") do
+            {:ok, ref} when is_integer(ref) -> ref
+            _ -> nil
           end
+        end
+
+      with {:ok, _} <- click(session, element) do
+        await_after_click(session, classification, pre_page_id, pre_ref, timeout)
       end
+    end
+  end
+
+  # Click-classification → wait orchestration. Mirrors Browser.do_post_click
+  # for V2 BiDi: patch-classified clicks wait first for the patch promise,
+  # fall through to await_ack on slow handle_event, then page_ready;
+  # navigate-classified clicks await page_ready directly. "none" returns
+  # immediately.
+  defp await_after_click(_session, "none", _pre_page_id, _pre_ref, _timeout),
+    do: {:ok, "none"}
+
+  defp await_after_click(session, "patch", pre_page_id, pre_ref, _timeout) do
+    case Wallabidi.LiveViewAware.await_patch(session, 1_000) do
+      :ok ->
+        {:ok, "patch"}
+
+      :page_navigated ->
+        await_page_ready(session, pre_page_id, "patch")
+
+      :timeout ->
+        # Patch didn't fire in 1s. Server handle_event may be slow,
+        # OR no LV event fired. If we have a pre_ref, wait for the
+        # server to ack — however long handle_event takes. Then look
+        # for any resulting navigation.
+        if is_integer(pre_ref) do
+          _ = Wallabidi.LiveViewAware.await_ack(session, pre_ref, 5_000)
+        end
+
+        await_page_ready(session, pre_page_id, "patch")
+    end
+  end
+
+  defp await_after_click(session, classification, pre_page_id, _pre_ref, _timeout)
+       when classification in ["navigate", "full_page"] do
+    await_page_ready(session, pre_page_id, classification)
+  end
+
+  defp await_after_click(session, classification, pre_page_id, _pre_ref, timeout) do
+    case Protocol.await_page_ready_after(session, pre_page_id, timeout) do
+      :ok -> {:ok, classification}
+      :timeout -> {:error, :timeout}
+    end
+  end
+
+  defp await_page_ready(session, pre_page_id, classification) do
+    case Protocol.await_page_ready_after(session, pre_page_id, 5_000) do
+      :ok -> {:ok, classification}
+      :timeout -> {:ok, classification}
     end
   end
 
