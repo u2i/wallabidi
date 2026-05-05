@@ -1,0 +1,105 @@
+defmodule Wallabidi.V2.Transport.BiDiTest do
+  use ExUnit.Case, async: false
+
+  alias Wallabidi.Chrome.BidiServer
+  alias Wallabidi.Session
+  alias Wallabidi.V2.Transport.BiDi
+  alias Wallabidi.V2.Transport.Protocol
+
+  @moduletag :browser
+
+  setup do
+    {:ok, server} = BidiServer.start_link([])
+    ws_url = BidiServer.ws_url(server)
+
+    base_url =
+      ws_url
+      |> URI.parse()
+      |> Map.put(:scheme, "http")
+      |> Map.put(:path, nil)
+      |> URI.to_string()
+
+    on_exit(fn ->
+      try do
+        if Process.alive?(server), do: GenServer.stop(server, :normal, 1_000)
+      catch
+        :exit, _ -> :ok
+      end
+    end)
+
+    {:ok, base_url: base_url}
+  end
+
+  test "start_session brings up a session with a populated browsing_context", %{
+    base_url: base_url
+  } do
+    {:ok, session} = start(base_url)
+
+    assert is_binary(session.browsing_context)
+    assert session.browsing_context != ""
+    assert is_pid(session.pid)
+    assert is_pid(session.bidi_pid)
+  end
+
+  test "navigate via Protocol.cdp_send reaches the page", %{base_url: base_url} do
+    {:ok, session} = start(base_url)
+
+    {:ok, result} =
+      Protocol.cdp_send(
+        session,
+        "browsingContext.navigate",
+        %{
+          "context" => session.browsing_context,
+          "url" => "about:blank",
+          "wait" => "complete"
+        },
+        []
+      )
+
+    assert is_map(result)
+    assert is_binary(result["navigation"]) or is_nil(result["navigation"])
+    assert result["url"] == "about:blank"
+  end
+
+  test "session shuts down cleanly when owner exits", %{base_url: base_url} do
+    test_pid = self()
+
+    owner =
+      spawn(fn ->
+        {:ok, session} = start(base_url, owner: self())
+        send(test_pid, {:session, session})
+
+        receive do
+          :stop -> :ok
+        end
+      end)
+
+    session =
+      receive do
+        {:session, s} -> s
+      after
+        15_000 -> flunk("owner never sent session")
+      end
+
+    actor_ref = Process.monitor(session.pid)
+    send(owner, :stop)
+
+    assert_receive {:DOWN, ^actor_ref, :process, _, _}, 5_000
+  end
+
+  defp start(base_url, extra \\ []) do
+    session_struct = %Session{
+      id: "v2-bidi-test",
+      url: "",
+      driver: :test,
+      capabilities: %{}
+    }
+
+    BiDi.start_session(
+      Keyword.merge(
+        [base_url: base_url, session_struct: session_struct],
+        extra
+      )
+    )
+  end
+end
