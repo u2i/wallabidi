@@ -13,7 +13,7 @@ defmodule Wallabidi.Integration.Browser.ClickTest do
              |> click(Query.button("Submit button"))
     end
 
-    @tag :browser
+    @tag :headless
     test "can click invisible elements", %{page: page} do
       assert page
              |> click(Query.button("Invisible Button", visible: false))
@@ -141,7 +141,7 @@ defmodule Wallabidi.Integration.Browser.ClickTest do
   end
 
   describe "click/2 off-screen elements" do
-    @tag :browser
+    @tag :headless
     test "scrolls element into view before clicking", %{session: session} do
       session
       |> visit("scroll_click.html")
