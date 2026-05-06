@@ -1,9 +1,9 @@
 defmodule Wallabidi.Integration.Browser.AssertTextTest do
   use Wallabidi.Integration.SessionCase, async: true
+  @moduletag :headless
 
   alias Wallabidi.ExpectationNotMetError
 
-  @tag :headless
   @tag :polling
   test "has_text?/2 waits for presence of text and returns a bool", %{session: session} do
     element =
@@ -15,7 +15,6 @@ defmodule Wallabidi.Integration.Browser.AssertTextTest do
     refute has_text?(element, "rain")
   end
 
-  @tag :headless
   test "assert_text/2 waits for presence of text and and returns the parent if found", %{
     session: session
   } do
