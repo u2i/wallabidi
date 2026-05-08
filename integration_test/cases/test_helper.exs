@@ -94,20 +94,24 @@ excludes =
           cdp_only: true
         ]
 
-    # LP has a full JS implementation and a WebSocket client, so it
-    # should drive LiveView. We don't exclude :live_view_only here.
-    # :browser stays excluded for now because those tests were
-    # written for Chrome and haven't been verified against LP — each
-    # should be re-evaluated. :lightpanda_ni is a temporary marker
-    # for known LP gaps tracked in code comments.
+    # LP has a full JS implementation and a WebSocket client and runs
+    # LiveView fine via the smoke suite (live_view_smoke/). The legacy
+    # cases/live_view/feature_test.exs is :live_view_only because it
+    # exercises the in-process LV-driver's Feature dispatch — not a
+    # generic LV scenario. Keep :live_view_only excluded on LP.
     driver in [:lightpanda, :lightpanda_v2] ->
-      excludes ++ [browser: true, lightpanda_ni: true, cdp_only: true]
+      excludes ++ [browser: true, lightpanda_ni: true, live_view_only: true, cdp_only: true]
 
-    driver in [:chrome_cdp_v2, :chrome_bidi_v2, :chrome] ->
+    # All Chrome-driven runs go through V2 implementations now (the
+    # old :chrome / :chrome_cdp atoms route to V2 modules in
+    # lib/wallabidi.ex). :cdp_only tests reference V1-internal modules
+    # (Wallabidi.ChromeCDP.SharedConnection, Wallabidi.Protocol.eval,
+    # Wallabidi.CDP.Ops.*) and are excluded everywhere V1 isn't running.
+    driver in [:chrome_cdp_v2, :chrome_bidi_v2, :chrome, :chrome_cdp] ->
       excludes ++ [live_view_only: true, cdp_only: true]
 
     true ->
-      excludes ++ [live_view_only: true]
+      excludes ++ [live_view_only: true, cdp_only: true]
   end
 
 ex_unit_opts = [exclude: excludes]

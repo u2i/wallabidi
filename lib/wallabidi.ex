@@ -81,14 +81,17 @@ defmodule Wallabidi do
     # SessionProcess monitors the caller and runs cleanup in terminate/2
     # when the caller dies, so we don't need on_exit hooks or SessionStore
     # monitoring for crashed-test cleanup.
+    # Old driver atoms (`:chrome`, `:chrome_cdp`, `:lightpanda`) now
+    # route to their V2 implementations. V1 modules (Wallabidi.Chrome,
+    # ChromeCDP, Lightpanda) are slated for removal — see CHANGELOG.
+    # The `_v2`-suffixed atoms remain as aliases for compatibility with
+    # any caller that pinned them explicitly.
     case resolve_driver(opts) do
       :live_view -> Wallabidi.LiveViewDriver.start_session(opts)
-      :lightpanda_v2 -> Wallabidi.V2Driver.start_session(opts)
-      :lightpanda -> Wallabidi.Lightpanda.start_session(opts)
-      :chrome_cdp_v2 -> Wallabidi.V2ChromeDriver.start_session(opts)
-      :chrome_bidi_v2 -> Wallabidi.V2BiDiDriver.start_session(opts)
-      :chrome_cdp -> Wallabidi.ChromeCDP.start_session(opts)
-      _browser -> Wallabidi.Chrome.start_session(opts)
+      d when d in [:lightpanda, :lightpanda_v2] -> Wallabidi.V2Driver.start_session(opts)
+      d when d in [:chrome_cdp, :chrome_cdp_v2] -> Wallabidi.V2ChromeDriver.start_session(opts)
+      d when d in [:chrome, :chrome_bidi_v2] -> Wallabidi.V2BiDiDriver.start_session(opts)
+      _browser -> Wallabidi.V2ChromeDriver.start_session(opts)
     end
   end
 
@@ -121,13 +124,11 @@ defmodule Wallabidi do
   @doc false
   def driver_module do
     case resolve_driver() do
-      :lightpanda_v2 -> Wallabidi.V2Driver
-      :lightpanda -> Wallabidi.Lightpanda
-      :chrome_cdp_v2 -> Wallabidi.V2ChromeDriver
-      :chrome_bidi_v2 -> Wallabidi.V2BiDiDriver
-      :chrome_cdp -> Wallabidi.ChromeCDP
       :live_view -> Wallabidi.LiveViewDriver
-      _ -> Wallabidi.Chrome
+      d when d in [:lightpanda, :lightpanda_v2] -> Wallabidi.V2Driver
+      d when d in [:chrome_cdp, :chrome_cdp_v2] -> Wallabidi.V2ChromeDriver
+      d when d in [:chrome, :chrome_bidi_v2] -> Wallabidi.V2BiDiDriver
+      _ -> Wallabidi.V2ChromeDriver
     end
   end
 

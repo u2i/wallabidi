@@ -62,6 +62,16 @@ defmodule Wallabidi.V2BiDiDriver do
   @doc false
   def cleanup_stale_sessions, do: :ok
 
+  @doc """
+  Default capabilities passed when starting a Chrome session via BiDi.
+  """
+  def default_capabilities do
+    %{
+      browserName: "chrome",
+      unhandledPromptBehavior: "ignore"
+    }
+  end
+
   # ----- Session lifecycle -----
 
   @impl true
@@ -128,7 +138,42 @@ defmodule Wallabidi.V2BiDiDriver do
 
   @impl true
   def visit(%Session{} = session, url) do
-    check_logs!(session, fn -> BiDiClient.visit(session, url) end)
+    result = check_logs!(session, fn -> BiDiClient.visit(session, url) end)
+    _ = await_liveview_connected_v2(session)
+    result
+  end
+
+  # Mirrors V2ChromeDriver.await_liveview_connected_v2/1 and
+  # V2Driver.await_liveview_connected_v2/1 — wait up to 5s for
+  # liveSocket.main.joinPending === false on LV pages. Without this,
+  # post-visit interactions can race the channel-join.
+  defp await_liveview_connected_v2(%Session{} = session) do
+    timeout = 5_000
+
+    js = """
+    new Promise(function(resolve) {
+      var deadline = Date.now() + #{timeout};
+      function check() {
+        if (document.readyState === 'loading') {
+          if (Date.now() > deadline) return resolve(false);
+          return setTimeout(check, 20);
+        }
+        if (!document.querySelector('[data-phx-session]')) {
+          return resolve('no-liveview');
+        }
+        var ls = window.liveSocket;
+        if (ls && ls.main && !ls.main.joinPending) return resolve(true);
+        if (Date.now() > deadline) return resolve(false);
+        setTimeout(check, 30);
+      }
+      check();
+    })
+    """
+
+    _ = Wallabidi.V2.BiDiClient.evaluate_async(session, js)
+    :ok
+  rescue
+    _ -> :ok
   end
 
   @impl true
