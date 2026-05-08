@@ -82,12 +82,15 @@ excludes =
       excludes
 
     driver == :live_view ->
+      # The LV-driver now supports native form submit (render_submit on
+      # button[type=submit] inside phx-submit forms) and cross-LV
+      # navigation (visits the destination after push_navigate /
+      # redirect / cross-live_session <a href>). With those in place
+      # the only thing we exclude is the genuinely browser-only set.
       excludes ++
         [
           browser: true,
           headless: true,
-          cross_lv_nav: true,
-          native_form_submit: true,
           cdp_only: true
         ]
 

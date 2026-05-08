@@ -250,14 +250,168 @@ defmodule Wallabidi.LiveViewDriver do
         click_static(session, element, el_html)
 
       view ->
+        # Browser drivers fire phx-click for any clickable element AND
+        # native form submission when a submit button is clicked, AND
+        # navigate when an <a> is clicked. The in-process LV-driver
+        # routes these through different LV.Test APIs:
+        #   - <a href> with no phx-click  → visit(href)
+        #   - phx-click on the element    → render_click(element)
+        #   - submit button in a form     → render_submit(form, params)
+        # Browsers do all three; we mirror that.
         selector = element_selector(element)
         lv_element = @lv_test.element(view, selector)
-        html = @lv_test.render_click(lv_element)
-        update_html(session, html)
+
+        case classify_lv_click(session, el_html) do
+          {:link, href} ->
+            # <a> click without phx-click — follow the link. Covers
+            # plain <a href> and `<.link navigate>` (which renders as
+            # <a href data-phx-link="redirect">).
+            visit(session, href)
+
+          {:phx_submit, form_selector, form_data} ->
+            # phx-submit fires on the FORM, not the button. Use
+            # render_submit so the LV server runs handle_event "submit".
+            if has_phx_click?(el_html) do
+              @lv_test.render_click(lv_element)
+            end
+
+            form = @lv_test.element(view, form_selector)
+            result = @lv_test.render_submit(form, form_data)
+            handle_lv_result(session, result)
+            # phx-trigger-action: after the server runs handle_event, if
+            # the form is now marked phx-trigger-action="true", browsers
+            # see the diff and fire the native form submit. Mirror that:
+            # if the post-render form has phx-trigger-action set, do the
+            # native POST.
+            maybe_trigger_action(session, form_selector, form_data)
+
+          :phx_click ->
+            handle_lv_result(session, @lv_test.render_click(lv_element))
+        end
+
         {:ok, nil}
     end
   rescue
     e -> {:error, Exception.message(e)}
+  end
+
+  # Handle the return value of render_click / render_submit / render_change.
+  # Phoenix.LiveViewTest returns:
+  #   - HTML string on a normal patch
+  #   - {:error, {:live_redirect, %{to: url, ...}}} for push_navigate
+  #   - {:error, {:redirect, %{to: url, ...}}} for redirect()
+  # Browsers follow both kinds of redirect transparently, so the LV-driver
+  # follows by calling visit/2 on the destination — which re-mounts the
+  # destination LV (or hits a static/controller page) and updates session state.
+  defp handle_lv_result(session, html) when is_binary(html) do
+    update_html(session, html)
+  end
+
+  defp handle_lv_result(session, {:error, {kind, %{to: to}}}) when kind in [:live_redirect, :redirect] do
+    visit(session, to)
+  end
+
+  defp handle_lv_result(session, _other) do
+    # Unknown shape — leave session state untouched.
+    session
+  end
+
+  # Classify a click on a clickable element inside a connected LV.
+  #
+  # Returns:
+  #   - {:link, href}                          for <a href> w/o phx-click
+  #   - {:phx_submit, form_selector, params}   for submit button in phx-submit form
+  #   - :phx_click                             everything else (router'd through render_click)
+  defp classify_lv_click(session, el_html) do
+    el_doc = LazyHTML.from_fragment(el_html)
+    tag = case LazyHTML.tag(el_doc) do
+      [t | _] -> t |> to_string() |> String.downcase()
+      _ -> ""
+    end
+
+    cond do
+      tag == "a" and first_attr(el_doc, "href") not in [nil, "#", ""] and
+          first_attr(el_doc, "phx-click") == nil ->
+        {:link, first_attr(el_doc, "href")}
+
+      (tag == "button" and first_attr(el_doc, "type") in [nil, "submit"]) or
+          (tag == "input" and first_attr(el_doc, "type") in ["submit", "image"]) ->
+        page_doc = parse_html(get_rendered_html(session))
+
+        case find_parent_form(page_doc, el_html) do
+          nil ->
+            :phx_click
+
+          form_node ->
+            phx_submit = first_attr(form_node, "phx-submit")
+            form_id = first_attr(form_node, "id")
+
+            if phx_submit && form_id do
+              {:phx_submit, "form##{form_id}", collect_form_data(form_node)}
+            else
+              :phx_click
+            end
+        end
+
+      true ->
+        :phx_click
+    end
+  end
+
+  defp has_phx_click?(el_html) do
+    el_html |> LazyHTML.from_fragment() |> first_attr("phx-click") != nil
+  end
+
+  # After render_submit, check whether the form now has phx-trigger-action
+  # truthy. If yes, simulate the browser's reaction: dispatch a native
+  # POST to the form's action attribute. Without this, click-on-submit
+  # in a phx-trigger-action flow would never reach the controller.
+  defp maybe_trigger_action(session, form_selector, form_data) do
+    page_doc = parse_html(get_rendered_html(session))
+
+    case LazyHTML.query(page_doc, form_selector) |> Enum.to_list() do
+      [form_node | _] ->
+        # HEEx renders phx-trigger-action={true} as phx-trigger-action=""
+        # (empty-string boolean attribute). Falsy values render the
+        # attribute absent. So presence + non-"false" means active.
+        trigger = first_attr(form_node, "phx-trigger-action")
+        active? = trigger != nil and trigger != "false"
+
+        if active? do
+          raw_action = first_attr(form_node, "action") || get_state(session)[:path]
+          action = if String.starts_with?(raw_action, "/"), do: raw_action, else: "/#{raw_action}"
+          method = (first_attr(form_node, "method") || "post") |> String.downcase()
+
+          if method == "post" do
+            conn =
+              @conn_test.build_conn()
+              |> Plug.Conn.put_private(:phoenix_endpoint, session.server)
+              |> @conn_test.dispatch(session.server, :post, action, form_data)
+
+            # Follow the redirect if there is one.
+            case conn.status do
+              s when s in [301, 302, 303, 307, 308] ->
+                location = Plug.Conn.get_resp_header(conn, "location") |> List.first()
+
+                if location do
+                  visit(session, location)
+                else
+                  put_state(session, nil, conn.resp_body || "", action)
+                end
+
+              _ ->
+                put_state(session, nil, conn.resp_body || "", action)
+            end
+          else
+            visit(session, action)
+          end
+        end
+
+      _ ->
+        :ok
+    end
+  rescue
+    _ -> :ok
   end
 
   defp click_static(session, _element, el_html) do

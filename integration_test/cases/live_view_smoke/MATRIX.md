@@ -7,7 +7,7 @@ Capability tags excluded per driver:
 
 | driver         | excluded tags                                                    |
 |----------------|------------------------------------------------------------------|
-| live_view      | `:browser`, `:headless`, `:cross_lv_nav`, `:native_form_submit`, `:cdp_only` |
+| live_view      | `:browser`, `:headless`, `:cdp_only`                             |
 | chrome_cdp_v2  | `:live_view_only`, `:cdp_only`                                   |
 | chrome_bidi_v2 | `:live_view_only`, `:cdp_only`                                   |
 | lightpanda_v2  | `:browser` (TODO: re-evaluate), `:lightpanda_ni`, `:cdp_only`    |
@@ -17,25 +17,26 @@ Capability tags excluded per driver:
 Run with `mix test integration_test/cases/live_view_smoke --max-cases 1`
 (date: 2026-05-06).
 
-| Test                                           | live_view | chrome_cdp_v2 | lightpanda_v2 |
-|------------------------------------------------|:---------:|:-------------:|:-------------:|
-| counter: phx-click increment                   | ✓         | ✓             | ✗             |
-| text_change: connected? mount → text           | ✓         | ✓             | ✗             |
-| text_change: phx-value param                   | ✓         | ✓             | ✗             |
-| async: start_async result lands                | ✓         | ✓             | ✗             |
-| async: two-phase sync→async                    | ✓         | ✓             | ✗             |
-| form: phx-change echo                          | ✓         | ✓             | ✗             |
-| form: phx-submit via type=submit (browser-only)| skip      | ✓             | ✗             |
-| multi_element: list, click, append             | ✓         | ✓             | ✗             |
-| navigation: <.link navigate> (browser-only)    | skip      | ✓             | ✗             |
-| navigation: <a href> cross-live_session        | skip      | ✓             | ✗             |
-| slow_event: 3s server work + push_navigate     | skip      | ✓             | ✗             |
-| form_redirect: submit + cross-LV redirect      | skip      | ✓             | ✗             |
-| trigger_action: phx-trigger-action POST flow   | skip      | ✓             | ✗             |
+| Test                                           | live_view | chrome_cdp_v2 | lightpanda_v2 (patched) |
+|------------------------------------------------|:---------:|:-------------:|:-----------------------:|
+| counter: phx-click increment                   | ✓         | ✓             | ✓                       |
+| text_change: connected? mount → text           | ✓         | ✓             | ✓                       |
+| text_change: phx-value param                   | ✓         | ✓             | ✓                       |
+| async: start_async result lands                | ✓         | ✓             | ✓                       |
+| async: two-phase sync→async                    | ✓         | ✓             | ✓                       |
+| form: phx-change echo                          | ✓         | ✓             | ✓                       |
+| form: phx-submit via type=submit               | ✓         | ✓             | ✓                       |
+| multi_element: list, click, append             | ✓         | ✓             | ✓                       |
+| navigation: <.link navigate>                   | ✓         | ✓             | ✓                       |
+| navigation: <a href> cross-live_session        | ✓         | ✓             | ✓                       |
+| slow_event: 3s server work + push_navigate     | ✓         | ✓             | ✓                       |
+| form_redirect: submit + cross-LV redirect      | ✓         | ✓             | ✓                       |
+| trigger_action: phx-trigger-action POST flow   | ✓         | ✓             | ✓                       |
 
-- **live_view**: 7/7 visible tests pass (6 skipped by capability tag)
-- **chrome_cdp_v2**: 13/13 pass
-- **lightpanda_v2**: 0/13 pass (every interaction-after-visit test fails)
+- **live_view**: 13/13 — after the LV-driver gained native form submit
+  + cross-LV navigation + phx-trigger-action support
+- **chrome_cdp_v2**: 13/13
+- **lightpanda_v2 (patched)**: 13/13 — after the WS-cookie patch landed
 
 ## LP failure pattern
 

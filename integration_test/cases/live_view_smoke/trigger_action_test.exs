@@ -17,12 +17,14 @@ defmodule Wallabidi.Integration.LiveViewSmoke.TriggerActionTest do
     #   4. POST to /trigger-action-target redirects somewhere
     # The driver's click classifier has to recognise phx-trigger-action
     # and wait for the full page load, not just the LV patch.
+    # Assert on the destination content — assert_has polls within
+    # max_wait_time so it gives the LV patch + native form submit +
+    # POST + redirect chain time to play out. refute_has won't wait
+    # the same way (returns the instant the absence is true, which
+    # can be the pre-redirect snapshot).
     session
     |> visit(@base <> "/trigger-action")
     |> click(Query.css("#ta-submit"))
-    # The controller redirects somewhere — minimum smoke is that we
-    # leave the trigger-action page (i.e. didn't get stuck on the
-    # original LV after the patch landed).
-    |> refute_has(Query.css("#ta-form"))
+    |> assert_has(Query.css("#full-dest-title", text: "Full Nav Destination"))
   end
 end
