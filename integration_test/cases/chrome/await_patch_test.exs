@@ -1,7 +1,7 @@
 defmodule Wallabidi.Integration.AwaitPatchTest do
   use ExUnit.Case, async: true
   use Wallabidi.DSL
-  @moduletag :browser
+  @moduletag :headless
 
   setup do
     live_url = Application.get_env(:wallabidi, :live_app_url)
@@ -259,6 +259,7 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
   end
 
   describe "fill_in + submit (#9)" do
+    @tag :browser
     test "fill_in awaits the set_value patch, not the clear patch", %{
       session: session,
       live_url: url

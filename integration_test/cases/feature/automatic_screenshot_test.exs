@@ -1,6 +1,6 @@
 defmodule Wallabidi.Integration.Feature.AutomaticScreenshotTest do
   use ExUnit.Case
-  @moduletag :browser
+  @moduletag :headless
 
   alias ExUnit.CaptureIO
 

@@ -15,7 +15,7 @@ defmodule Wallabidi.Integration.LiveView.SlowEventAckTest do
 
   use Wallabidi.Integration.SessionCase, async: false
 
-  @moduletag :browser
+  @moduletag :headless
 
   @base Application.compile_env(:wallabidi, :live_app_url, "http://localhost:4321")
 

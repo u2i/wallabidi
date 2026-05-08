@@ -22,7 +22,7 @@ defmodule Wallabidi.Integration.LiveView.AsyncPatchTest do
   # These tests exercise JavaScript-driven behaviour (phx-trigger-action
   # native submits, JS.navigate, async patches, PubSub-triggered re-renders)
   # so they only run on drivers that execute JS.
-  @moduletag :browser
+  @moduletag :headless
 
   @base Application.compile_env(:wallabidi, :live_app_url, "http://localhost:4321")
 
