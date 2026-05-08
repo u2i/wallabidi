@@ -1,4 +1,4 @@
-defmodule Wallabidi.V2BiDiDriver do
+defmodule Wallabidi.BiDiDriver do
   @moduledoc false
 
   # V2 driver speaking WebDriver-BiDi against a chromium-bidi server.
@@ -27,9 +27,9 @@ defmodule Wallabidi.V2BiDiDriver do
 
   alias Wallabidi.BiDi.WebSocketClient
   alias Wallabidi.{Element, Session}
-  alias Wallabidi.V2.BiDiClient
-  alias Wallabidi.V2.Transport.BiDi
-  alias Wallabidi.V2.Transport.Protocol
+  alias Wallabidi.V2BiDiClient, as: BiDiClient
+  alias Wallabidi.Transport.BiDi
+  alias Wallabidi.Transport.Protocol
 
   # ----- Driver supervisor -----
 
@@ -170,7 +170,7 @@ defmodule Wallabidi.V2BiDiDriver do
     })
     """
 
-    _ = Wallabidi.V2.BiDiClient.evaluate_async(session, js)
+    _ = Wallabidi.V2BiDiClient.evaluate_async(session, js)
     :ok
   rescue
     _ -> :ok

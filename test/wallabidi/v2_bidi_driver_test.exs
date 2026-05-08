@@ -11,11 +11,11 @@ defmodule Wallabidi.V2BiDiDriverTest do
   alias Wallabidi.Browser
 
   setup do
-    {:ok, _} = Wallabidi.V2BiDiDriver.start_link(name: Wallabidi.V2BiDiDriver)
+    {:ok, _} = Wallabidi.BiDiDriver.start_link(name: Wallabidi.BiDiDriver)
 
     on_exit(fn ->
       try do
-        Supervisor.stop(Wallabidi.V2BiDiDriver, :normal, 5_000)
+        Supervisor.stop(Wallabidi.BiDiDriver, :normal, 5_000)
       catch
         :exit, _ -> :ok
       end
@@ -28,7 +28,7 @@ defmodule Wallabidi.V2BiDiDriverTest do
     {:ok, session} = Wallabidi.start_session(driver: :chrome_bidi_v2)
 
     try do
-      assert session.driver == Wallabidi.V2BiDiDriver
+      assert session.driver == Wallabidi.BiDiDriver
       assert is_pid(session.pid)
       assert is_pid(session.bidi_pid)
       assert is_binary(session.browsing_context)
@@ -36,8 +36,8 @@ defmodule Wallabidi.V2BiDiDriverTest do
       # Drive directly through the BiDiClient to avoid Browser.visit/2's
       # base_url joining (it prepends to about:/data: URLs because they
       # have host: nil — pre-existing Browser quirk, out of scope here).
-      :ok = Wallabidi.V2.BiDiClient.visit(session, "about:blank")
-      assert {:ok, "about:blank"} = Wallabidi.V2.BiDiClient.current_url(session)
+      :ok = Wallabidi.BiDiClient.visit(session, "about:blank")
+      assert {:ok, "about:blank"} = Wallabidi.BiDiClient.current_url(session)
     after
       Wallabidi.end_session(session)
     end
@@ -49,7 +49,7 @@ defmodule Wallabidi.V2BiDiDriverTest do
     try do
       html = "<div class='item'>a</div><div class='item'>b</div>"
       data_url = "data:text/html;charset=utf-8," <> URI.encode(html)
-      :ok = Wallabidi.V2.BiDiClient.visit(session, data_url)
+      :ok = Wallabidi.BiDiClient.visit(session, data_url)
 
       query = Wallabidi.Query.css(".item", count: 2)
       [e1, e2] = Browser.all(session, query)

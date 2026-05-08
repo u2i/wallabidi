@@ -1,11 +1,11 @@
-defmodule Wallabidi.V2.Transport.SharedWS do
+defmodule Wallabidi.Transport.SharedWS do
   @moduledoc false
 
   # Transport: ONE V2.WebSocket per BEAM, shared across all sessions
   # via CDP's flat-session protocol. Each `acquire/1`:
   #
   #   1. Fetches the shared ws_pid from a connection-holder Agent
-  #      (typically `Wallabidi.V2Chrome.SharedConnection`).
+  #      (typically `Wallabidi.Chrome.SharedConnection`).
   #   2. Creates a fresh BrowserContext on that shared WS.
   #   3. Creates a Target inside that BrowserContext (about:blank).
   #   4. Attaches to the target (flat session) → gets a sessionId
@@ -14,10 +14,10 @@ defmodule Wallabidi.V2.Transport.SharedWS do
   # Teardown disposes the BrowserContext (which kills its targets)
   # but leaves the shared WS alone.
 
-  @behaviour Wallabidi.V2.Transport
+  @behaviour Wallabidi.Transport
 
-  alias Wallabidi.V2.Transport
-  alias Wallabidi.V2.WebSocket
+  alias Wallabidi.Transport
+  alias Wallabidi.WebSocket
 
   @impl true
   def acquire(opts) do

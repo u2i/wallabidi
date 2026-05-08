@@ -1,7 +1,7 @@
 defmodule Wallabidi.V2.SessionTest do
   use ExUnit.Case, async: true
 
-  alias Wallabidi.V2.Session
+  alias Wallabidi.Session2, as: Session
 
   describe "module shape" do
     test "exports the expected functions" do

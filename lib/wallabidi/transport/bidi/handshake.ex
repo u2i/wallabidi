@@ -1,4 +1,4 @@
-defmodule Wallabidi.V2.Transport.BiDi.Handshake do
+defmodule Wallabidi.Transport.BiDi.Handshake do
   @moduledoc false
 
   # WebDriver-BiDi HTTP `POST /session` step.

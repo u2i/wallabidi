@@ -1,4 +1,4 @@
-defmodule Wallabidi.V2.Transport.BiDi.SessionActor do
+defmodule Wallabidi.Transport.BiDi.SessionActor do
   @moduledoc false
 
   # One actor per BiDi session. Owns a Wallabidi.BiDi.WebSocketClient

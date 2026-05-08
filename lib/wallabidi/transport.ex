@@ -1,4 +1,4 @@
-defmodule Wallabidi.V2.Transport do
+defmodule Wallabidi.Transport do
   @moduledoc false
 
   # Strategy for the "where does a session get its WebSocket" question.
@@ -27,8 +27,8 @@ defmodule Wallabidi.V2.Transport do
   # Each impl returns the same shape so the surrounding driver code
   # (install_bootstrap, await_page_load, click_aware, …) is unchanged.
 
-  alias Wallabidi.V2.Session, as: V2Session
-  alias Wallabidi.V2.WebSocket
+  alias Wallabidi.Session2, as: V2Session
+  alias Wallabidi.WebSocket
 
   @typedoc """
   What `acquire/1` returns. The driver builds a `Wallabidi.Session`
@@ -135,9 +135,9 @@ defmodule Wallabidi.V2.Transport do
            owner: caller
          ) do
       {:ok, session} ->
-        :ok = Wallabidi.V2.CDPClient.enable_page_lifecycle_events(session)
-        :ok = Wallabidi.V2.CDPClient.install_bootstrap(session)
-        :ok = Wallabidi.V2.CDPClient.enable_frame_tracking(session)
+        :ok = Wallabidi.V2CDPClient.enable_page_lifecycle_events(session)
+        :ok = Wallabidi.V2CDPClient.install_bootstrap(session)
+        :ok = Wallabidi.V2CDPClient.enable_frame_tracking(session)
         {:ok, session}
 
       err ->

@@ -92,11 +92,11 @@ defmodule Wallabidi.Protocol do
   def eval(%Session{protocol: mod} = session, js) when not is_nil(mod),
     do: mod.eval(session, js)
 
-  def eval(%Session{driver: driver} = session, js) when driver in [Wallabidi.V2Driver, Wallabidi.V2ChromeDriver],
-    do: Wallabidi.V2.CDPClient.evaluate(session, js)
+  def eval(%Session{driver: driver} = session, js) when driver in [Wallabidi.LightpandaDriver, Wallabidi.ChromeDriver],
+    do: Wallabidi.V2CDPClient.evaluate(session, js)
 
-  def eval(%Session{driver: Wallabidi.V2BiDiDriver} = session, js),
-    do: Wallabidi.V2.BiDiClient.evaluate(session, js)
+  def eval(%Session{driver: Wallabidi.BiDiDriver} = session, js),
+    do: Wallabidi.V2BiDiClient.evaluate(session, js)
 
   @spec eval_async(Session.t(), String.t(), timeout()) :: result
   def eval_async(session, js, timeout \\ 10_000)
@@ -105,11 +105,11 @@ defmodule Wallabidi.Protocol do
     do: mod.eval_async(session, js, timeout)
 
   def eval_async(%Session{driver: driver} = session, js, _timeout)
-      when driver in [Wallabidi.V2Driver, Wallabidi.V2ChromeDriver] do
+      when driver in [Wallabidi.LightpandaDriver, Wallabidi.ChromeDriver] do
     # V2.CDPClient.evaluate_async wraps the body so the caller's
     # final `arguments[N]` resolves the awaited promise. The legacy
     # eval_async expects the JS to itself be a Promise — unwrap.
-    case Wallabidi.V2.CDPClient.cdp_send(session, "Runtime.evaluate", %{
+    case Wallabidi.V2CDPClient.cdp_send(session, "Runtime.evaluate", %{
            expression: js,
            awaitPromise: true,
            returnByValue: true
@@ -120,19 +120,19 @@ defmodule Wallabidi.Protocol do
     end
   end
 
-  def eval_async(%Session{driver: Wallabidi.V2BiDiDriver} = session, js, _timeout),
-    do: Wallabidi.V2.BiDiClient.evaluate_async(session, js)
+  def eval_async(%Session{driver: Wallabidi.BiDiDriver} = session, js, _timeout),
+    do: Wallabidi.V2BiDiClient.evaluate_async(session, js)
 
   @spec current_url(Session.t()) :: result
   def current_url(%Session{protocol: mod} = session) when not is_nil(mod),
     do: mod.current_url(session)
 
   def current_url(%Session{driver: driver} = session)
-      when driver in [Wallabidi.V2Driver, Wallabidi.V2ChromeDriver],
-      do: Wallabidi.V2.CDPClient.current_url(session)
+      when driver in [Wallabidi.LightpandaDriver, Wallabidi.ChromeDriver],
+      do: Wallabidi.V2CDPClient.current_url(session)
 
-  def current_url(%Session{driver: Wallabidi.V2BiDiDriver} = session),
-    do: Wallabidi.V2.BiDiClient.current_url(session)
+  def current_url(%Session{driver: Wallabidi.BiDiDriver} = session),
+    do: Wallabidi.V2BiDiClient.current_url(session)
 
   @spec subscribe(Session.t(), semantic_event) :: :ok
   def subscribe(%Session{protocol: mod} = session, event)

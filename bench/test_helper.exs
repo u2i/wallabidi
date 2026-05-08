@@ -26,10 +26,10 @@ primary_mod =
   case driver do
     :chrome -> Wallabidi.Chrome
     :chrome_cdp -> Wallabidi.ChromeCDP
-    :chrome_bidi_v2 -> Wallabidi.V2BiDiDriver
-    :chrome_cdp_v2 -> Wallabidi.V2ChromeDriver
+    :chrome_bidi_v2 -> Wallabidi.BiDiDriver
+    :chrome_cdp_v2 -> Wallabidi.ChromeDriver
     :lightpanda -> Wallabidi.Lightpanda
-    :lightpanda_v2 -> Wallabidi.V2Driver
+    :lightpanda_v2 -> Wallabidi.LightpandaDriver
     _ -> nil
   end
 
@@ -37,9 +37,9 @@ secondaries =
   [
     {Wallabidi.Chrome, Wallabidi.Chrome.Supervisor},
     {Wallabidi.ChromeCDP, Wallabidi.ChromeCDP.Supervisor},
-    {Wallabidi.V2BiDiDriver, Wallabidi.V2BiDiDriver},
-    {Wallabidi.V2ChromeDriver, Wallabidi.V2ChromeDriver},
-    {Wallabidi.V2Driver, Wallabidi.V2Driver},
+    {Wallabidi.BiDiDriver, Wallabidi.BiDiDriver},
+    {Wallabidi.ChromeDriver, Wallabidi.ChromeDriver},
+    {Wallabidi.LightpandaDriver, Wallabidi.LightpandaDriver},
     {Wallabidi.Lightpanda, Wallabidi.Lightpanda.Supervisor}
   ]
   |> Enum.reject(fn {mod, _name} -> mod == primary_mod end)

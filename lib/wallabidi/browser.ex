@@ -755,7 +755,7 @@ defmodule Wallabidi.Browser do
     session = get_session(parent)
 
     cond do
-      session && session.driver == Wallabidi.V2Driver &&
+      session && session.driver == Wallabidi.LightpandaDriver &&
           not in_frame?(session) && not in_switched_window?(session) ->
         # V2Driver (Lightpanda): route through V2.CDPClient.click_aware
         # which captures pre_page_id, classifies, clicks, awaits
@@ -856,10 +856,10 @@ defmodule Wallabidi.Browser do
   # Pick the V2 client module that owns a given session's transport.
   # CDP and BiDi expose the same `click_aware/2` shape, so callers
   # can invoke `mod.click_aware(...)` uniformly.
-  defp v2_click_module(%Wallabidi.Session{driver: Wallabidi.V2BiDiDriver}),
-    do: Wallabidi.V2.BiDiClient
+  defp v2_click_module(%Wallabidi.Session{driver: Wallabidi.BiDiDriver}),
+    do: Wallabidi.V2BiDiClient
 
-  defp v2_click_module(_), do: Wallabidi.V2.CDPClient
+  defp v2_click_module(_), do: Wallabidi.V2CDPClient
 
   # BiDi pipeline click: Pipeline.click_full via script.evaluate.
   # Returns {count, classification, prepared} by value in 1 RPC.
@@ -1799,7 +1799,7 @@ defmodule Wallabidi.Browser do
 
     cond do
       session &&
-        session.driver in [Wallabidi.V2Driver, Wallabidi.V2ChromeDriver, Wallabidi.V2BiDiDriver] &&
+        session.driver in [Wallabidi.LightpandaDriver, Wallabidi.ChromeDriver, Wallabidi.BiDiDriver] &&
           not in_frame?(session) && not in_switched_window?(session) ->
         # V2 transport uses the same ops pipeline shape (push-based finds
         # via Runtime.addBinding). Routes through V2.CDPClient.
@@ -1831,17 +1831,17 @@ defmodule Wallabidi.Browser do
 
       result =
         cond do
-          session.driver == Wallabidi.V2BiDiDriver ->
+          session.driver == Wallabidi.BiDiDriver ->
             # V2 BiDi: same push-based bootstrap pipeline as the CDP
             # path, just speaking BiDi commands underneath. Returns
             # {:ok, [Element]} keyed by sharedId.
-            Wallabidi.V2.BiDiClient.find_elements(parent, validated, timeout: timeout)
+            Wallabidi.V2BiDiClient.find_elements(parent, validated, timeout: timeout)
 
-          session.driver in [Wallabidi.V2Driver, Wallabidi.V2ChromeDriver] ->
+          session.driver in [Wallabidi.LightpandaDriver, Wallabidi.ChromeDriver] ->
             # V2 transport: V2.CDPClient.find_elements/3 reuses the
             # same Bootstrap+register_js pipeline but routes through
             # V2.Session for correlation. Returns {:ok, [Element]}.
-            Wallabidi.V2.CDPClient.find_elements(parent, validated, timeout: timeout)
+            Wallabidi.V2CDPClient.find_elements(parent, validated, timeout: timeout)
 
           session.protocol == Wallabidi.Protocol.CDP ->
             Wallabidi.CDPClient.execute_ops(parent, ops,

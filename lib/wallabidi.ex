@@ -88,10 +88,10 @@ defmodule Wallabidi do
     # any caller that pinned them explicitly.
     case resolve_driver(opts) do
       :live_view -> Wallabidi.LiveViewDriver.start_session(opts)
-      d when d in [:lightpanda, :lightpanda_v2] -> Wallabidi.V2Driver.start_session(opts)
-      d when d in [:chrome_cdp, :chrome_cdp_v2] -> Wallabidi.V2ChromeDriver.start_session(opts)
-      d when d in [:chrome, :chrome_bidi_v2] -> Wallabidi.V2BiDiDriver.start_session(opts)
-      _browser -> Wallabidi.V2ChromeDriver.start_session(opts)
+      d when d in [:lightpanda, :lightpanda_v2] -> Wallabidi.LightpandaDriver.start_session(opts)
+      d when d in [:chrome_cdp, :chrome_cdp_v2] -> Wallabidi.ChromeDriver.start_session(opts)
+      d when d in [:chrome, :chrome_bidi_v2] -> Wallabidi.BiDiDriver.start_session(opts)
+      _browser -> Wallabidi.ChromeDriver.start_session(opts)
     end
   end
 
@@ -125,10 +125,10 @@ defmodule Wallabidi do
   def driver_module do
     case resolve_driver() do
       :live_view -> Wallabidi.LiveViewDriver
-      d when d in [:lightpanda, :lightpanda_v2] -> Wallabidi.V2Driver
-      d when d in [:chrome_cdp, :chrome_cdp_v2] -> Wallabidi.V2ChromeDriver
-      d when d in [:chrome, :chrome_bidi_v2] -> Wallabidi.V2BiDiDriver
-      _ -> Wallabidi.V2ChromeDriver
+      d when d in [:lightpanda, :lightpanda_v2] -> Wallabidi.LightpandaDriver
+      d when d in [:chrome_cdp, :chrome_cdp_v2] -> Wallabidi.ChromeDriver
+      d when d in [:chrome, :chrome_bidi_v2] -> Wallabidi.BiDiDriver
+      _ -> Wallabidi.ChromeDriver
     end
   end
 

@@ -27,7 +27,7 @@ defmodule Wallabidi.Integration.Browser.UseFeatureTest do
   end
 
   @expected_capabilities Map.put(
-                           Wallabidi.V2BiDiDriver.default_capabilities(),
+                           Wallabidi.BiDiDriver.default_capabilities(),
                            :"wallabidi:test",
                            "I'm a capability"
                          )

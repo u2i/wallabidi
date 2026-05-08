@@ -13,8 +13,8 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
 
   alias Wallabidi.Integration.V2SessionHelper
   alias Wallabidi.Query
-  alias Wallabidi.V2.CDPClient
-  alias Wallabidi.V2.Session, as: V2Session
+  alias Wallabidi.V2CDPClient, as: CDPClient
+  alias Wallabidi.Session2, as: V2Session
 
   setup do
     V2SessionHelper.start_session()

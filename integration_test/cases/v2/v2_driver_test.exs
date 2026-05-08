@@ -1,6 +1,6 @@
 defmodule Wallabidi.Integration.V2.DriverTest do
   @moduledoc """
-  Exercises Wallabidi.V2Driver via the Driver behaviour itself.
+  Exercises Wallabidi.LightpandaDriver via the Driver behaviour itself.
 
   Doesn't yet go through Wallabidi.Browser.* — that path has hard
   couplings to Wallabidi.SessionProcess that V2.Session doesn't
@@ -11,7 +11,7 @@ defmodule Wallabidi.Integration.V2.DriverTest do
 
   @moduletag :v2
 
-  alias Wallabidi.V2Driver
+  alias Wallabidi.LightpandaDriver, as: V2Driver
 
   setup do
     {:ok, session} = V2Driver.start_session([])

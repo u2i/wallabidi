@@ -1,7 +1,7 @@
-defmodule Wallabidi.V2.Transport.BiDi.HandshakeTest do
+defmodule Wallabidi.Transport.BiDi.HandshakeTest do
   use ExUnit.Case, async: false
 
-  alias Wallabidi.V2.Transport.BiDi.Handshake
+  alias Wallabidi.Transport.BiDi.Handshake
   alias Wallabidi.Chrome.BidiServer
   alias Wallabidi.BiDi.WebSocketClient
 

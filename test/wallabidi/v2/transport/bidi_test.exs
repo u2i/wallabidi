@@ -1,10 +1,10 @@
-defmodule Wallabidi.V2.Transport.BiDiTest do
+defmodule Wallabidi.Transport.BiDiTest do
   use ExUnit.Case, async: false
 
   alias Wallabidi.Chrome.BidiServer
   alias Wallabidi.Session
-  alias Wallabidi.V2.Transport.BiDi
-  alias Wallabidi.V2.Transport.Protocol
+  alias Wallabidi.Transport.BiDi
+  alias Wallabidi.Transport.Protocol
 
   @moduletag :browser
 

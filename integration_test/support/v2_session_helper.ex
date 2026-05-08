@@ -10,8 +10,8 @@ defmodule Wallabidi.Integration.V2SessionHelper do
   # `{session, ws_pid, server}` triple AND registers an `on_exit`
   # to tear it down at test end.
 
-  alias Wallabidi.V2.WebSocket
-  alias Wallabidi.V2.Session, as: V2Session
+  alias Wallabidi.WebSocket
+  alias Wallabidi.Session2, as: V2Session
 
   @doc """
   Brings up a Lightpanda server, V2.WebSocket, V2.Session, and
@@ -56,9 +56,9 @@ defmodule Wallabidi.Integration.V2SessionHelper do
         teardown_fun: fn _ -> :ok end
       )
 
-    :ok = Wallabidi.V2.CDPClient.enable_page_lifecycle_events(session)
-    :ok = Wallabidi.V2.CDPClient.install_bootstrap(session)
-    :ok = Wallabidi.V2.CDPClient.enable_frame_tracking(session)
+    :ok = Wallabidi.V2CDPClient.enable_page_lifecycle_events(session)
+    :ok = Wallabidi.V2CDPClient.install_bootstrap(session)
+    :ok = Wallabidi.V2CDPClient.enable_frame_tracking(session)
 
     ExUnit.Callbacks.on_exit(fn ->
       cleanup(session, ws_pid, server)

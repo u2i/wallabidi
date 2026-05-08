@@ -1,7 +1,7 @@
-defmodule Wallabidi.V2ChromeDriver do
+defmodule Wallabidi.ChromeDriver do
   @moduledoc false
 
-  # Chrome driver over the V2 transport stack. Mirrors `Wallabidi.V2Driver`
+  # Chrome driver over the V2 transport stack. Mirrors `Wallabidi.LightpandaDriver`
   # but launches/connects to a real Chrome browser and creates one
   # `BrowserContext` + `Target` per session, multiplexed over a single
   # shared `V2.WebSocket` (matching Playwright's "one browser, many
@@ -22,9 +22,10 @@ defmodule Wallabidi.V2ChromeDriver do
 
   alias Wallabidi.{DependencyError, Element, Metadata, Session}
   alias Wallabidi.Chrome.Server, as: ChromeServer
-  alias Wallabidi.V2.{CDPClient, Transport, WebSocket}
-  alias Wallabidi.V2.Transport.Protocol
-  alias Wallabidi.V2Chrome.SharedConnection
+  alias Wallabidi.V2CDPClient, as: CDPClient
+  alias Wallabidi.{Transport, WebSocket}
+  alias Wallabidi.Transport.Protocol
+  alias Wallabidi.Chrome.SharedConnection
   import Wallabidi.Driver.LogChecker
 
   @base_user_agent "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 " <>

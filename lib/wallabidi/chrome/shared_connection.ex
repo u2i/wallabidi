@@ -1,4 +1,4 @@
-defmodule Wallabidi.V2Chrome.SharedConnection do
+defmodule Wallabidi.Chrome.SharedConnection do
   @moduledoc false
 
   # Single shared `V2.WebSocket` connection to Chrome's browser-level
@@ -11,7 +11,7 @@ defmodule Wallabidi.V2Chrome.SharedConnection do
 
   use Agent
 
-  alias Wallabidi.V2.WebSocket
+  alias Wallabidi.WebSocket
 
   def start_link(_opts) do
     Agent.start_link(fn -> nil end, name: __MODULE__)

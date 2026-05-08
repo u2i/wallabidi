@@ -1,4 +1,4 @@
-defmodule Wallabidi.V2.Transport.BiDi do
+defmodule Wallabidi.Transport.BiDi do
   @moduledoc false
 
   # V2 transport for chromium-bidi: one POST → one WS → one Chrome.
@@ -20,8 +20,8 @@ defmodule Wallabidi.V2.Transport.BiDi do
   # bootstrap preload script + script.message routing.
 
   alias Wallabidi.Session
-  alias Wallabidi.V2.Transport.BiDi.{Handshake, SessionActor}
-  alias Wallabidi.V2.Transport.Protocol
+  alias Wallabidi.Transport.BiDi.{Handshake, SessionActor}
+  alias Wallabidi.Transport.Protocol
 
   @doc """
   Bring up a new BiDi session.

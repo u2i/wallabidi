@@ -1,4 +1,4 @@
-defmodule Wallabidi.V2.Transport.PerSessionWS do
+defmodule Wallabidi.Transport.PerSessionWS do
   @moduledoc false
 
   # Transport: ONE shared browser process per BEAM, ONE V2.WebSocket
@@ -14,10 +14,10 @@ defmodule Wallabidi.V2.Transport.PerSessionWS do
   # The shared browser-process pid lives in a Holder (the driver
   # supervisor's sole child).
 
-  @behaviour Wallabidi.V2.Transport
+  @behaviour Wallabidi.Transport
 
-  alias Wallabidi.V2.Transport
-  alias Wallabidi.V2.WebSocket
+  alias Wallabidi.Transport
+  alias Wallabidi.WebSocket
 
   @impl true
   def acquire(opts) do

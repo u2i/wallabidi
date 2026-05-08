@@ -139,13 +139,13 @@ sleep 2
 
 # Common Elixir prelude — opens a CDP session on the running LP.
 cat > "$TMPDIR/prelude.exs" <<'EOF'
-{:ok, ws} = Wallabidi.V2.WebSocket.start_link("ws://127.0.0.1:49606")
-{:ok, ctx} = Wallabidi.V2.WebSocket.send_sync(ws, "Target.createBrowserContext", %{})
-{:ok, tgt} = Wallabidi.V2.WebSocket.send_sync(ws, "Target.createTarget", %{"url" => "about:blank", "browserContextId" => ctx["browserContextId"]})
-{:ok, attach} = Wallabidi.V2.WebSocket.send_sync(ws, "Target.attachToTarget", %{"targetId" => tgt["targetId"], "flatten" => true})
+{:ok, ws} = Wallabidi.WebSocket.start_link("ws://127.0.0.1:49606")
+{:ok, ctx} = Wallabidi.WebSocket.send_sync(ws, "Target.createBrowserContext", %{})
+{:ok, tgt} = Wallabidi.WebSocket.send_sync(ws, "Target.createTarget", %{"url" => "about:blank", "browserContextId" => ctx["browserContextId"]})
+{:ok, attach} = Wallabidi.WebSocket.send_sync(ws, "Target.attachToTarget", %{"targetId" => tgt["targetId"], "flatten" => true})
 sess = attach["sessionId"]
-{:ok, _} = Wallabidi.V2.WebSocket.send_sync(ws, "Page.enable", %{"sessionId" => sess})
-{:ok, _} = Wallabidi.V2.WebSocket.send_sync(ws, "Network.enable", %{"sessionId" => sess})
+{:ok, _} = Wallabidi.WebSocket.send_sync(ws, "Page.enable", %{"sessionId" => sess})
+{:ok, _} = Wallabidi.WebSocket.send_sync(ws, "Network.enable", %{"sessionId" => sess})
 EOF
 
 # --- Probe runner -------------------------------------------------------------
@@ -185,23 +185,23 @@ run_probe() {
 # Probe 1 — bare navigation, no injection at all. PASS only if LP carries
 # the Set-Cookie response cookie onto the WS upgrade.
 run_probe "1) bare nav (Set-Cookie response)" '
-{:ok, _} = Wallabidi.V2.WebSocket.send_sync(ws, "Page.navigate", %{"sessionId" => sess, "url" => "http://localhost:4321/counter"})
+{:ok, _} = Wallabidi.WebSocket.send_sync(ws, "Page.navigate", %{"sessionId" => sess, "url" => "http://localhost:4321/counter"})
 :timer.sleep(3000)
 '
 
 # Probe 2 — Network.setExtraHTTPHeaders w/ Cookie before navigation.
 run_probe "2) Network.setExtraHTTPHeaders Cookie" "
-{:ok, _} = Wallabidi.V2.WebSocket.send_sync(ws, \"Network.setExtraHTTPHeaders\", %{
+{:ok, _} = Wallabidi.WebSocket.send_sync(ws, \"Network.setExtraHTTPHeaders\", %{
   \"sessionId\" => sess,
   \"headers\" => %{\"Cookie\" => \"$SESSION_COOKIE\"}
 })
-{:ok, _} = Wallabidi.V2.WebSocket.send_sync(ws, \"Page.navigate\", %{\"sessionId\" => sess, \"url\" => \"http://localhost:4321/counter\"})
+{:ok, _} = Wallabidi.WebSocket.send_sync(ws, \"Page.navigate\", %{\"sessionId\" => sess, \"url\" => \"http://localhost:4321/counter\"})
 :timer.sleep(3000)
 "
 
 # Probe 3 — Network.setCookie cookie jar before navigation.
 run_probe "3) Network.setCookie cookie jar" "
-{:ok, _} = Wallabidi.V2.WebSocket.send_sync(ws, \"Network.setCookie\", %{
+{:ok, _} = Wallabidi.WebSocket.send_sync(ws, \"Network.setCookie\", %{
   \"sessionId\" => sess,
   \"name\" => \"_live_test\",
   \"value\" => \"$SESSION_COOKIE_VALUE\",
@@ -209,21 +209,21 @@ run_probe "3) Network.setCookie cookie jar" "
   \"path\" => \"/\",
   \"url\" => \"http://localhost:4321/\"
 })
-{:ok, _} = Wallabidi.V2.WebSocket.send_sync(ws, \"Page.navigate\", %{\"sessionId\" => sess, \"url\" => \"http://localhost:4321/counter\"})
+{:ok, _} = Wallabidi.WebSocket.send_sync(ws, \"Page.navigate\", %{\"sessionId\" => sess, \"url\" => \"http://localhost:4321/counter\"})
 :timer.sleep(3000)
 "
 
 # Probe 4 — document.cookie via Runtime.evaluate after a first nav. The
 # second nav's WS upgrade is what we measure.
 run_probe "4) document.cookie via Runtime.evaluate" "
-{:ok, _} = Wallabidi.V2.WebSocket.send_sync(ws, \"Runtime.enable\", %{\"sessionId\" => sess})
-{:ok, _} = Wallabidi.V2.WebSocket.send_sync(ws, \"Page.navigate\", %{\"sessionId\" => sess, \"url\" => \"http://localhost:4321/counter\"})
+{:ok, _} = Wallabidi.WebSocket.send_sync(ws, \"Runtime.enable\", %{\"sessionId\" => sess})
+{:ok, _} = Wallabidi.WebSocket.send_sync(ws, \"Page.navigate\", %{\"sessionId\" => sess, \"url\" => \"http://localhost:4321/counter\"})
 :timer.sleep(2000)
-{:ok, _} = Wallabidi.V2.WebSocket.send_sync(ws, \"Runtime.evaluate\", %{
+{:ok, _} = Wallabidi.WebSocket.send_sync(ws, \"Runtime.evaluate\", %{
   \"sessionId\" => sess,
   \"expression\" => \"document.cookie = '$SESSION_COOKIE; path=/'\"
 })
-{:ok, _} = Wallabidi.V2.WebSocket.send_sync(ws, \"Page.navigate\", %{\"sessionId\" => sess, \"url\" => \"http://localhost:4321/counter\"})
+{:ok, _} = Wallabidi.WebSocket.send_sync(ws, \"Page.navigate\", %{\"sessionId\" => sess, \"url\" => \"http://localhost:4321/counter\"})
 :timer.sleep(3000)
 "
 
@@ -238,7 +238,7 @@ probe_capability() {
 
   cat > "$TMPDIR/cap.exs" <<EOF
 $(cat "$TMPDIR/prelude.exs")
-result = Wallabidi.V2.WebSocket.send_sync(ws, "$method", Map.put($params, "sessionId", sess))
+result = Wallabidi.WebSocket.send_sync(ws, "$method", Map.put($params, "sessionId", sess))
 case result do
   {:ok, _} -> IO.puts(:stdio, "CAP_RESULT OK")
   {:error, {-31998, "UnknownMethod"}} -> IO.puts(:stdio, "CAP_RESULT UNKNOWN")

@@ -1,4 +1,4 @@
-defmodule Wallabidi.V2.BiDiClient do
+defmodule Wallabidi.V2BiDiClient do
   @moduledoc false
 
   # BiDi-flavored counterpart to V2.CDPClient.
@@ -23,13 +23,13 @@ defmodule Wallabidi.V2.BiDiClient do
   alias Wallabidi.CDP.Ops
   alias Wallabidi.Element
   alias Wallabidi.Session
-  alias Wallabidi.V2.Transport.Protocol
+  alias Wallabidi.Transport.Protocol
 
   # Pulls in shared op bodies (text/2, attribute/3, displayed/2,
   # click/2, set_value_dom/3, clear/2, send_keys_text/3, page-info
   # ops). They call this module's call_on_element/4 + evaluate/2,3
   # for the wire layer.
-  use Wallabidi.V2.OpsShared
+  use Wallabidi.OpsShared
 
   # Frame focus stores an override in the test process dictionary
   # (BiDi V2BiDiDriver.focus_frame writes it). When set, subsequent
@@ -273,7 +273,7 @@ defmodule Wallabidi.V2.BiDiClient do
   defp decode_remote_value(other), do: other
 
   # current_url/1, current_path/1, page_title/1, page_source/1 —
-  # provided by Wallabidi.V2.OpsShared.
+  # provided by Wallabidi.OpsShared.
 
   # ----- Screenshot + viewport -----
 
@@ -584,7 +584,7 @@ defmodule Wallabidi.V2.BiDiClient do
 
   defp stale_marker?(_), do: false
 
-  # text/2, attribute/3, displayed/2 — provided by Wallabidi.V2.OpsShared.
+  # text/2, attribute/3, displayed/2 — provided by Wallabidi.OpsShared.
 
   # ----- Interactions -----
 
@@ -742,7 +742,7 @@ defmodule Wallabidi.V2.BiDiClient do
     end
   end
 
-  # click/2 — provided by Wallabidi.V2.OpsShared.
+  # click/2 — provided by Wallabidi.OpsShared.
 
   @doc """
   DOM-based set_value. Handles checkboxes, radios, options, text
@@ -799,7 +799,7 @@ defmodule Wallabidi.V2.BiDiClient do
   end
 
   # set_value_dom/3 (the DOM-based path) and clear/3 — provided by
-  # Wallabidi.V2.OpsShared. set_value/3 above dispatches between the
+  # Wallabidi.OpsShared. set_value/3 above dispatches between the
   # file-input branch (DataTransfer trick) and the shared DOM path.
 
   @doc """

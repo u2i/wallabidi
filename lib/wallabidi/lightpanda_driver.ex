@@ -1,4 +1,4 @@
-defmodule Wallabidi.V2Driver do
+defmodule Wallabidi.LightpandaDriver do
   @moduledoc false
 
   # Parallel V2-only driver implementing the existing
@@ -22,8 +22,9 @@ defmodule Wallabidi.V2Driver do
   @behaviour Wallabidi.Driver
 
   alias Wallabidi.{Element, Session}
-  alias Wallabidi.V2.{CDPClient, Transport}
-  alias Wallabidi.V2.Transport.Protocol
+  alias Wallabidi.V2CDPClient, as: CDPClient
+  alias Wallabidi.Transport
+  alias Wallabidi.Transport.Protocol
 
   # ----- Driver supervisor —
   #

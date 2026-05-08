@@ -1,4 +1,4 @@
-defmodule Wallabidi.V2.Session do
+defmodule Wallabidi.Session2 do
   @moduledoc false
 
   # Per-session coordinator. Owns:
@@ -22,7 +22,7 @@ defmodule Wallabidi.V2.Session do
   use GenServer
   require Logger
 
-  alias Wallabidi.V2.WebSocket
+  alias Wallabidi.WebSocket
 
   defstruct [
     :session,
