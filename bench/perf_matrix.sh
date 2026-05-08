@@ -69,8 +69,17 @@ run_cell() {
   local logfile=/tmp/perf_matrix_$(echo "$alias" | tr './' '__')_mc${mc}.log
   local start=$(date +%s)
 
+  # Like-for-like: every driver runs the SAME shared core test set.
+  # Exclude every capability tier above the LV minimum, plus the
+  # driver-internal tags. Result: 177 tests on every driver.
   set +e
-  mix "test.$alias" --max-cases "$mc" > "$logfile" 2>&1
+  mix "test.$alias" --max-cases "$mc" \
+    --exclude browser \
+    --exclude headless \
+    --exclude lightpanda_ni \
+    --exclude live_view_only \
+    --exclude cdp_only \
+    > "$logfile" 2>&1
   set -e
 
   local end=$(date +%s)
