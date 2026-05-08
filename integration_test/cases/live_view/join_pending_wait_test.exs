@@ -12,8 +12,8 @@ defmodule Wallabidi.Integration.LiveView.JoinPendingWaitTest do
   # during the pending window and the delta is negative.
 
   use Wallabidi.Integration.SessionCase, async: false
-
   @moduletag :headless
+
 
   @base Application.compile_env(:wallabidi, :live_app_url, "http://localhost:4321")
 

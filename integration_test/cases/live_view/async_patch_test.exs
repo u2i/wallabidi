@@ -18,11 +18,11 @@ defmodule Wallabidi.Integration.LiveView.AsyncPatchTest do
   #    assertion must wait for the re-render.
 
   use Wallabidi.Integration.SessionCase, async: false
+  @moduletag :headless
 
   # These tests exercise JavaScript-driven behaviour (phx-trigger-action
   # native submits, JS.navigate, async patches, PubSub-triggered re-renders)
   # so they only run on drivers that execute JS.
-  @moduletag :headless
 
   @base Application.compile_env(:wallabidi, :live_app_url, "http://localhost:4321")
 

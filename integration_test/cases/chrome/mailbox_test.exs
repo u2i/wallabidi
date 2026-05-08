@@ -21,7 +21,6 @@ defmodule Wallabidi.Integration.Chrome.LoadMailboxTest do
   use ExUnit.Case, async: false
   use Wallabidi.DSL
 
-  @moduletag :headless
 
   setup do
     url = Application.fetch_env!(:wallabidi, :live_app_url)

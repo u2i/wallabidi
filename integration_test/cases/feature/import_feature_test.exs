@@ -1,6 +1,5 @@
 defmodule Wallabidi.Integration.Browser.ImportFeatureTest do
   use Wallabidi.Integration.SessionCase, async: true
-  @moduletag :headless
   import Wallabidi.Feature
 
   feature "works", %{session: session} do

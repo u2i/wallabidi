@@ -1,7 +1,6 @@
 defmodule Wallabidi.Integration.CapabilitiesTest do
   use ExUnit.Case, async: true
   use Wallabidi.DSL
-  @moduletag :headless
 
   alias Wallabidi.Integration.SessionCase
 
