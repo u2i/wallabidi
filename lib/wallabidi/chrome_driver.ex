@@ -539,6 +539,12 @@ defmodule Wallabidi.ChromeDriver do
             capabilities: Map.put(session.capabilities, :target_id, target_id)
         }
 
+        # All four setup commands fire-and-forget so they pipeline on
+        # the wire instead of round-tripping in series. CDPClient's
+        # enable_page_lifecycle_events / install_bootstrap already use
+        # cdp_cast internally; the inline IIFE was the last sync send,
+        # so cast it too. Subsequent cdp_send calls (e.g. visit) will
+        # naturally barrier until all four land.
         _ = CDPClient.enable_page_lifecycle_events(new_session)
         _ = CDPClient.install_bootstrap(new_session)
 
@@ -548,11 +554,10 @@ defmodule Wallabidi.ChromeDriver do
         # bootstrap won't be present until the next nav. Run the IIFE
         # inline against the current document so subsequent finds
         # work without needing a reload.
-        _ =
-          CDPClient.cdp_send(new_session, "Runtime.evaluate", %{
-            expression: Wallabidi.Bootstrap.cdp_iife(),
-            returnByValue: true
-          })
+        CDPClient.cdp_cast(new_session, "Runtime.evaluate", %{
+          expression: Wallabidi.Bootstrap.cdp_iife(),
+          returnByValue: true
+        })
 
         {:ok, nil}
 
