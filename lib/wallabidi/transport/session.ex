@@ -1,4 +1,4 @@
-defmodule Wallabidi.Session2 do
+defmodule Wallabidi.Transport.Session do
   @moduledoc false
 
   # Per-session coordinator. Owns:

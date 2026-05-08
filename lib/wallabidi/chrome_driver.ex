@@ -22,7 +22,7 @@ defmodule Wallabidi.ChromeDriver do
 
   alias Wallabidi.{DependencyError, Element, Metadata, Session}
   alias Wallabidi.Chrome.Server, as: ChromeServer
-  alias Wallabidi.V2CDPClient, as: CDPClient
+  alias Wallabidi.CDPClient
   alias Wallabidi.{Transport, WebSocket}
   alias Wallabidi.Transport.Protocol
   alias Wallabidi.Chrome.SharedConnection

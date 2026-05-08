@@ -27,7 +27,7 @@ defmodule Wallabidi.Transport do
   # Each impl returns the same shape so the surrounding driver code
   # (install_bootstrap, await_page_load, click_aware, …) is unchanged.
 
-  alias Wallabidi.Session2, as: V2Session
+  alias Wallabidi.Transport.Session, as: V2Session
   alias Wallabidi.WebSocket
 
   @typedoc """
@@ -135,9 +135,9 @@ defmodule Wallabidi.Transport do
            owner: caller
          ) do
       {:ok, session} ->
-        :ok = Wallabidi.V2CDPClient.enable_page_lifecycle_events(session)
-        :ok = Wallabidi.V2CDPClient.install_bootstrap(session)
-        :ok = Wallabidi.V2CDPClient.enable_frame_tracking(session)
+        :ok = Wallabidi.CDPClient.enable_page_lifecycle_events(session)
+        :ok = Wallabidi.CDPClient.install_bootstrap(session)
+        :ok = Wallabidi.CDPClient.enable_frame_tracking(session)
         {:ok, session}
 
       err ->

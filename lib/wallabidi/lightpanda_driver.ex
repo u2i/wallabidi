@@ -22,7 +22,7 @@ defmodule Wallabidi.LightpandaDriver do
   @behaviour Wallabidi.Driver
 
   alias Wallabidi.{Element, Session}
-  alias Wallabidi.V2CDPClient, as: CDPClient
+  alias Wallabidi.CDPClient
   alias Wallabidi.Transport
   alias Wallabidi.Transport.Protocol
 

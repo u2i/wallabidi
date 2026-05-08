@@ -27,7 +27,7 @@ defmodule Wallabidi.BiDiDriver do
 
   alias Wallabidi.BiDi.WebSocketClient
   alias Wallabidi.{Element, Session}
-  alias Wallabidi.V2BiDiClient, as: BiDiClient
+  alias Wallabidi.BiDiClient
   alias Wallabidi.Transport.BiDi
   alias Wallabidi.Transport.Protocol
 
@@ -170,7 +170,7 @@ defmodule Wallabidi.BiDiDriver do
     })
     """
 
-    _ = Wallabidi.V2BiDiClient.evaluate_async(session, js)
+    _ = Wallabidi.BiDiClient.evaluate_async(session, js)
     :ok
   rescue
     _ -> :ok

@@ -9,7 +9,7 @@ defmodule Wallabidi.WebSocket do
   #   * inbound  = parse bytes, route to the right SessionProcess
   #
   # No find waiters, no page-ready logic, no per-session state — those
-  # all live in `Wallabidi.Session2`. The split exists so the
+  # all live in `Wallabidi.Transport.Session`. The split exists so the
   # request/response correlation flows through ONE actor (the owning
   # Session) and async events arrive at that same actor's mailbox in
   # FIFO order, eliminating the cross-process ordering races that the

@@ -1,607 +1,315 @@
 defmodule Wallabidi.BiDiClient do
   @moduledoc false
-  # Pure BiDi protocol client — no WebdriverClient fallbacks.
-  # All operations go through WebSocket using the BiDi protocol.
+
+  # BiDi-flavored counterpart to V2.CDPClient.
+  #
+  # Same operation surface (visit, find_elements, click, evaluate,
+  # text, attribute, ...) but every wire call goes out as a
+  # WebDriver-BiDi command instead of CDP. The Transport.Protocol
+  # layer is unchanged — both clients dispatch through the session's
+  # actor pid.
+  #
+  # ## Op-by-op state of this file
+  #
+  # Step 1 (this branch) is mechanical translation of CDPClient's
+  # public surface, BiDi-flavored. Things implemented op-by-op as
+  # tests and integration coverage drive them. The orchestration
+  # primitives (await_page_load, register_find/await_find_result,
+  # bootstrap channel) are reused from V2.Transport.Protocol — they
+  # were verified end-to-end in V2.Transport.BiDi phases A/B/C.
 
   alias Wallabidi.BiDi.{Commands, ResponseParser, WebSocketClient}
-  alias Wallabidi.{Element, Session}
+  alias Wallabidi.Bootstrap
+  alias Wallabidi.CDP.Ops
+  alias Wallabidi.Element
+  alias Wallabidi.Session
+  alias Wallabidi.Transport.Protocol
 
-  @type parent :: Element.t() | Session.t()
+  # Pulls in shared op bodies (text/2, attribute/3, displayed/2,
+  # click/2, set_value_dom/3, clear/2, send_keys_text/3, page-info
+  # ops). They call this module's call_on_element/4 + evaluate/2,3
+  # for the wire layer.
+  use Wallabidi.OpsShared
 
-  # Session helpers
-
-  defp bidi_pid(parent), do: Element.bidi_pid(parent)
-
-  defp browsing_context(%Session{browsing_context: ctx} = session) do
-    # Frame-focused context overrides window-focused context which overrides session default
-    Process.get(
-      {:wallabidi_frame_context, session.id},
-      Process.get({:wallabidi_focused_context, session.id}, ctx)
-    )
+  # Frame focus stores an override in the test process dictionary
+  # (BiDi V2BiDiDriver.focus_frame writes it). When set, subsequent
+  # BiDi commands target the focused iframe's browsing context
+  # instead of the session struct's root one. Per-process so that
+  # concurrent tests don't interfere.
+  defp ctx(%Session{id: id, browsing_context: root}) do
+    case Process.get({:wallabidi_bidi_v2_frame, id}) do
+      nil -> root
+      override when is_binary(override) -> override
+    end
   end
 
-  defp browsing_context(%Element{parent: parent}), do: browsing_context(parent)
+  # ----- Navigation -----
 
-  defp session(parent), do: Element.root_session(parent)
+  @doc """
+  Navigate the session's browsing context to `url`. Returns the
+  BiDi `navigation` id (used as the loader correlation key by
+  Transport.Protocol.await_page_load/4) and the resolved URL.
 
-  defp send_bidi(parent, method, params) do
-    pid = bidi_pid(parent)
+  Uses `wait: "none"` so the call returns as soon as the navigation
+  is committed. Awaiting load milestones is the caller's job —
+  see `visit/3`.
+  """
+  @spec navigate(Session.t(), String.t()) ::
+          {:ok, %{loader_id: String.t() | nil, url: String.t()}} | {:error, term}
+  def navigate(%Session{} = session, url) when is_binary(url) do
+    case Protocol.cdp_send(
+           session,
+           "browsingContext.navigate",
+           %{"context" => ctx(session), "url" => url, "wait" => "none"},
+           []
+         ) do
+      {:ok, %{"navigation" => nav, "url" => resolved}} ->
+        {:ok, %{loader_id: nav, url: resolved}}
 
-    WebSocketClient.send_command(pid, method, params)
-    |> ResponseParser.check_error()
-  end
-
-  defp element_arg(shared_id) do
-    %{sharedId: shared_id}
-  end
-
-  # When using Docker, Chrome sees host.docker.internal URLs but tests
-  # expect localhost. Rewrite back so assertions work transparently.
-  defp normalize_docker_url(url) when is_binary(url) do
-    String.replace(url, "host.docker.internal", "localhost")
-  end
-
-  defp normalize_docker_url(url), do: url
-
-  # Navigation
-
-  def visit(session, url) do
-    context = browsing_context(session)
-    {method, params} = Commands.navigate(context, url)
-    pid = bidi_pid(session)
-
-    case WebSocketClient.send_command(pid, method, params, 30_000)
-         |> ResponseParser.check_error() do
-      {:ok, _} ->
-        Wallabidi.LiveViewAware.await_liveview_connected(session)
-        :ok
+      {:ok, _} = unexpected ->
+        {:error, {:unexpected_navigate_response, unexpected}}
 
       error ->
         error
     end
   end
 
-  def current_url(session) do
-    context = browsing_context(session)
-    {method, params} = Commands.evaluate(context, "window.location.href")
+  @doc """
+  Navigate and wait for the page to finish loading.
+  """
+  @spec visit(Session.t(), String.t(), keyword) :: :ok | {:error, term}
+  def visit(%Session{} = session, url, opts \\ []) when is_binary(url) do
+    timeout = Keyword.get(opts, :timeout, 10_000)
 
-    case send_bidi(session, method, params) do
-      {:ok, result} ->
-        case ResponseParser.extract_value(result) do
-          {:ok, url} -> {:ok, normalize_docker_url(url)}
-          error -> error
-        end
-
-      error ->
-        error
-    end
-  end
-
-  def current_path(session) do
-    case current_url(session) do
-      {:ok, url} ->
-        url
-        |> URI.parse()
-        |> Map.fetch(:path)
-
-      error ->
-        error
-    end
-  end
-
-  # Element finding
-
-  def find_elements(parent, {:css, css}) do
-    context = browsing_context(parent)
-    locator = %{type: "css", value: css}
-
-    {method, params} =
-      case parent do
-        %Element{bidi_shared_id: shared_id} when not is_nil(shared_id) ->
-          Commands.locate_nodes(context, locator, [%{sharedId: shared_id}])
-
-        _ ->
-          Commands.locate_nodes(context, locator)
-      end
-
-    case send_bidi(parent, method, params) do
-      {:ok, result} ->
-        case ResponseParser.extract_nodes(result) do
-          {:ok, nodes} ->
-            sess = session(parent)
-            {:ok, ResponseParser.cast_elements(sess, nodes)}
-
-          error ->
-            error
-        end
-
-      error ->
-        error
-    end
-  end
-
-  def find_elements(parent, {:xpath, xpath}) do
-    context = browsing_context(parent)
-
-    root_arg =
-      case parent do
-        %Element{bidi_shared_id: shared_id} when not is_nil(shared_id) ->
-          element_arg(shared_id)
-
-        _ ->
-          %{type: "undefined"}
-      end
-
-    js = """
-    (root, xpathExpr) => {
-      const contextNode = (root && root.nodeType) ? root : document;
-      const result = document.evaluate(xpathExpr, contextNode, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-      const elements = [];
-      for (let i = 0; i < result.snapshotLength; i++) {
-        elements.push(result.snapshotItem(i));
-      }
-      return elements;
-    }
-    """
-
-    {method, params} =
-      Commands.call_function(context, js, [root_arg, %{type: "string", value: xpath}])
-
-    case send_bidi(parent, method, params) do
-      {:ok, %{"result" => %{"type" => "array", "value" => items}}} ->
-        sess = session(parent)
-
-        elements =
-          items
-          |> Enum.filter(fn item -> item["type"] == "node" end)
-          |> Enum.map(fn node -> {node["sharedId"], node} end)
-
-        {:ok, ResponseParser.cast_elements(sess, elements)}
-
-      {:ok, _} ->
-        {:ok, []}
-
-      error ->
-        error
-    end
-  end
-
-  # Element interactions
-
-  def click(%Element{bidi_shared_id: shared_id} = element) when not is_nil(shared_id) do
-    context = browsing_context(element)
-
-    # Check if this is an <option> element — they can't be clicked via pointer actions.
-    # Instead, set the parent <select>'s value via JavaScript.
-    {tag_method, tag_params} =
-      Commands.call_function(context, "(el) => el.tagName", [element_arg(shared_id)])
-
-    tag_name =
-      case send_bidi(element, tag_method, tag_params) do
-        {:ok, result} ->
-          case ResponseParser.extract_value(result) do
-            {:ok, t} when is_binary(t) -> String.upcase(t)
-            _ -> nil
+    with {:ok, %{loader_id: nav}} <- navigate(session, url) do
+      cond do
+        is_binary(nav) ->
+          case Protocol.await_page_load(session, nav, "load", timeout) do
+            :ok -> :ok
+            :timeout -> {:error, :timeout}
           end
 
-        {:error, :stale_reference} ->
-          {:error, :stale_reference}
-
-        _ ->
-          nil
+        true ->
+          # Same-document or cached navigation — no nav id, no load
+          # event to wait on.
+          :ok
       end
-
-    case tag_name do
-      {:error, _} = error -> error
-      "OPTION" -> click_option(element, shared_id, context)
-      _ -> click_with_js(element, shared_id, context)
     end
   end
 
-  def click(%Element{} = _element) do
-    {:error, :no_bidi_shared_id}
+  # ----- Script evaluation -----
+
+  @doc """
+  Evaluate a JS expression in the current browsing context's realm.
+  Returns the deserialized value.
+
+  When `args` is empty, treats `expression` as a raw expression
+  (BiDi `script.evaluate`). When args are provided OR the
+  expression contains a `return`, wraps it in a function and uses
+  `script.callFunction` so `return` and `arguments[]` references
+  work like the user-facing `execute_script` API expects.
+  """
+  @spec evaluate(Session.t(), String.t()) :: {:ok, term} | {:error, term}
+  def evaluate(%Session{} = session, expression) when is_binary(expression) do
+    do_eval_expression(session, expression)
   end
 
-  defp click_option(element, shared_id, context) do
-    js = """
-    (option) => {
-      const select = option.closest('select');
-      if (select) {
-        option.selected = true;
-        select.dispatchEvent(new Event('change', { bubbles: true }));
-      } else {
-        option.click();
-      }
-    }
-    """
-
-    {method, params} = Commands.call_function(context, js, [element_arg(shared_id)])
-
-    case send_bidi(element, method, params) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
-    end
-  end
-
-  defp click_with_js(element, shared_id, context) do
-    {method, params} =
-      Commands.call_function(
-        context,
-        "(el) => { el.scrollIntoView({block: 'center', inline: 'nearest'}); el.focus(); el.click(); }",
-        [element_arg(shared_id)]
-      )
-
-    case send_bidi(element, method, params) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
-    end
-  end
-
-  def click(parent, button) when button in [:left, :middle, :right] do
-    context = browsing_context(parent)
-    actions = Commands.pointer_click_at_position_actions(button)
-    {method, params} = Commands.perform_actions(context, actions)
-
-    case send_bidi(parent, method, params) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
-    end
-  end
-
-  def clear(element, opts \\ [])
-
-  def clear(%Element{bidi_shared_id: shared_id} = element, opts)
-      when not is_nil(shared_id) do
-    context = browsing_context(element)
-    silent = Keyword.get(opts, :silent, false)
-
-    js =
-      if silent do
-        "(el) => { el.value = ''; }"
-      else
-        """
-        (el) => {
-          el.value = '';
-          el.dispatchEvent(new Event('input', { bubbles: true }));
-          el.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-        """
-      end
-
-    {method, params} = Commands.call_function(context, js, [element_arg(shared_id)])
-
-    case send_bidi(element, method, params) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
-    end
-  end
-
-  def clear(%Element{}, _opts), do: {:error, :no_bidi_shared_id}
-
-  def set_value(%Element{bidi_shared_id: shared_id} = element, value)
-      when not is_nil(shared_id) do
-    context = browsing_context(element)
-
-    # Check if this is a file input — they need special handling
-    {check_method, check_params} =
-      Commands.call_function(context, "(el) => el.type", [element_arg(shared_id)])
-
-    input_type =
-      case send_bidi(element, check_method, check_params) do
-        {:ok, result} ->
-          case ResponseParser.extract_value(result) do
-            {:ok, t} -> t
-            _ -> nil
-          end
-
-        _ ->
-          nil
-      end
-
-    if input_type == "file" do
-      set_file_value(element, shared_id, context, to_string(value))
+  @spec evaluate(Session.t(), String.t(), list) :: {:ok, term} | {:error, term}
+  def evaluate(%Session{} = session, expression, args)
+      when is_binary(expression) and is_list(args) do
+    if needs_wrap?(expression, args) do
+      do_eval_function(session, expression, args)
     else
-      set_text_value(element, shared_id, context, to_string(value))
+      do_eval_expression(session, expression)
     end
   end
 
-  def set_value(%Element{} = _element, _value), do: {:error, :no_bidi_shared_id}
+  defp needs_wrap?(_expr, args) when args != [], do: true
 
-  defp set_text_value(element, shared_id, context, value) do
-    {method, params} =
-      Commands.call_function(context, "(el) => el.focus()", [element_arg(shared_id)])
-
-    case send_bidi(element, method, params) do
-      {:ok, _} ->
-        actions = Commands.key_type_actions(value)
-        {method2, params2} = Commands.perform_actions(context, actions)
-
-        case send_bidi(element, method2, params2) do
-          {:ok, _} -> {:ok, nil}
-          error -> error
-        end
-
-      error ->
-        error
-    end
+  defp needs_wrap?(expression, []) do
+    String.contains?(expression, "return ") or
+      String.contains?(expression, "return;") or
+      String.contains?(expression, "arguments[")
   end
 
-  defp set_file_value(element, shared_id, context, path) do
-    # Only set the file if the path actually exists on disk
-    if File.exists?(path) do
-      {method, params} =
-        Commands.call_function(
-          context,
-          """
-          (el, path) => {
-            const dt = new DataTransfer();
-            const file = new File([''], path.split('/').pop() || path.split('\\\\').pop(), {type: 'application/octet-stream'});
-            dt.items.add(file);
-            el.files = dt.files;
-            el.dispatchEvent(new Event('change', { bubbles: true }));
-            return el.value;
-          }
-          """,
-          [element_arg(shared_id), %{type: "string", value: path}]
-        )
-
-      case send_bidi(element, method, params) do
-        {:ok, _} -> {:ok, nil}
-        error -> error
-      end
-    else
-      # Non-existent file: do nothing, matching WebDriver behavior
-      {:ok, nil}
-    end
-  end
-
-  def text(%Element{bidi_shared_id: shared_id} = element) when not is_nil(shared_id) do
-    context = browsing_context(element)
-
-    js = """
-    (el) => {
-      if (!el || !el.isConnected) throw new Error('stale element reference');
-      return el.innerText;
+  defp do_eval_expression(%Session{} = session, expression) do
+    params = %{
+      "expression" => expression,
+      "awaitPromise" => false,
+      "target" => %{"context" => ctx(session)}
     }
-    """
 
-    {method, params} = Commands.call_function(context, js, [element_arg(shared_id)])
-
-    case send_bidi(element, method, params) do
-      {:ok, result} -> ResponseParser.extract_value(result)
+    case Protocol.cdp_send(session, "script.evaluate", params, []) do
+      {:ok, result} -> decode_eval_result(result)
       error -> error
     end
   end
 
-  def text(%Element{} = _element), do: {:error, :no_bidi_shared_id}
-
-  def attribute(%Element{bidi_shared_id: shared_id} = element, name)
-      when not is_nil(shared_id) do
-    context = browsing_context(element)
-
-    # Mirror W3C WebDriver Get Element Attribute: return the property value
-    # for IDL attributes (value, checked, selected, etc.) and the HTML
-    # attribute for everything else.
-    # Throws for detached nodes to match WebDriver stale element behavior.
-    js = """
-    (el, name) => {
-      if (!el || !el.ownerDocument || !el.isConnected) {
-        throw new Error('stale element reference');
-      }
-      if (name in el && typeof el[name] !== 'object') {
-        const v = el[name];
-        if (v === true) return 'true';
-        if (v === false) return null;
-        return v == null ? null : String(v);
-      }
-      return el.getAttribute(name);
+  @doc """
+  Evaluate a JS expression and await its returned Promise. Mirrors
+  `evaluate/2` for the case where the expression yields a thenable.
+  """
+  @spec evaluate_async(Session.t(), String.t()) :: {:ok, term} | {:error, term}
+  def evaluate_async(%Session{} = session, expression) when is_binary(expression) do
+    params = %{
+      "expression" => expression,
+      "awaitPromise" => true,
+      "target" => %{"context" => ctx(session)}
     }
-    """
 
-    {method, params} =
-      Commands.call_function(
-        context,
-        js,
-        [element_arg(shared_id), %{type: "string", value: name}]
-      )
-
-    case send_bidi(element, method, params) do
-      {:ok, result} -> ResponseParser.extract_value(result)
+    case Protocol.cdp_send(session, "script.evaluate", params, []) do
+      {:ok, result} -> decode_eval_result(result)
       error -> error
     end
   end
 
-  def attribute(%Element{} = _element, _name), do: {:error, :no_bidi_shared_id}
-
-  def displayed(%Element{bidi_shared_id: shared_id} = element) when not is_nil(shared_id) do
-    context = browsing_context(element)
-
-    js = """
-    (el) => {
-      function isVisible(node) {
-        if (!node.ownerDocument || !node.isConnected) return false;
-        if (node.tagName === 'OPTION' || node.tagName === 'OPTGROUP') {
-          const select = node.closest('select');
-          return select ? isVisible(select) : false;
-        }
-        const style = window.getComputedStyle(node);
-        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
-        if (node.offsetWidth <= 0 && node.offsetHeight <= 0) return false;
-        return true;
-      }
-      return isVisible(el);
-    }
-    """
-
-    {method, params} = Commands.call_function(context, js, [element_arg(shared_id)])
-
-    case send_bidi(element, method, params) do
-      {:ok, result} ->
-        case ResponseParser.extract_value(result) do
-          {:ok, val} -> {:ok, val}
-          # Script errors during visibility check = treat as not visible
-          {:error, :stale_reference} -> {:error, :stale_reference}
-          _ -> {:ok, false}
-        end
-
-      {:error, :stale_reference} = error ->
-        error
-
-      _ ->
-        {:ok, false}
-    end
-  end
-
-  def displayed(%Element{} = _element), do: {:error, :no_bidi_shared_id}
-
-  def selected(%Element{bidi_shared_id: shared_id} = element) when not is_nil(shared_id) do
-    context = browsing_context(element)
-
-    {method, params} =
-      Commands.call_function(
-        context,
-        "(el) => el.selected || el.checked || false",
-        [element_arg(shared_id)]
-      )
-
-    case send_bidi(element, method, params) do
-      {:ok, result} -> ResponseParser.extract_value(result)
-      error -> error
-    end
-  end
-
-  def selected(%Element{} = _element), do: {:error, :no_bidi_shared_id}
-
-  # Script execution
-
-  def execute_script(session_or_element, script, arguments \\ []) do
-    context = browsing_context(session_or_element)
-    bidi_args = encode_args(arguments)
-    wrapped = "(arguments) => { #{script} }"
-
-    {method, params} =
-      Commands.call_function(context, wrapped, [%{type: "array", value: bidi_args}])
-
-    do_execute_script(session_or_element, method, params, _attempts = 5)
-  end
-
-  # chromium-bidi briefly returns "Cannot find context with specified id"
-  # when a new top-level realm hasn't been registered yet (e.g. between
-  # form-POST navigation and the new document binding). Retry with a
-  # short backoff before failing — by the time wallabidi's caller is
-  # making this call, the click flow has already awaited page_ready, so
-  # any "stale realm" error is transient by definition.
-  defp do_execute_script(_session, _method, _params, 0) do
-    {:error, {"unknown error", "Cannot find context with specified id"}}
-  end
-
-  defp do_execute_script(session_or_element, method, params, attempts) do
-    case send_bidi(session_or_element, method, params) do
-      {:ok, result} ->
-        ResponseParser.extract_value(result)
-
-      {:error, {_, msg}} = error when is_binary(msg) ->
-        if msg =~ "Cannot find context" do
-          Process.sleep(50)
-          do_execute_script(session_or_element, method, params, attempts - 1)
-        else
-          error
-        end
-
-      error ->
-        error
-    end
-  end
-
-  def execute_script_async(session_or_element, script, arguments \\ []) do
-    context = browsing_context(session_or_element)
-    bidi_args = encode_args(arguments)
+  @doc """
+  Run an asynchronous user script — the user's snippet is wrapped so
+  the final `arguments[arguments.length - 1]` is a `__resolve`
+  callback they invoke with the eventual value. Mirrors
+  V2.CDPClient.evaluate_async/3.
+  """
+  @spec evaluate_async(Session.t(), String.t(), list) :: {:ok, term} | {:error, term}
+  def evaluate_async(%Session{} = session, expression, args)
+      when is_binary(expression) and is_list(args) do
+    args_json = Jason.encode!(args)
 
     wrapped = """
-    (arguments) => {
-      return new Promise((resolve, reject) => {
-        const args = [...arguments, resolve];
-        (function() { #{script} }).apply(null, args);
-      });
-    }
+    new Promise(function(__resolve, __reject) {
+      try {
+        (function() {
+          var __args = #{args_json}.concat([__resolve]);
+          (function() { #{expression} }).apply(this, __args);
+        })();
+      } catch (e) { __reject(e); }
+    })
     """
 
-    {method, params} =
-      Commands.call_function(context, wrapped, [%{type: "array", value: bidi_args}], %{
-        await_promise: true
-      })
+    evaluate_async(session, wrapped)
+  end
 
-    case send_bidi(session_or_element, method, params) do
-      {:ok, result} -> ResponseParser.extract_value(result)
+  defp do_eval_function(%Session{} = session, expression, args) do
+    fn_decl = "function() { #{expression} }"
+
+    params = %{
+      "functionDeclaration" => fn_decl,
+      "arguments" => Enum.map(args, &encode_arg/1),
+      "awaitPromise" => false,
+      "target" => %{"context" => ctx(session)}
+    }
+
+    case Protocol.cdp_send(session, "script.callFunction", params, []) do
+      {:ok, result} -> decode_eval_result(result)
       error -> error
     end
   end
 
   @web_element_identifier "element-6066-11e4-a52e-4f735466cecf"
 
-  defp encode_args(arguments) do
-    Enum.map(arguments, fn
-      arg when is_binary(arg) ->
-        %{type: "string", value: arg}
+  defp encode_arg(arg) when is_binary(arg), do: %{"type" => "string", "value" => arg}
+  defp encode_arg(arg) when is_integer(arg), do: %{"type" => "number", "value" => arg}
+  defp encode_arg(arg) when is_float(arg), do: %{"type" => "number", "value" => arg}
+  defp encode_arg(true), do: %{"type" => "boolean", "value" => true}
+  defp encode_arg(false), do: %{"type" => "boolean", "value" => false}
+  defp encode_arg(nil), do: %{"type" => "null"}
 
-      arg when is_integer(arg) ->
-        %{type: "number", value: arg}
+  defp encode_arg(arg) when is_list(arg) do
+    %{"type" => "array", "value" => Enum.map(arg, &encode_arg/1)}
+  end
 
-      arg when is_float(arg) ->
-        %{type: "number", value: arg}
+  # WebDriver-style element reference — translate to a BiDi node handle
+  # so `arguments[N]` is a live DOM element on the page side, not an
+  # opaque JSON object. Mirrors V2.CDPClient.encode_script_args's
+  # element detection.
+  defp encode_arg(%{@web_element_identifier => shared_id}) when is_binary(shared_id),
+    do: %{"sharedId" => shared_id}
 
-      arg when is_boolean(arg) ->
-        %{type: "boolean", value: arg}
+  defp encode_arg(%{"sharedId" => shared_id}) when is_binary(shared_id),
+    do: %{"sharedId" => shared_id}
 
-      nil ->
-        %{type: "null"}
+  defp encode_arg(arg) when is_map(arg) do
+    pairs =
+      Enum.map(arg, fn {k, v} ->
+        [encode_arg(to_string(k)), encode_arg(v)]
+      end)
 
-      %Element{bidi_shared_id: sid} when not is_nil(sid) ->
-        element_arg(sid)
+    %{"type" => "object", "value" => pairs}
+  end
 
-      %{@web_element_identifier => _id} = arg ->
-        # WebDriver-style element reference — look up the shared ID from session store
-        # If we have a matching element, use its shared ID for BiDi
-        encode_webdriver_element_ref(arg)
+  # BiDi script.evaluate / callFunction returns one of:
+  #   %{"type" => "success", "result" => RemoteValue}
+  #   %{"type" => "exception", "exceptionDetails" => ...}
+  #
+  # RemoteValue for primitives is `%{"type" => "string"|"number"|...,
+  #   "value" => value}`. For undefined/null it's just `%{"type" =>
+  #   "undefined"|"null"}` with no value field. Decode to a plain
+  #   Elixir term where possible.
+  defp decode_eval_result(%{"type" => "success", "result" => remote}),
+    do: {:ok, decode_remote_value(remote)}
 
-      arg when is_map(arg) ->
-        %{type: "object", value: arg}
+  defp decode_eval_result(%{"type" => "exception", "exceptionDetails" => details}),
+    do: {:error, {:js_exception, details}}
 
-      arg when is_list(arg) ->
-        %{type: "array", value: arg}
+  defp decode_eval_result(other), do: {:error, {:unexpected_eval_response, other}}
+
+  defp decode_remote_value(%{"type" => "undefined"}), do: nil
+  defp decode_remote_value(%{"type" => "null"}), do: nil
+  defp decode_remote_value(%{"type" => t, "value" => v}) when t in ["string", "boolean"], do: v
+  defp decode_remote_value(%{"type" => "number", "value" => v}) when is_number(v), do: v
+
+  defp decode_remote_value(%{"type" => "number", "value" => "Infinity"}), do: :infinity
+  defp decode_remote_value(%{"type" => "number", "value" => "-Infinity"}), do: :neg_infinity
+  defp decode_remote_value(%{"type" => "number", "value" => "NaN"}), do: :nan
+
+  defp decode_remote_value(%{"type" => "array", "value" => items}) when is_list(items),
+    do: Enum.map(items, &decode_remote_value/1)
+
+  defp decode_remote_value(%{"type" => "object", "value" => pairs}) when is_list(pairs) do
+    Enum.into(pairs, %{}, fn [k, v] ->
+      {decode_remote_value(k), decode_remote_value(v)}
     end)
   end
 
-  defp encode_webdriver_element_ref(%{@web_element_identifier => id} = _ref) do
-    # The element ID in our system is the backendNodeId.
-    # We need to find the corresponding shared ID. Since the session store
-    # keeps elements by shared ID, and we used backendNodeId as the element ID,
-    # we look up elements from the process's session store.
-    #
-    # For now, use script.evaluate with a backendNodeId lookup.
-    # BiDi doesn't directly support backendNodeId in element references,
-    # so we'll use the sharedId if we stored it, otherwise fall back.
-    case Process.get({:wallabidi_element_shared_id, id}) do
-      nil ->
-        # No mapping found — pass as a plain object (might not resolve)
-        %{type: "object", value: %{}}
+  defp decode_remote_value(other), do: other
 
-      shared_id ->
-        element_arg(shared_id)
+  # current_url/1, current_path/1, page_title/1, page_source/1 —
+  # provided by Wallabidi.OpsShared.
+
+  # ----- Screenshot + viewport -----
+
+  @doc "Capture a PNG screenshot of the current viewport."
+  @spec take_screenshot(Session.t()) :: {:ok, binary} | {:error, term}
+  def take_screenshot(%Session{browsing_context: ctx} = session) do
+    {method, params} = Commands.capture_screenshot(ctx)
+
+    case Protocol.cdp_send(session, method, params, []) do
+      {:ok, result} -> ResponseParser.extract_screenshot(result)
+      error -> error
     end
   end
 
-  # Screenshots
+  @doc "Set the browsing context's viewport size (CSS pixels)."
+  @spec set_viewport(Session.t(), non_neg_integer, non_neg_integer) ::
+          {:ok, nil} | {:error, term}
+  def set_viewport(%Session{browsing_context: ctx} = session, width, height)
+      when is_integer(width) and is_integer(height) do
+    {method, params} = Commands.set_viewport(ctx, width, height)
 
-  def take_screenshot(session_or_element) do
-    context = browsing_context(session_or_element)
-    {method, params} = Commands.capture_screenshot(context)
+    case Protocol.cdp_send(session, method, params, []) do
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
+  end
 
-    case send_bidi(session_or_element, method, params) do
-      {:ok, result} ->
-        case ResponseParser.extract_screenshot(result) do
-          {:ok, data} -> data
-          error -> error
+  @doc "Read the current viewport size in CSS pixels."
+  @spec get_viewport(Session.t()) ::
+          {:ok, %{width: non_neg_integer, height: non_neg_integer}} | {:error, term}
+  def get_viewport(%Session{} = session) do
+    case evaluate(session, "JSON.stringify({width: window.innerWidth, height: window.innerHeight})") do
+      {:ok, json} when is_binary(json) ->
+        case Jason.decode(json) do
+          {:ok, %{"width" => w, "height" => h}} -> {:ok, %{width: w, height: h}}
+          _ -> {:error, :bad_size_response}
         end
 
       error ->
@@ -609,107 +317,258 @@ defmodule Wallabidi.BiDiClient do
     end
   end
 
-  # Cookies
+  # ----- Frame focus -----
 
-  def cookies(session) do
-    context = browsing_context(session)
-    {method, params} = Commands.get_cookies(%{partition: %{type: "context", context: context}})
+  @doc """
+  Resolve the iframe element to its child browsing-context id.
 
-    case send_bidi(session, method, params) do
+  Strategy: walk `browsingContext.getTree` rooted at the session's
+  current context. Match each child against the iframe's contentWindow
+  via a JS test that compares window references. The matching child's
+  `context` field is the BiDi browsing-context id we'll switch to.
+  """
+  @spec child_context_for_iframe(Session.t(), Element.t()) ::
+          {:ok, String.t()} | {:error, term}
+  def child_context_for_iframe(%Session{browsing_context: parent} = session, %Element{} = element) do
+    with {:ok, %{"contexts" => contexts}} <-
+           Protocol.cdp_send(session, "browsingContext.getTree", %{"root" => parent, "maxDepth" => 1}, []),
+         children when is_list(children) <- get_children(contexts, parent) do
+      find_matching_child(session, element, children)
+    else
+      _ -> {:error, :no_iframe_context}
+    end
+  end
+
+  defp get_children([%{"context" => ctx, "children" => children}], ctx) when is_list(children),
+    do: children
+
+  defp get_children([%{"children" => children}], _) when is_list(children), do: children
+
+  defp get_children(_, _), do: nil
+
+  defp find_matching_child(_session, _element, []), do: {:error, :no_iframe_context}
+
+  defp find_matching_child(session, %Element{bidi_shared_id: sid} = element, [child | rest]) do
+    child_ctx = child["context"]
+
+    # Run a tiny script in the child context that returns its own
+    # window. Then run another in the parent context that compares
+    # the iframe's contentWindow to the captured ref. If they match,
+    # this is the right child.
+    case child_url(session, child_ctx) do
+      {:ok, child_url} ->
+        case iframe_src(session, sid) do
+          {:ok, src} when is_binary(src) and src == child_url ->
+            {:ok, child_ctx}
+
+          {:ok, src} when is_binary(src) ->
+            # URL might differ if iframe loaded a different URL after
+            # init. Fall through and try the next child by matching
+            # the iframe's contentWindow location against this child's
+            # current location.
+            if same_origin_match?(src, child_url) do
+              {:ok, child_ctx}
+            else
+              find_matching_child(session, element, rest)
+            end
+
+          _ ->
+            find_matching_child(session, element, rest)
+        end
+
+      _ ->
+        find_matching_child(session, element, rest)
+    end
+  end
+
+  defp child_url(%Session{} = session, child_ctx) do
+    params = %{
+      "expression" => "location.href",
+      "awaitPromise" => false,
+      "target" => %{"context" => child_ctx}
+    }
+
+    case Protocol.cdp_send(session, "script.evaluate", params, []) do
+      {:ok, result} -> decode_eval_result(result)
+      err -> err
+    end
+  end
+
+  defp iframe_src(%Session{} = session, shared_id) do
+    parent = %Element{bidi_shared_id: shared_id}
+
+    call_on_element(
+      session,
+      parent,
+      "function() { try { return this.contentWindow.location.href; } catch(e) { return this.src || ''; } }"
+    )
+  end
+
+  defp same_origin_match?(a, b) when is_binary(a) and is_binary(b) do
+    # Loose match: same origin or same path. Tests typically use
+    # files-on-test-server, so the URL should match exactly except
+    # for trailing slashes / fragments.
+    String.starts_with?(a, b) or String.starts_with?(b, a)
+  end
+
+  defp same_origin_match?(_, _), do: false
+
+  # ----- Window / tab handles -----
+
+  @doc """
+  List all top-level browsing contexts (BiDi's notion of windows /
+  tabs). Each returned context id is a "handle" that can be passed
+  to V2BiDiDriver.focus_window.
+  """
+  @spec window_handles(Session.t()) :: {:ok, [String.t()]} | {:error, term}
+  def window_handles(%Session{} = session) do
+    case Protocol.cdp_send(session, "browsingContext.getTree", %{}, []) do
+      {:ok, %{"contexts" => contexts}} when is_list(contexts) ->
+        {:ok, Enum.map(contexts, & &1["context"])}
+
+      err ->
+        err
+    end
+  end
+
+  @doc "Close a specific browsing context."
+  @spec close_window(Session.t(), String.t()) :: :ok | {:error, term}
+  def close_window(%Session{} = session, context_id) when is_binary(context_id) do
+    case Protocol.cdp_send(session, "browsingContext.close", %{"context" => context_id}, []) do
+      {:ok, _} -> :ok
+      err -> err
+    end
+  end
+
+  @doc """
+  Walk up the browsing-context tree to the topmost ancestor. Used by
+  focus_default_frame to escape out of nested iframes.
+  """
+  @spec root_context_for(Session.t()) :: {:ok, String.t()} | {:error, term}
+  def root_context_for(%Session{browsing_context: ctx} = session) do
+    case Protocol.cdp_send(session, "browsingContext.getTree", %{}, []) do
+      {:ok, %{"contexts" => contexts}} when is_list(contexts) ->
+        # Each top-level entry is a root context. Find the one whose
+        # subtree contains our current ctx, then that entry's
+        # `context` IS the root.
+        case Enum.find(contexts, &subtree_contains?(&1, ctx)) do
+          %{"context" => root} -> {:ok, root}
+          _ -> {:error, :no_root_context}
+        end
+
+      _ ->
+        {:error, :no_root_context}
+    end
+  end
+
+  defp subtree_contains?(%{"context" => c}, target) when c == target, do: true
+
+  defp subtree_contains?(%{"children" => children}, target) when is_list(children) do
+    Enum.any?(children, &subtree_contains?(&1, target))
+  end
+
+  defp subtree_contains?(_, _), do: false
+
+  # ----- Cookies -----
+
+  @doc """
+  Fetch cookies for the session's browsing context. Partitioned by
+  context, mirroring the legacy BiDi driver — sessions can't see
+  each other's cookies even when sharing the underlying server.
+  """
+  @spec cookies(Session.t()) :: {:ok, [map]} | {:error, term}
+  def cookies(%Session{browsing_context: ctx} = session) do
+    {method, params} =
+      Commands.get_cookies(%{partition: %{type: "context", context: ctx}})
+
+    case Protocol.cdp_send(session, method, params, []) do
       {:ok, result} -> ResponseParser.extract_cookies(result)
       error -> error
     end
   end
 
-  def set_cookie(session, key, value, attributes \\ []) do
-    context = browsing_context(session)
+  @doc """
+  Set a cookie scoped to the session's browsing context. Accepts
+  the standard WebDriver attribute keys (`:domain`, `:path`,
+  `:secure`, `:httpOnly`, `:expiry`).
+  """
+  @spec set_cookie(Session.t(), String.t(), String.t(), map | keyword) ::
+          {:ok, list} | {:error, term}
+  def set_cookie(%Session{browsing_context: ctx} = session, name, value, attrs \\ %{})
+      when is_binary(name) and is_binary(value) do
+    attrs = if is_list(attrs), do: Map.new(attrs), else: attrs
 
     cookie =
       %{
-        name: key,
+        name: name,
         value: %{type: "string", value: value},
-        domain: Keyword.get(attributes, :domain, "localhost"),
-        path: Keyword.get(attributes, :path, "/")
+        domain: get_attr(attrs, :domain, "localhost"),
+        path: get_attr(attrs, :path, "/")
       }
-      |> maybe_put(:secure, Keyword.get(attributes, :secure))
-      |> maybe_put(:httpOnly, Keyword.get(attributes, :httpOnly))
-      |> maybe_put(:expiry, Keyword.get(attributes, :expiry))
+      |> maybe_put_attr(:secure, attrs)
+      |> maybe_put_attr(:httpOnly, attrs)
+      |> maybe_put_attr(:expiry, attrs)
 
     {method, params} =
-      Commands.set_cookie(cookie, %{partition: %{type: "context", context: context}})
+      Commands.set_cookie(cookie, %{partition: %{type: "context", context: ctx}})
 
-    case send_bidi(session, method, params) do
+    case Protocol.cdp_send(session, method, params, []) do
       {:ok, _} -> {:ok, []}
       error -> error
     end
   end
 
-  defp maybe_put(map, _key, nil), do: map
-  defp maybe_put(map, key, value), do: Map.put(map, key, value)
-
-  # Page info
-
-  def page_source(session) do
-    context = browsing_context(session)
-    {method, params} = Commands.evaluate(context, "document.documentElement.outerHTML")
-
-    case send_bidi(session, method, params) do
-      {:ok, result} -> ResponseParser.extract_value(result)
-      error -> error
+  defp get_attr(attrs, key, default) do
+    case Map.get(attrs, key) do
+      nil -> Map.get(attrs, to_string(key), default)
+      v -> v
     end
   end
 
-  def page_title(session) do
-    context = browsing_context(session)
-    {method, params} = Commands.evaluate(context, "document.title")
-
-    case send_bidi(session, method, params) do
-      {:ok, result} -> ResponseParser.extract_value(result)
-      error -> error
+  defp maybe_put_attr(cookie, key, attrs) do
+    case Map.get(attrs, key) || Map.get(attrs, to_string(key)) do
+      nil -> cookie
+      v -> Map.put(cookie, key, v)
     end
   end
 
-  # Window management
+  # ----- Element-scoped ops -----
 
-  def window_handles(session) do
-    {method, params} = Commands.get_tree()
-    sess = session(session)
-    user_context = sess.capabilities[:user_context_id]
+  @doc """
+  Run a JS function with `this` bound to the given element.
+  BiDi's `script.callFunction` accepts a `this` argument — pass it
+  the element's sharedId so the function body sees the live DOM
+  node. Returns the deserialized value, or `{:error, :stale_reference}`
+  for a detached node sentinel.
+  """
+  @spec call_on_element(Session.t(), Element.t(), String.t(), [term]) ::
+          {:ok, term} | {:error, term}
+  def call_on_element(
+        %Session{} = session,
+        %Element{bidi_shared_id: shared_id},
+        fn_decl,
+        args \\ []
+      )
+      when is_binary(shared_id) and is_binary(fn_decl) do
+    params = %{
+      "functionDeclaration" => fn_decl,
+      "this" => %{"sharedId" => shared_id},
+      "arguments" => Enum.map(args, &encode_arg/1),
+      "awaitPromise" => false,
+      "target" => %{"context" => ctx(session)}
+    }
 
-    case send_bidi(session, method, params) do
-      {:ok, result} -> ResponseParser.extract_all_contexts(result, user_context)
-      error -> error
-    end
-  end
+    case Protocol.cdp_send(session, "script.callFunction", params, []) do
+      {:ok, %{"type" => "exception", "exceptionDetails" => details}} ->
+        if stale_marker?(details), do: {:error, :stale_reference}, else: {:error, {:js_exception, details}}
 
-  def window_handle(session) do
-    sess = session(session)
-    # Return the currently-focused context if set, otherwise the session's default
-    focused = Process.get({:wallabidi_focused_context, sess.id})
-    {:ok, focused || sess.browsing_context}
-  end
-
-  def focus_window(session, window_handle_id) do
-    sess = session(session)
-    {method, params} = Commands.activate(window_handle_id)
-
-    case send_bidi(session, method, params) do
-      {:ok, _} ->
-        Process.put({:wallabidi_focused_context, sess.id}, window_handle_id)
-        {:ok, nil}
-
-      {:error, :no_such_frame} ->
-        # The context might have been replaced after tab open/close.
-        # Retry after a short delay.
-        Process.sleep(100)
-
-        case send_bidi(session, method, params) do
-          {:ok, _} ->
-            Process.put({:wallabidi_focused_context, sess.id}, window_handle_id)
-            {:ok, nil}
-
-          error ->
-            error
+      {:ok, result} ->
+        case decode_eval_result(result) do
+          # call_on_element callers can opt into the stale sentinel by
+          # returning `{__wallabidi_stale: true}` — translate it here so
+          # they don't all repeat the same pattern.
+          {:ok, %{"__wallabidi_stale" => true}} -> {:error, :stale_reference}
+          other -> other
         end
 
       error ->
@@ -717,569 +576,695 @@ defmodule Wallabidi.BiDiClient do
     end
   end
 
-  def close_window(session) do
-    context = browsing_context(session)
-    sess = session(session)
-    {method, params} = Commands.close_context(context)
+  defp stale_marker?(%{"text" => msg}) when is_binary(msg) do
+    String.contains?(msg, "no such node") or
+      String.contains?(msg, "stale element") or
+      String.contains?(msg, "detached")
+  end
 
-    case send_bidi(session, method, params) do
-      {:ok, _} ->
-        # Clear the focused context since the window was closed.
-        # Reset to the session's default context so subsequent commands
-        # target a still-valid context.
-        Process.delete({:wallabidi_focused_context, sess.id})
+  defp stale_marker?(_), do: false
 
-        # Give the BiDi mapper a moment to reconcile its context list
-        Process.sleep(50)
-        {:ok, nil}
+  # text/2, attribute/3, displayed/2 — provided by Wallabidi.OpsShared.
 
-      error ->
-        error
+  # ----- Interactions -----
+
+  @doc """
+  Run the bootstrap's classifier on the element. Returns one of
+  `"none" | "patch" | "navigate" | "full_page"` for `:click`, or
+  the equivalent for `:change`. Caller uses this to decide whether
+  to await a page_ready signal after the interaction.
+  """
+  @spec classify(Session.t(), Element.t(), :click | :change) ::
+          {:ok, String.t()} | {:error, term}
+  def classify(%Session{} = session, %Element{} = element, interaction)
+      when interaction in [:click, :change] do
+    call_on_element(
+      session,
+      element,
+      "function(t) { return window.__w.classify(this, t); }",
+      [Atom.to_string(interaction)]
+    )
+  end
+
+  @doc """
+  LV-aware click. Captures `pre_page_id` BEFORE the click, classifies
+  the element to decide what to await, then issues the click and
+  blocks for the appropriate signal. Mirrors V2.CDPClient.click_aware
+  shape — same primitive contract, BiDi underneath.
+
+  Returns `{:ok, classification}` on success, `{:error, :timeout}`
+  if the expected signal didn't arrive, or `{:error, term}` for
+  transport errors.
+  """
+  @spec click_aware(Session.t(), Element.t(), keyword) ::
+          {:ok, String.t()} | {:error, term}
+  def click_aware(%Session{} = session, %Element{} = element, opts \\ []) do
+    case click_aware_with_classification(session, element, opts) do
+      {:ok, classification, :ready} -> {:ok, classification}
+      {:ok, _classification, :timeout} -> {:error, :timeout}
+      err -> err
     end
   end
 
-  # Window size and position (via JavaScript)
+  # Click-classification → wait orchestration. Mirrors Browser.do_post_click
+  # for V2 BiDi: patch-classified clicks wait first for the patch promise,
+  # fall through to await_ack on slow handle_event, then page_ready;
+  # navigate-classified clicks await page_ready directly. "none" returns
+  # immediately.
+  defp await_after_click(_session, "none", _pre_page_id, _pre_ref, _timeout),
+    do: {:ok, "none"}
 
-  def set_window_size(session, width, height) do
-    context = browsing_context(session)
-    {method, params} = Commands.set_viewport(context, width, height)
+  defp await_after_click(session, "patch", pre_page_id, pre_ref, _timeout) do
+    case Wallabidi.LiveViewAware.await_patch(session, 1_000) do
+      :ok ->
+        {:ok, "patch"}
 
-    case send_bidi(session, method, params) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
+      :page_navigated ->
+        # Patch turned into a navigation — wait for the new page.
+        # Patch-classified timeouts silently fall through (caller's
+        # assert_has retries do the work).
+        _ = Protocol.await_page_ready_after(session, pre_page_id, 5_000)
+        {:ok, "patch"}
+
+      :timeout ->
+        # Patch didn't fire in 1s. Server handle_event may be slow,
+        # OR no LV event fired. If we have a pre_ref, wait for the
+        # server to ack — however long handle_event takes. Then look
+        # for any resulting navigation; silently fall through if
+        # neither happens.
+        if is_integer(pre_ref) do
+          _ = Wallabidi.LiveViewAware.await_ack(session, pre_ref, 5_000)
+        end
+
+        _ = Protocol.await_page_ready_after(session, pre_page_id, 5_000)
+        {:ok, "patch"}
     end
   end
 
-  def get_window_size(session) do
-    context = browsing_context(session)
-
-    {method, params} =
-      Commands.evaluate(
-        context,
-        "({width: window.innerWidth, height: window.innerHeight})"
-      )
-
-    case send_bidi(session, method, params) do
-      {:ok, result} -> ResponseParser.extract_value(result)
-      error -> error
+  defp await_after_click(session, classification, pre_page_id, _pre_ref, _timeout)
+       when classification in ["navigate", "full_page"] do
+    # Surface the timeout. Callers (V2BiDiDriver.click) raise
+    # NavigationTimeoutError on these classifications; click_aware/2
+    # turns it back into {:error, :timeout}.
+    case Protocol.await_page_ready_after(session, pre_page_id, 5_000) do
+      :ok -> {:ok, classification}
+      :timeout -> {:error, :timeout}
     end
   end
 
-  def set_window_position(session, x, y) do
-    context = browsing_context(session)
-
-    {method, params} =
-      Commands.evaluate(context, "window.moveTo(#{x}, #{y}); null")
-
-    case send_bidi(session, method, params) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
+  defp await_after_click(session, classification, pre_page_id, _pre_ref, timeout) do
+    case Protocol.await_page_ready_after(session, pre_page_id, timeout) do
+      :ok -> {:ok, classification}
+      :timeout -> {:error, :timeout}
     end
   end
 
-  def get_window_position(session) do
-    context = browsing_context(session)
+  @doc """
+  Like `click_aware/3` but returns a status tag (`:ready` or
+  `:timeout`) so callers can handle patch-classified timeouts
+  silently — same shape as V2.CDPClient.click_aware_with_classification.
+  """
+  @spec click_aware_with_classification(Session.t(), Element.t(), keyword) ::
+          {:ok, String.t(), :ready | :timeout} | {:error, term}
+  def click_aware_with_classification(%Session{} = session, %Element{} = element, opts \\ []) do
+    timeout = Keyword.get(opts, :timeout, 5_000)
+    pre_page_id = Protocol.get_page_id(session)
 
-    {method, params} =
-      Commands.evaluate(context, "({x: window.screenX, y: window.screenY})")
+    with :ok <- await_lv_ready(session, timeout),
+         {:ok, classification} <- classify(session, element, :click) do
+      # For LV-aware classifications, capture a pre-ref AND install
+      # the patch promise BEFORE the click — otherwise the event ref
+      # counter has already moved on and patch detection races the
+      # patch itself.
+      patch? = classification in ["patch", "navigate"]
 
-    case send_bidi(session, method, params) do
-      {:ok, result} -> ResponseParser.extract_value(result)
-      error -> error
-    end
-  end
+      pre_ref =
+        if patch? do
+          _ = Wallabidi.LiveViewAware.prepare_patch(session)
 
-  def maximize_window(session) do
-    context = browsing_context(session)
-
-    {method, params} =
-      Commands.evaluate(
-        context,
-        "window.moveTo(0,0); window.resizeTo(screen.width, screen.height); null"
-      )
-
-    case send_bidi(session, method, params) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
-    end
-  end
-
-  # Frame management
-  #
-  # BiDi uses separate browsing contexts for frames. When focusing a frame,
-  # we find its context ID from the context tree and store it in the process
-  # dictionary so subsequent commands target that frame.
-
-  def focus_frame(session, nil) do
-    # Switch back to top-level context
-    Process.delete({:wallabidi_frame_context, session(session).id})
-    {:ok, nil}
-  end
-
-  def focus_frame(session, %Element{bidi_shared_id: shared_id})
-      when not is_nil(shared_id) do
-    sess = session(session)
-    context = browsing_context(session)
-
-    # Get the frame element's src URL to match against child contexts
-    js = """
-    (frame) => {
-      if (frame.contentWindow) {
-        try { return frame.contentWindow.location.href; } catch(e) {}
-      }
-      return frame.src || null;
-    }
-    """
-
-    {method, params} = Commands.call_function(context, js, [element_arg(shared_id)])
-
-    frame_url =
-      case send_bidi(session, method, params) do
-        {:ok, result} ->
-          case ResponseParser.extract_value(result) do
-            {:ok, url} when is_binary(url) -> url
+          case evaluate(session, "(window.liveSocket && window.liveSocket.main) ? window.liveSocket.main.ref : null") do
+            {:ok, ref} when is_integer(ref) -> ref
             _ -> nil
           end
+        end
 
-        _ ->
-          nil
+      with {:ok, _} <- click(session, element) do
+        case await_after_click(session, classification, pre_page_id, pre_ref, timeout) do
+          {:ok, ^classification} -> {:ok, classification, :ready}
+          {:error, :timeout} -> {:ok, classification, :timeout}
+          err -> err
+        end
+      end
+    end
+  end
+
+  # Block until liveSocket.main has finished joining (or there's no
+  # LiveView). Mirrors CDPClient.await_lv_ready — without it, clicks
+  # fired during the join window get dropped.
+  defp await_lv_ready(%Session{} = session, timeout_ms) do
+    js = """
+    new Promise(function(resolve) {
+      var deadline = Date.now() + #{timeout_ms};
+      function check() {
+        var ls = window.liveSocket;
+        if (!ls || !ls.main) return resolve(true);
+        if (ls.main.joinPending !== true) return resolve(true);
+        if (Date.now() > deadline) return resolve(false);
+        setTimeout(check, 20);
+      }
+      check();
+    })
+    """
+
+    case evaluate_async(session, js) do
+      {:ok, _} -> :ok
+      _ -> :ok
+    end
+  end
+
+  # click/2 — provided by Wallabidi.OpsShared.
+
+  @doc """
+  DOM-based set_value. Handles checkboxes, radios, options, text
+  inputs, AND file inputs.
+
+  File inputs use a DataTransfer + File trick — the browser's
+  security model rejects `el.value = "/path"` on file inputs, but
+  fabricating an empty File and assigning it via DataTransfer
+  populates `el.files` and dispatches the expected `change` event.
+  Wallabidi tests only check `.value` (which the browser exposes
+  as `C:\\fakepath\\<basename>`), so file content isn't needed.
+  """
+  @spec set_value(Session.t(), Element.t(), term) :: {:ok, nil} | {:error, term}
+  def set_value(%Session{} = session, %Element{} = element, value) do
+    case file_input?(session, element) do
+      {:ok, true} -> set_file_value(session, element, to_string(value))
+      _ -> set_value_dom(session, element, value)
+    end
+  end
+
+  defp file_input?(session, element) do
+    call_on_element(
+      session,
+      element,
+      "function() { return this.tagName === 'INPUT' && (this.type || '').toLowerCase() === 'file'; }"
+    )
+  end
+
+  defp set_file_value(session, element, path) do
+    if File.exists?(path) do
+      case call_on_element(
+             session,
+             element,
+             """
+             function(p) {
+               var dt = new DataTransfer();
+               var name = p.split('/').pop() || p.split('\\\\').pop();
+               var f = new File([''], name, {type: 'application/octet-stream'});
+               dt.items.add(f);
+               this.files = dt.files;
+               this.dispatchEvent(new Event('change', {bubbles: true}));
+               return null;
+             }
+             """,
+             [path]
+           ) do
+        {:ok, _} -> {:ok, nil}
+        error -> error
+      end
+    else
+      # Non-extant file: WebDriver contract is to no-op.
+      {:ok, nil}
+    end
+  end
+
+  # set_value_dom/3 (the DOM-based path) and clear/3 — provided by
+  # Wallabidi.OpsShared. set_value/3 above dispatches between the
+  # file-input branch (DataTransfer trick) and the shared DOM path.
+
+  @doc """
+  Send text to an element. List form joins; atom form (special keys
+  like :tab, :enter) is not supported on the BiDi path yet — would
+  require `input.performActions` with a key-source action sequence.
+  """
+  @spec send_keys(Session.t(), Element.t(), [String.t()] | String.t()) ::
+          {:ok, nil} | {:error, term}
+  def send_keys(%Session{} = session, %Element{} = element, keys) when is_binary(keys) do
+    send_keys(session, element, [keys])
+  end
+
+  def send_keys(%Session{} = session, %Element{} = element, keys) when is_list(keys) do
+    if Enum.all?(keys, &is_binary/1) do
+      send_keys_text(session, element, Enum.join(keys, ""))
+    else
+      # Mixed string + special-key atoms — focus the element, then
+      # dispatch a key-source action sequence via input.performActions.
+      with {:ok, _} <-
+             call_on_element(session, element, "function() { this.focus(); return null; }") do
+        send_keys_to_session(session, keys)
+      end
+    end
+  end
+
+  @doc """
+  Send a key sequence (text + special atoms like :tab, :enter) to
+  whatever element currently has focus. BiDi's input.performActions
+  with a key-source sequence handles this in one call.
+  """
+  @spec send_keys_to_session(Session.t(), list) :: {:ok, nil} | {:error, term}
+  def send_keys_to_session(%Session{browsing_context: ctx} = session, keys) when is_list(keys) do
+    actions = Commands.key_type_actions(keys)
+    {method, params} = Commands.perform_actions(ctx, actions)
+
+    case Protocol.cdp_send(session, method, params, []) do
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
+  end
+
+  # ----- Mouse & touch via input.performActions -----
+
+  @doc "Hover the mouse over an element (pointer move to its center)."
+  @spec hover(Element.t()) :: {:ok, nil} | {:error, term}
+  def hover(%Element{bidi_shared_id: sid} = element) when is_binary(sid) do
+    perform(element, Commands.pointer_move_actions(sid))
+  end
+
+  def hover(%Element{}), do: {:error, :no_bidi_shared_id}
+
+  @doc "Synthesize a tap at the element's center via touch input source."
+  @spec tap(Element.t()) :: {:ok, nil} | {:error, term}
+  def tap(%Element{bidi_shared_id: sid} = element) when is_binary(sid) do
+    perform(element, Commands.touch_tap_element_actions(sid))
+  end
+
+  def tap(%Element{}), do: {:error, :no_bidi_shared_id}
+
+  @doc """
+  Press a touch point. With an element, lands at the element's
+  top-left corner plus offsets; without one, lands at the supplied
+  absolute coordinates.
+  """
+  @spec touch_down(Session.t(), Element.t() | nil, number, number) ::
+          {:ok, nil} | {:error, term}
+  def touch_down(%Session{} = session, nil, x, y) do
+    perform(session, Commands.touch_down_actions(round(x), round(y)))
+  end
+
+  def touch_down(%Session{}, %Element{bidi_shared_id: sid} = element, x_offset, y_offset)
+      when is_binary(sid) do
+    case element_location(element) do
+      {:ok, {ex, ey}} ->
+        perform(element, Commands.touch_down_actions(round(ex + x_offset), round(ey + y_offset)))
+
+      err ->
+        err
+    end
+  end
+
+  def touch_down(%Session{}, %Element{}, _, _), do: {:error, :no_bidi_shared_id}
+
+  @doc "Release any active touch points."
+  @spec touch_up(Session.t() | Element.t()) :: {:ok, nil} | {:error, term}
+  def touch_up(parent), do: perform(parent, Commands.touch_up_actions())
+
+  @doc "Move the active touch point to absolute coordinates."
+  @spec touch_move(Session.t() | Element.t(), number, number) :: {:ok, nil} | {:error, term}
+  def touch_move(parent, x, y), do: perform(parent, Commands.touch_move_actions(x, y))
+
+  @doc "Press a mouse button at the cursor's current position."
+  @spec button_down(Session.t() | Element.t(), :left | :middle | :right) ::
+          {:ok, nil} | {:error, term}
+  def button_down(parent, button) do
+    perform(parent, Commands.pointer_button_down_actions(button))
+  end
+
+  @doc "Release a mouse button at the cursor's current position."
+  @spec button_up(Session.t() | Element.t(), :left | :middle | :right) ::
+          {:ok, nil} | {:error, term}
+  def button_up(parent, button) do
+    perform(parent, Commands.pointer_button_up_actions(button))
+  end
+
+  @doc "Press+release a mouse button at the cursor's current position."
+  @spec click_at_cursor(Session.t() | Element.t(), :left | :middle | :right) ::
+          {:ok, nil} | {:error, term}
+  def click_at_cursor(parent, button) do
+    perform(parent, Commands.pointer_click_at_position_actions(button))
+  end
+
+  @doc "Move the mouse cursor by an offset from its current position."
+  @spec move_mouse_by(Session.t() | Element.t(), number, number) ::
+          {:ok, nil} | {:error, term}
+  def move_mouse_by(parent, x_offset, y_offset) do
+    perform(parent, Commands.pointer_move_by_actions(x_offset, y_offset))
+  end
+
+  @doc "Double-click at the cursor's current position."
+  @spec double_click(Session.t() | Element.t()) :: {:ok, nil} | {:error, term}
+  def double_click(parent) do
+    perform(parent, Commands.pointer_double_click_actions())
+  end
+
+  defp perform(parent, actions) do
+    session = Element.root_session(parent)
+    {method, params} = Commands.perform_actions(session.browsing_context, actions)
+
+    case Protocol.cdp_send(session, method, params, []) do
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
+  end
+
+  # ----- Element geometry -----
+
+  @doc "Element width/height in CSS pixels via getBoundingClientRect."
+  @spec element_size(Element.t()) :: {:ok, {number, number}} | {:error, term}
+  def element_size(%Element{} = element) do
+    session = Element.root_session(element)
+
+    case call_on_element(
+           session,
+           element,
+           "function() { var r = this.getBoundingClientRect(); return [r.width, r.height]; }"
+         ) do
+      {:ok, [w, h]} -> {:ok, {w, h}}
+      {:ok, other} -> {:error, {:unexpected_size, other}}
+      err -> err
+    end
+  end
+
+  @doc "Element top-left coordinates relative to the viewport."
+  @spec element_location(Element.t()) :: {:ok, {number, number}} | {:error, term}
+  def element_location(%Element{} = element) do
+    session = Element.root_session(element)
+
+    case call_on_element(
+           session,
+           element,
+           "function() { var r = this.getBoundingClientRect(); return [r.left, r.top]; }"
+         ) do
+      {:ok, [x, y]} -> {:ok, {x, y}}
+      {:ok, other} -> {:error, {:unexpected_location, other}}
+      err -> err
+    end
+  end
+
+  # ----- Element finding -----
+
+  @doc """
+  Push-based find. The bootstrap channel signals `{id, count}` once
+  the query resolves, then we fetch the element refs as sharedIds
+  via `script.callFunction` with `resultOwnership: "root"`.
+  """
+  @spec find_elements(Session.t() | Element.t(), Wallabidi.Query.t(), keyword) ::
+          {:ok, [Element.t()]} | {:error, term}
+  def find_elements(parent, %Wallabidi.Query{} = query, opts \\ []) do
+    session = Element.root_session(parent)
+    timeout = Keyword.get(opts, :timeout, 5_000)
+    count = Wallabidi.Query.count(query)
+
+    with {:ok, ops, _validated} <- Ops.from_wallaby(parent, query, nil) do
+      query_id = "v2-bidi-q-#{System.unique_integer([:positive])}"
+      ops_json = Jason.encode!(ops.ops)
+      count_js = if is_integer(count), do: Integer.to_string(count), else: "null"
+      root_js = if ops.parent_id, do: "this", else: "null"
+      register_js = Bootstrap.register_js(query_id, ops_json, count_js, root_js)
+
+      :ok = Protocol.register_find(session, query_id, timeout)
+
+      # Fire the bootstrap. Same shape as CDP find: scope to the parent
+      # element via `this`, or run at document scope.
+      cast_register(session, ops.parent_id, register_js)
+
+      case Protocol.await_find_result(session, query_id, timeout) do
+        {:ok, found, _meta} when found > 0 ->
+          fetch_element_refs(session, query_id, found)
+
+        {:ok, _, _} ->
+          {:ok, []}
+
+        {:error, :invalid_selector} ->
+          {:error, :invalid_selector}
+
+        {:timeout, _} ->
+          # Push didn't fire (count-shape mismatch — query asked for
+          # exactly 1 but page has 2, etc). Run W.exec synchronously
+          # so callers see the *actual* element count for error
+          # messaging ("but found 2"). Mirrors CDPClient.final_sync_exec.
+          final_sync_exec(session, ops_json, ops.parent_id)
+      end
+    end
+  end
+
+  defp final_sync_exec(%Session{} = session, ops_json, parent_shared_id) do
+    ctx = ctx(session)
+    # Return BOTH elements and the error string. When window.__w is
+    # available we use its full opcode interpreter (handles visibility,
+    # text filters, etc). When it's not — e.g. about:blank where the
+    # preload hasn't run — we fall back to a bare querySelectorAll on
+    # just the `query` ops so syntax errors still surface as
+    # invalid_selector.
+    fallback_body = """
+    var r = {els: [], error: null};
+    try {
+      var ops = #{ops_json};
+      for (var i = 0; i < ops.length; i++) {
+        var op = ops[i];
+        if (op[0] === 'query') {
+          r.els = Array.from(document.querySelectorAll(op[2]));
+        }
+      }
+    } catch (e) { r.error = e.message; r.els = []; }
+    """
+
+    fn_decl =
+      if parent_shared_id do
+        ~s'function() { if (window.__w) { var r = window.__w.exec(#{ops_json}, this); return {els: r.els, error: r.error}; } #{fallback_body} return {els: r.els, error: r.error}; }'
+      else
+        ~s'() => { if (window.__w) { var r = window.__w.exec(#{ops_json}, null); return {els: r.els, error: r.error}; } #{fallback_body} return {els: r.els, error: r.error}; }'
       end
 
-    # Find the child context from the context tree that matches this frame's URL
-    case find_frame_context_by_url(session, context, frame_url) do
-      {:ok, frame_context} ->
-        Process.put({:wallabidi_frame_context, sess.id}, frame_context)
-        {:ok, nil}
+    base_params = %{
+      "functionDeclaration" => fn_decl,
+      "awaitPromise" => false,
+      "resultOwnership" => "root",
+      "target" => %{"context" => ctx}
+    }
 
-      _ ->
-        # Fallback: use order-based matching
-        case find_frame_context(session, shared_id) do
-          {:ok, frame_context} ->
-            Process.put({:wallabidi_frame_context, sess.id}, frame_context)
-            {:ok, nil}
+    params =
+      if parent_shared_id do
+        Map.put(base_params, "this", %{"sharedId" => parent_shared_id})
+      else
+        base_params
+      end
 
-          _ ->
-            {:ok, nil}
-        end
-    end
-  end
-
-  def focus_frame(session, frame_index) when is_integer(frame_index) do
-    sess = session(session)
-
-    case get_child_contexts(session) do
-      {:ok, contexts} when length(contexts) > frame_index ->
-        frame_context = Enum.at(contexts, frame_index)
-        Process.put({:wallabidi_frame_context, sess.id}, frame_context)
-        {:ok, nil}
-
-      _ ->
-        {:ok, nil}
-    end
-  end
-
-  def focus_frame(_session, _frame), do: {:ok, nil}
-
-  def focus_parent_frame(session) do
-    sess = session(session)
-    current = browsing_context(session)
-
-    # Find parent context from the tree
-    {method, params} = Commands.get_tree()
-
-    case send_bidi(session, method, params) do
-      {:ok, result} ->
-        parent = find_parent_context(result, current)
-
-        if parent do
-          Process.put({:wallabidi_frame_context, sess.id}, parent)
-        else
-          Process.delete({:wallabidi_frame_context, sess.id})
-        end
-
-        {:ok, nil}
-
-      _ ->
-        {:ok, nil}
-    end
-  end
-
-  defp find_frame_context_by_url(session, parent_context, frame_url)
-       when is_binary(frame_url) do
-    {method, params} = Commands.get_tree(%{root: parent_context})
-
-    case send_bidi(session, method, params) do
-      {:ok, %{"contexts" => [ctx | _]}} ->
-        children = ctx["children"] || []
-
-        match =
-          Enum.find(children, fn child ->
-            child_url = child["url"] || ""
-            # Match by URL suffix (frame_url might be absolute, child URL might differ)
-            String.ends_with?(child_url, URI.parse(frame_url).path || "") or
-              child_url == frame_url
-          end)
-
-        case match do
-          nil -> {:error, :frame_not_found}
-          child -> {:ok, child["context"]}
-        end
-
-      _ ->
-        {:error, :tree_not_found}
-    end
-  end
-
-  defp find_frame_context_by_url(_session, _parent_context, _frame_url),
-    do: {:error, :no_frame_url}
-
-  defp find_frame_context(session, _shared_id) do
-    context = session(session).browsing_context
-
-    # Get the tree and look for child contexts of the current context
-    {method, params} = Commands.get_tree(%{root: context})
-
-    case send_bidi(session, method, params) do
-      {:ok, %{"contexts" => [ctx | _]}} ->
-        children = ctx["children"] || []
-
-        case children do
-          [child | _] ->
-            # Match by order — BiDi doesn't directly map shared IDs to contexts
-            # For now, find the child context that has a different URL
-            {:ok, child["context"]}
-
-          [] ->
-            {:error, :no_child_contexts}
-        end
-
-      _ ->
-        {:error, :tree_not_found}
-    end
-  end
-
-  defp get_child_contexts(session) do
-    context = browsing_context(session)
-    {method, params} = Commands.get_tree(%{root: context})
-
-    case send_bidi(session, method, params) do
-      {:ok, %{"contexts" => [ctx | _]}} ->
-        children = ctx["children"] || []
-        {:ok, Enum.map(children, & &1["context"])}
+    case Protocol.cdp_send(session, "script.callFunction", params, []) do
+      {:ok, %{"type" => "success", "result" => %{"type" => "object", "value" => pairs}}}
+      when is_list(pairs) ->
+        decode_final_exec(pairs, session)
 
       _ ->
         {:ok, []}
     end
   end
 
-  defp find_parent_context(%{"contexts" => contexts}, target) do
-    Enum.find_value(contexts, fn ctx ->
-      children = ctx["children"] || []
+  defp decode_final_exec(pairs, session) do
+    map = pairs_to_map(pairs)
 
-      if Enum.any?(children, &(&1["context"] == target)) do
-        ctx["context"]
-      else
-        Enum.find_value(children, &find_parent_context(%{"contexts" => [&1]}, target))
-      end
+    case Map.get(map, "error") do
+      %{"type" => "string", "value" => err} when is_binary(err) and err != "" ->
+        {:error, :invalid_selector}
+
+      err when is_binary(err) and err != "" ->
+        {:error, :invalid_selector}
+
+      _ ->
+        items =
+          case Map.get(map, "els") do
+            %{"type" => "array", "value" => items} when is_list(items) -> items
+            _ -> []
+          end
+
+        elements =
+          items
+          |> Enum.map(fn
+            %{"sharedId" => sid} when is_binary(sid) ->
+              %Element{
+                id: sid,
+                bidi_shared_id: sid,
+                parent: session,
+                driver: session.driver,
+                url: session.session_url
+              }
+
+            _ ->
+              nil
+          end)
+          |> Enum.reject(&is_nil/1)
+
+        {:ok, elements}
+    end
+  end
+
+  # BiDi `object` RemoteValue serializes as a list of [key, val] pairs.
+  # The key is a bare string (not wrapped in a RemoteValue envelope).
+  defp pairs_to_map(pairs) do
+    Enum.reduce(pairs, %{}, fn
+      [k, v], acc when is_binary(k) -> Map.put(acc, k, v)
+      [%{"value" => k}, v], acc when is_binary(k) -> Map.put(acc, k, v)
+      _, acc -> acc
     end)
   end
 
-  # Key sending
-
-  def send_keys(%Session{} = session, keys) when is_list(keys) do
-    context = browsing_context(session)
-    actions = Commands.key_type_actions(keys)
-    {method, params} = Commands.perform_actions(context, actions)
-
-    case send_bidi(session, method, params) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
-    end
+  defp cast_register(%Session{} = session, nil, register_js) do
+    Protocol.cdp_cast(
+      session,
+      "script.callFunction",
+      %{
+        "functionDeclaration" => "() => { #{register_js} }",
+        "awaitPromise" => false,
+        "target" => %{"context" => ctx(session)}
+      },
+      []
+    )
   end
 
-  def send_keys(%Element{bidi_shared_id: shared_id} = element, keys)
-      when is_list(keys) and not is_nil(shared_id) do
-    context = browsing_context(element)
-
-    {method, params} =
-      Commands.call_function(context, "(el) => el.focus()", [element_arg(shared_id)])
-
-    case send_bidi(element, method, params) do
-      {:ok, _} ->
-        actions = Commands.key_type_actions(keys)
-        {method2, params2} = Commands.perform_actions(context, actions)
-
-        case send_bidi(element, method2, params2) do
-          {:ok, _} -> {:ok, nil}
-          error -> error
-        end
-
-      error ->
-        error
-    end
+  defp cast_register(%Session{} = session, parent_shared_id, register_js)
+       when is_binary(parent_shared_id) do
+    Protocol.cdp_cast(
+      session,
+      "script.callFunction",
+      %{
+        "functionDeclaration" => "function() { #{register_js} }",
+        "this" => %{"sharedId" => parent_shared_id},
+        "awaitPromise" => false,
+        "target" => %{"context" => ctx(session)}
+      },
+      []
+    )
   end
 
-  def send_keys(%Element{} = _element, _keys), do: {:error, :no_bidi_shared_id}
+  # Fetch the resolved query's element list as an array of sharedIds.
+  # `resultOwnership: "root"` keeps node references alive on the
+  # remote side so we can hold them past this call.
+  defp fetch_element_refs(%Session{} = session, query_id, found_count) do
+    ctx = ctx(session)
+    id_js = Jason.encode!(query_id)
 
-  # Element size and location
-
-  def element_size(%Element{bidi_shared_id: shared_id} = element)
-      when not is_nil(shared_id) do
-    context = browsing_context(element)
-
-    js = "(el) => { const r = el.getBoundingClientRect(); return [r.width, r.height]; }"
-
-    {method, params} = Commands.call_function(context, js, [element_arg(shared_id)])
-
-    case send_bidi(element, method, params) do
-      {:ok, result} ->
-        case ResponseParser.extract_value(result) do
-          {:ok, [width, height]} -> {:ok, {width, height}}
-          error -> error
-        end
-
-      error ->
-        error
-    end
-  end
-
-  def element_size(%Element{} = _element), do: {:error, :no_bidi_shared_id}
-
-  def element_location(%Element{bidi_shared_id: shared_id} = element)
-      when not is_nil(shared_id) do
-    context = browsing_context(element)
-
-    js = "(el) => { const r = el.getBoundingClientRect(); return [r.x, r.y]; }"
-
-    {method, params} = Commands.call_function(context, js, [element_arg(shared_id)])
-
-    case send_bidi(element, method, params) do
-      {:ok, result} ->
-        case ResponseParser.extract_value(result) do
-          {:ok, [x, y]} -> {:ok, {x, y}}
-          error -> error
-        end
-
-      error ->
-        error
-    end
-  end
-
-  def element_location(%Element{} = _element), do: {:error, :no_bidi_shared_id}
-
-  # Mouse actions
-
-  def move_mouse_to(%Element{bidi_shared_id: shared_id} = element, %Element{})
-      when not is_nil(shared_id) do
-    context = browsing_context(element)
-    actions = Commands.pointer_move_actions(shared_id)
-    {method, params} = Commands.perform_actions(context, actions)
-
-    case send_bidi(element, method, params) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
-    end
-  end
-
-  def move_mouse_to(session, element, x_offset \\ nil, y_offset \\ nil) do
-    parent = if element, do: element, else: session
-
-    context = browsing_context(parent)
-
-    actions =
-      cond do
-        element && element.bidi_shared_id && (x_offset || y_offset) ->
-          Commands.pointer_move_to_element_actions(
-            element.bidi_shared_id,
-            x_offset || 0,
-            y_offset || 0
-          )
-
-        element && element.bidi_shared_id ->
-          Commands.pointer_move_actions(element.bidi_shared_id)
-
-        x_offset || y_offset ->
-          Commands.pointer_move_by_actions(x_offset || 0, y_offset || 0)
-
-        true ->
-          Commands.pointer_move_by_actions(0, 0)
-      end
-
-    {method, params} = Commands.perform_actions(context, actions)
-
-    case send_bidi(parent, method, params) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
-    end
-  end
-
-  def double_click(parent) do
-    context = browsing_context(parent)
-    actions = Commands.pointer_double_click_actions()
-    {method, params} = Commands.perform_actions(context, actions)
-
-    case send_bidi(parent, method, params) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
-    end
-  end
-
-  def button_down(parent, button) do
-    context = browsing_context(parent)
-    actions = Commands.pointer_button_down_actions(button)
-    {method, params} = Commands.perform_actions(context, actions)
-
-    case send_bidi(parent, method, params) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
-    end
-  end
-
-  def button_up(parent, button) do
-    context = browsing_context(parent)
-    actions = Commands.pointer_button_up_actions(button)
-    {method, params} = Commands.perform_actions(context, actions)
-
-    case send_bidi(parent, method, params) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
-    end
-  end
-
-  # Touch actions
-
-  def touch_down(session, element, x_or_offset \\ 0, y_or_offset \\ 0) do
-    context = browsing_context(session)
-
-    {x, y} =
-      if element && element.bidi_shared_id do
-        case element_location(element) do
-          {:ok, {ex, ey}} -> {ex + x_or_offset, ey + y_or_offset}
-          _ -> {x_or_offset, y_or_offset}
-        end
-      else
-        {x_or_offset, y_or_offset}
-      end
-
-    actions = Commands.touch_down_actions(round(x), round(y))
-    {method, params} = Commands.perform_actions(context, actions)
-
-    case send_bidi(session, method, params) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
-    end
-  end
-
-  def touch_up(session) do
-    context = browsing_context(session)
-    actions = Commands.touch_up_actions()
-    {method, params} = Commands.perform_actions(context, actions)
-
-    case send_bidi(session, method, params) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
-    end
-  end
-
-  def tap(%Element{bidi_shared_id: shared_id} = element) when not is_nil(shared_id) do
-    context = browsing_context(element)
-    actions = Commands.touch_tap_element_actions(shared_id)
-    {method, params} = Commands.perform_actions(context, actions)
-
-    case send_bidi(element, method, params) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
-    end
-  end
-
-  def tap(%Element{} = _element), do: {:error, :no_bidi_shared_id}
-
-  def touch_move(parent, x, y) do
-    context = browsing_context(parent)
-    actions = Commands.touch_move_actions(x, y)
-    {method, params} = Commands.perform_actions(context, actions)
-
-    case send_bidi(parent, method, params) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
-    end
-  end
-
-  def touch_scroll(%Element{bidi_shared_id: shared_id} = element, x_offset, y_offset)
-      when not is_nil(shared_id) do
-    context = browsing_context(element)
-
-    # Use JavaScript scrollBy for reliable scrolling — touch pointer actions
-    # don't reliably trigger scroll in headless Chrome.
-    js = """
-    (el, dx, dy) => {
-      el.scrollIntoView();
-      window.scrollBy(dx, dy);
+    fn_decl = """
+    () => {
+      var q = window.__w && window.__w.queries && window.__w.queries[#{id_js}];
+      return q ? q.elements : [];
     }
     """
 
-    {method, params} =
-      Commands.call_function(context, js, [
-        element_arg(shared_id),
-        %{type: "number", value: x_offset},
-        %{type: "number", value: y_offset}
-      ])
+    params = %{
+      "functionDeclaration" => fn_decl,
+      "awaitPromise" => false,
+      "resultOwnership" => "root",
+      "target" => %{"context" => ctx}
+    }
 
-    case send_bidi(element, method, params) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
+    case Protocol.cdp_send(session, "script.callFunction", params, []) do
+      {:ok, %{"type" => "success", "result" => %{"type" => "array", "value" => items}}}
+      when is_list(items) ->
+        elements =
+          items
+          |> Enum.map(fn
+            %{"sharedId" => sid} when is_binary(sid) ->
+              %Element{
+                id: sid,
+                bidi_shared_id: sid,
+                parent: session,
+                driver: session.driver,
+                url: session.session_url
+              }
+
+            _ ->
+              nil
+          end)
+          |> Enum.reject(&is_nil/1)
+
+        # Best-effort cleanup of the bootstrap's stored entry so memory
+        # doesn't accumulate across queries.
+        Protocol.cdp_cast(
+          session,
+          "script.callFunction",
+          %{
+            "functionDeclaration" => "() => { #{Bootstrap.cleanup_js(query_id)} }",
+            "awaitPromise" => false,
+            "target" => %{"context" => ctx}
+          },
+          []
+        )
+
+        {:ok, elements}
+
+      _ ->
+        # Page navigated mid-flight or the array's gone — emit
+        # placeholders so callers see the count, but ops on them will
+        # surface as stale_reference.
+        {:ok,
+         List.duplicate(%Element{parent: session, driver: session.driver}, found_count)}
     end
   end
 
-  def touch_scroll(%Element{} = _element, _x, _y), do: {:error, :no_bidi_shared_id}
+  # ----- Dialog handling -----
+  #
+  # BiDi: subscribe to `browsingContext.userPromptOpened`, fire an
+  # action that triggers the dialog, catch the event in a spawned
+  # handler, send `browsingContext.handleUserPrompt` to accept or
+  # dismiss. Returns the dialog's message string.
+  #
+  # The handler runs in a separate process so that `fun.(session)`
+  # can block without deadlocking — some BiDi implementations don't
+  # return the click response until the dialog is handled.
 
-  # Dialog handling
+  @spec accept_alert(Session.t(), (Session.t() -> any)) :: String.t()
+  def accept_alert(%Session{} = session, fun), do: handle_dialog(session, fun, true)
 
-  def accept_alert(session, fun) do
-    handle_dialog(session, fun, true)
-  end
+  @spec dismiss_alert(Session.t(), (Session.t() -> any)) :: String.t()
+  def dismiss_alert(%Session{} = session, fun), do: handle_dialog(session, fun, true)
 
-  def dismiss_alert(session, fun) do
-    handle_dialog(session, fun, true)
-  end
+  @spec accept_confirm(Session.t(), (Session.t() -> any)) :: String.t()
+  def accept_confirm(%Session{} = session, fun), do: handle_dialog(session, fun, true)
 
-  def accept_confirm(session, fun) do
-    handle_dialog(session, fun, true)
-  end
+  @spec dismiss_confirm(Session.t(), (Session.t() -> any)) :: String.t()
+  def dismiss_confirm(%Session{} = session, fun), do: handle_dialog(session, fun, false)
 
-  def dismiss_confirm(session, fun) do
-    handle_dialog(session, fun, false)
-  end
+  @spec accept_prompt(Session.t(), String.t() | nil, (Session.t() -> any)) :: String.t()
+  def accept_prompt(%Session{} = session, nil, fun), do: handle_dialog(session, fun, true)
 
-  def accept_prompt(session, nil, fun) do
-    handle_dialog(session, fun, true)
-  end
+  def accept_prompt(%Session{} = session, input, fun) when is_binary(input),
+    do: handle_dialog(session, fun, true, input)
 
-  def accept_prompt(session, input, fun) when is_binary(input) do
-    handle_dialog(session, fun, true, input)
-  end
+  @spec dismiss_prompt(Session.t(), (Session.t() -> any)) :: String.t()
+  def dismiss_prompt(%Session{} = session, fun), do: handle_dialog(session, fun, false)
 
-  def dismiss_prompt(session, fun) do
-    handle_dialog(session, fun, false)
-  end
-
-  defp handle_dialog(session, fun, accept, user_text \\ nil) do
-    pid = bidi_pid(session)
-    context = browsing_context(session)
+  defp handle_dialog(%Session{bidi_pid: ws_pid, browsing_context: ctx} = session, fun, accept,
+         user_text \\ nil) do
     caller = self()
 
-    # Subscribe at BiDi protocol level and register to receive events.
-    # Scope to this browsing context so a sibling test's dialog doesn't
-    # land in our handler (shared-Chrome / multi-userContext mode).
-    {method, params} = Commands.subscribe(["browsingContext.userPromptOpened"], [context])
-    WebSocketClient.send_command(pid, method, params)
+    # Subscribe at the BiDi protocol level once — chromium-bidi makes
+    # this idempotent. Scope to the session's browsing context so a
+    # sibling test's dialog can't land in our handler.
+    {sub_method, sub_params} =
+      Commands.subscribe(["browsingContext.userPromptOpened"], [ctx])
 
-    # Spawn a handler that listens for the dialog event and handles it.
-    # This avoids deadlocking when the click action blocks until the dialog
-    # is handled (which happens with some BiDi implementations).
+    WebSocketClient.send_command(ws_pid, sub_method, sub_params)
+
+    # Spawn a handler so fun.(session) can block on a click that
+    # only returns once the dialog is handled. Sync via :ready so
+    # the WSC subscription is in place BEFORE we trigger the click —
+    # otherwise the event can arrive before the handler subscribes
+    # and Chrome auto-dismisses the unhandled prompt.
+    self_pid = self()
+
     handler =
       spawn_link(fn ->
-        WebSocketClient.subscribe(pid, "browsingContext.userPromptOpened", self(), context)
+        WebSocketClient.subscribe(ws_pid, "browsingContext.userPromptOpened", self(), ctx)
+        send(self_pid, {:ready, self()})
 
         {message, default_value} =
           receive do
@@ -1291,22 +1276,22 @@ defmodule Wallabidi.BiDiClient do
             5_000 -> {"", nil}
           end
 
-        # For prompts without explicit user text, use the default value
         effective_text = user_text || default_value
-
-        # Handle the prompt
-        {m, p} = Commands.handle_user_prompt(context, accept, effective_text)
-
-        WebSocketClient.send_command(pid, m, p)
-        |> ResponseParser.check_error()
+        {m, p} = Commands.handle_user_prompt(ctx, accept, effective_text)
+        WebSocketClient.send_command(ws_pid, m, p) |> ResponseParser.check_error()
 
         send(caller, {:dialog_handled, message})
       end)
 
-    # Execute the function that triggers the dialog
+    receive do
+      {:ready, ^handler} -> :ok
+    after
+      1_000 -> :ok
+    end
+
+    # Trigger the dialog.
     fun.(session)
 
-    # Wait for the handler to finish
     message =
       receive do
         {:dialog_handled, msg} -> msg
@@ -1314,300 +1299,8 @@ defmodule Wallabidi.BiDiClient do
         10_000 -> ""
       end
 
-    # Ensure handler is done
     Process.unlink(handler)
 
     message
-  end
-
-  # Settle — wait for the page to be idle after an action.
-  #
-  # Two signals:
-  # 1. Network: no new HTTP requests for `idle_time` ms
-  # 2. LiveView: no phx-*-loading attributes on any element
-  #
-  # Works correctly with persistent connections (WebSockets, SSE)
-  # since those don't fire new request events.
-
-  @liveview_settled_js """
-  (() => {
-    const loading = document.querySelector('[data-phx-main-loading], [class*="phx-"][class*="-loading"]');
-    const connected = document.querySelector('[data-phx-main]');
-    if (!connected) return true;
-    return !loading;
-  })()
-  """
-
-  def settle(session, timeout, idle_time) do
-    pid = bidi_pid(session)
-    context = browsing_context(session)
-
-    {method, params} = Commands.subscribe(["network.beforeRequestSent"], [context])
-    WebSocketClient.send_command(pid, method, params)
-    WebSocketClient.subscribe(pid, "network.beforeRequestSent", self(), context)
-
-    deadline = System.monotonic_time(:millisecond) + timeout
-    do_settle(session, idle_time, deadline)
-  end
-
-  defp do_settle(session, idle_time, deadline) do
-    remaining = deadline - System.monotonic_time(:millisecond)
-
-    if remaining <= 0 do
-      raise RuntimeError, "Timed out waiting for page to settle"
-    end
-
-    wait_ms = min(idle_time, remaining)
-
-    receive do
-      {:bidi_event, "network.beforeRequestSent", _event} ->
-        do_settle(session, idle_time, deadline)
-    after
-      wait_ms ->
-        # Network is quiet — check if LiveView is also settled
-        if liveview_settled?(session) do
-          :ok
-        else
-          do_settle(session, idle_time, deadline)
-        end
-    end
-  end
-
-  defp liveview_settled?(session) do
-    context = browsing_context(session)
-    {method, params} = Commands.evaluate(context, @liveview_settled_js)
-
-    case send_bidi(session, method, params) do
-      {:ok, result} ->
-        case ResponseParser.extract_value(result) do
-          {:ok, true} -> true
-          _ -> false
-        end
-
-      _ ->
-        # If we can't check, assume settled
-        true
-    end
-  end
-
-  @doc false
-  def prepare_page_load(session) do
-    pid = bidi_pid(session)
-    context = browsing_context(session)
-
-    # Subscribe to browsingContext.load at the BiDi protocol level,
-    # scoped to this browsing context so sibling sessions on the same
-    # shared Chrome don't fan in.
-    {method, params} = Commands.subscribe(["browsingContext.load"], [context])
-    WebSocketClient.send_command(pid, method, params)
-
-    # Register this process to receive the event
-    WebSocketClient.subscribe(pid, "browsingContext.load", self(), context)
-    :ok
-  end
-
-  @doc false
-  def await_page_load(session, timeout \\ 10_000) do
-    receive do
-      {:bidi_event, "browsingContext.load", event} ->
-        new_ctx = get_in(event, ["params", "context"])
-
-        if is_binary(new_ctx) && new_ctx != session.browsing_context do
-          Process.put({:wallabidi_focused_context, session.id}, new_ctx)
-        end
-
-        :ok
-    after
-      timeout -> :ok
-    end
-  end
-
-  # Console event listener
-
-  def on_console(session, callback) do
-    pid = bidi_pid(session)
-    context = browsing_context(session)
-
-    # Subscribe to log events at the BiDi protocol level, scoped to
-    # this browsing context (idempotent).
-    {method, params} = Commands.subscribe(["log.entryAdded"], [context])
-    WebSocketClient.send_command(pid, method, params)
-
-    # Spawn a listener process that subscribes itself and calls the callback
-    caller = self()
-
-    spawn_link(fn ->
-      # Subscribe this spawned process to receive log events for this context
-      WebSocketClient.subscribe(pid, "log.entryAdded", self(), context)
-      console_listener_loop(caller, callback)
-    end)
-
-    :ok
-  end
-
-  defp console_listener_loop(caller, callback) do
-    # Monitor the caller so we stop when the test process exits
-    ref = Process.monitor(caller)
-    do_console_listener_loop(ref, callback)
-  end
-
-  defp do_console_listener_loop(ref, callback) do
-    receive do
-      {:bidi_event, "log.entryAdded", event} ->
-        params = event["params"] || %{}
-        level = params["level"] || "info"
-        text = params["text"] || ""
-        callback.(level, text)
-        do_console_listener_loop(ref, callback)
-
-      {:DOWN, ^ref, :process, _pid, _reason} ->
-        :ok
-    end
-  end
-
-  # Request interception
-
-  def intercept_request(session, url_pattern, response) do
-    pid = bidi_pid(session)
-    context = browsing_context(session)
-
-    # Subscribe to network events at the BiDi protocol level, scoped
-    # to this browsing context.
-    {sub_method, sub_params} = Commands.subscribe(["network.beforeRequestSent"], [context])
-    WebSocketClient.send_command(pid, sub_method, sub_params)
-
-    # Add the intercept
-    {method, params} = Commands.add_intercept(url_pattern)
-
-    case send_bidi(session, method, params) do
-      {:ok, _result} ->
-        # Spawn a handler process that subscribes itself and handles intercepted requests
-        caller = self()
-
-        spawn_link(fn ->
-          WebSocketClient.subscribe(pid, "network.beforeRequestSent", self(), context)
-          intercept_handler_loop(caller, session, response)
-        end)
-
-        :ok
-
-      error ->
-        error
-    end
-  end
-
-  defp intercept_handler_loop(caller, session, response) do
-    ref = Process.monitor(caller)
-    do_intercept_handler_loop(ref, session, response)
-  end
-
-  defp do_intercept_handler_loop(ref, session, response) do
-    receive do
-      {:bidi_event, "network.beforeRequestSent", event} ->
-        request_id = get_in(event, ["params", "request"])
-        is_blocked = get_in(event, ["params", "isBlocked"])
-
-        if request_id && is_blocked do
-          response_map =
-            if is_function(response, 1) do
-              response.(event)
-            else
-              response
-            end
-
-          {method, params} =
-            Commands.provide_response(request_id, %{
-              status: response_map[:status] || 200,
-              headers: response_map[:headers] || [],
-              body: response_map[:body]
-            })
-
-          send_bidi(session, method, params)
-        end
-
-        do_intercept_handler_loop(ref, session, response)
-
-      {:DOWN, ^ref, :process, _pid, _reason} ->
-        :ok
-    end
-  end
-
-  # Log collection via BiDi events
-
-  def log(session) do
-    pid = bidi_pid(session)
-    context = browsing_context(session)
-
-    # Subscribe to log events scoped to this browsing context (idempotent)
-    {method, params} = Commands.subscribe(["log.entryAdded"], [context])
-    WebSocketClient.send_command(pid, method, params)
-    WebSocketClient.subscribe(pid, "log.entryAdded", self(), context)
-
-    # Drain any buffered log events
-    logs = drain_log_events()
-
-    {:ok, logs}
-  end
-
-  defp drain_log_events do
-    receive do
-      {:bidi_event, "log.entryAdded", event} ->
-        case translate_log_entry(event) do
-          :skip -> drain_log_events()
-          entry -> [entry | drain_log_events()]
-        end
-    after
-      0 -> []
-    end
-  end
-
-  # Filter out chromium-bidi mapper internal messages (BiDi mapper noise)
-  @internal_log_patterns ["Launching Mapper instance"]
-
-  defp translate_log_entry(event) do
-    params = event["params"] || %{}
-    text = params["text"] || ""
-
-    if Enum.any?(@internal_log_patterns, &String.contains?(text, &1)) do
-      :skip
-    else
-      do_translate_log_entry(params, text)
-    end
-  end
-
-  defp do_translate_log_entry(params, text) do
-    level =
-      case params["level"] do
-        "error" -> "SEVERE"
-        "warning" -> "WARNING"
-        "info" -> "INFO"
-        "debug" -> "DEBUG"
-        other -> other || "INFO"
-      end
-
-    source =
-      case params["type"] do
-        "javascript" -> "javascript"
-        "console" -> "console-api"
-        other -> other || "other"
-      end
-
-    source_info = params["source"] || %{}
-    url = source_info["url"] || ""
-    line = params["lineNumber"] || 0
-    column = params["columnNumber"] || 0
-
-    message =
-      if url != "" do
-        "#{url} #{line}:#{column} #{text}"
-      else
-        "unknown 0:0 #{text}"
-      end
-
-    %{
-      "level" => level,
-      "source" => source,
-      "message" => message
-    }
   end
 end

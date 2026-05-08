@@ -23,11 +23,11 @@ defmodule Wallabidi.Browser.SettleTest do
     end
   end
 
-  describe "intercept_request/3 with non-BiDi session" do
-    test "raises RuntimeError" do
+  describe "intercept_request/3" do
+    test "raises RuntimeError (V1 BiDi feature retired, V2 not yet ported)" do
       session = %Session{id: "test", bidi_pid: nil}
 
-      assert_raise RuntimeError, ~r/BiDi-capable session/, fn ->
+      assert_raise RuntimeError, ~r/not currently supported/, fn ->
         Browser.intercept_request(session, "/api/*", %{status: 200, body: "ok"})
       end
     end

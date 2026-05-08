@@ -17,7 +17,7 @@ defmodule Wallabidi.Transport.PerSession do
   # handles everything for that session.
 
   alias Wallabidi.Session
-  alias Wallabidi.V2CDPClient, as: CDPClient
+  alias Wallabidi.CDPClient
   alias Wallabidi.Transport.PerSession.Actor
 
   @doc """

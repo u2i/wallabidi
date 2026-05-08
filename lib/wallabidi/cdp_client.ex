@@ -1,769 +1,365 @@
 defmodule Wallabidi.CDPClient do
   @moduledoc false
 
-  alias Wallabidi.BiDi.WebSocketClient
-  alias Wallabidi.CDP.{Commands, ResponseParser}
-  alias Wallabidi.{Element, Session}
+  # Thin façade over `Wallabidi.Transport.Session` providing CDP-shaped
+  # operations (`Page.navigate`, `Runtime.evaluate`, etc.). Exists so
+  # callers (drivers, tests) can write `V2.CDPClient.evaluate(s, ...)`
+  # without knowing about the Session GenServer or wire-id correlation.
+  #
+  # Each function:
+  #   1. Constructs the CDP method + params
+  #   2. Calls `V2.Session.cdp_send/4`
+  #   3. Returns `{:ok, result_map}` or `{:error, reason}`
+  #
+  # No retries, no waiters, no protocol-aware semantics — those are
+  # the Session's job. This module is just the shape adapter.
+  #
+  # Operations are added one at a time, each with an integration test
+  # against a live Lightpanda server. See test/wallabidi/v2/.
 
-  # XPath polyfill for browsers without native XPath support (e.g. Lightpanda)
-  # JS function to extract visible text, simulating innerText behavior
-  # for browsers without a rendering engine (e.g. Lightpanda)
-  @extract_text_js """
-  function() {
-    var blocks = ['DIV','P','H1','H2','H3','H4','H5','H6','LI','TR','BR',
-                  'SECTION','ARTICLE','HEADER','FOOTER','NAV','MAIN','UL','OL','DL',
-                  'BLOCKQUOTE','PRE','TABLE','THEAD','TBODY','TFOOT','FORM','FIELDSET','HR'];
-    function walk(node) {
-      if (node.nodeType === 3) return node.nodeValue.replace(/\\s+/g, ' ');
-      if (node.nodeType !== 1) return '';
-      if (node.tagName === 'BR') return '\\n';
-      var parts = [];
-      for (var i = 0; i < node.childNodes.length; i++) {
-        parts.push(walk(node.childNodes[i]));
-      }
-      var text = parts.join('');
-      if (blocks.indexOf(node.tagName) >= 0) text = '\\n' + text + '\\n';
-      return text;
-    }
-    var result = walk(this);
-    return result.split('\\n').map(function(l) { return l.trim(); }).filter(Boolean).join('\\n');
-  }
+  alias Wallabidi.{Bootstrap, Element, Session}
+  alias Wallabidi.CDP.{Commands, Ops, ResponseParser}
+  alias Wallabidi.Transport.Protocol
+  alias Wallabidi.WebSocket
+
+  # Pulls in shared op bodies (text/2, attribute/3, displayed/2,
+  # click/2, set_value_dom/3, clear/2, send_keys_text/3, page-info
+  # ops). They call this module's call_on_element/4 + evaluate/2,3
+  # for the wire layer.
+  use Wallabidi.OpsShared
+
+  @doc """
+  Returns the CDP send opts (`:flat_session_id` + `:session_id`) for
+  a given Session. Used internally by every CDP call.
   """
-
-  @xpath_polyfill_path Path.join(:code.priv_dir(:wallabidi), "cdp/wgxpath.install.js")
-  @external_resource @xpath_polyfill_path
-  @xpath_polyfill if File.exists?(@xpath_polyfill_path),
-                    do: File.read!(@xpath_polyfill_path) <> "\nwgxpath.install(window);",
-                    else: ""
-
-  # --- Connection ---
-
-  def connect(ws_url) do
-    # Detach from test process so the WebSocket survives into on_exit cleanup.
-    case WebSocketClient.start_link(ws_url) do
-      {:ok, pid} = result ->
-        Wallabidi.Driver.SessionLifecycle.detach(pid)
-        result
-
-      error ->
-        error
-    end
-  end
-
-  # --- Session bootstrap ---
-
-  def create_session(pid, opts \\ []) do
-    flat = Keyword.get(opts, :flat_session_id, false)
-    browser_context_id = Keyword.get(opts, :browser_context_id)
-
-    create_target_opts =
-      if browser_context_id,
-        do: [browser_context_id: browser_context_id],
-        else: []
-
-    with {:ok, %{"targetId" => target_id}} <-
-           send_cdp(pid, Commands.create_target("", create_target_opts)),
-         {:ok, %{"sessionId" => session_id}} <-
-           send_cdp(pid, Commands.attach_to_target(target_id)) do
-      # Fire-and-forget: enables don't need ack. Chrome processes them in
-      # order on the session, so by the time the first real command (e.g.
-      # Page.navigate) gets a response, all enables have been processed.
-      cast_cdp_with_session(pid, session_id, Commands.enable_page(), flat_session_id: flat)
-      cast_cdp_with_session(pid, session_id, Commands.enable_runtime(), flat_session_id: flat)
-      cast_cdp_with_session(pid, session_id, Commands.enable_dom(), flat_session_id: flat)
-
-      cast_cdp_with_session(pid, session_id, Commands.set_lifecycle_events_enabled(true),
-        flat_session_id: flat
-      )
-
-      # Push-based element finding: install a binding + bootstrap script.
-      # These MUST complete before any find/click operation — use sync
-      # send_command (not fire-and-forget cast) to guarantee ordering.
-      # On slow CI machines, fire-and-forget allows the first visit to
-      # race ahead of the bootstrap installation.
-      WebSocketClient.send_command_flat(
-        pid,
-        "Runtime.addBinding",
-        %{name: "__wallabidi"},
-        session_id
-      )
-
-      WebSocketClient.send_command_flat(
-        pid,
-        "Page.addScriptToEvaluateOnNewDocument",
-        %{source: Wallabidi.Bootstrap.cdp_iife()},
-        session_id
-      )
-
-      {:ok, %{target_id: target_id, session_id: session_id}}
-    end
-  end
-
-  @doc "Create an isolated browser context (like incognito)."
-  def create_browser_context(pid) do
-    send_cdp(pid, Commands.create_browser_context())
-  end
-
-  @doc "Dispose of a browser context and all its targets."
-  def dispose_browser_context(pid, browser_context_id) do
-    send_cdp(pid, Commands.dispose_browser_context(browser_context_id))
-  end
-
-  def close_session(session) do
-    pid = bidi_pid(session)
-    target_id = get_in(session.capabilities, [:target_id]) || session.id
-
-    # If we have a browser context, disposing it closes the target too
-    if browser_context_id = get_in(session.capabilities, [:browser_context_id]) do
-      send_cdp(pid, Commands.dispose_browser_context(browser_context_id))
+  @spec send_opts(Session.t()) :: keyword
+  def send_opts(%Session{} = session) do
+    if session.capabilities[:flat_session_id] do
+      [flat_session_id: true, session_id: session.browsing_context]
     else
-      send_cdp(pid, Commands.close_target(target_id))
+      [session_id: session.browsing_context]
     end
+  end
 
+  @doc false
+  # Helper: send a raw CDP method+params via V2.Session and return
+  # the unwrapped CDP result.
+  def cdp_send(%Session{} = session, method, params) do
+    Protocol.cdp_send(session, method, params, send_opts(session))
+  end
+
+  @doc false
+  # Fire-and-forget CDP send. The response is dropped. CDP serializes
+  # per-session, so any subsequent `cdp_send/3` still observes the
+  # effects of the cast call.
+  def cdp_cast(%Session{} = session, method, params) do
+    Protocol.cdp_cast(session, method, params, send_opts(session))
+  end
+
+  # ----- Page domain enables -----
+
+  @doc """
+  Enables CDP's Page domain for the session and subscribes to
+  `Page.lifecycleEvent`. After this returns, V2.Session is set up
+  to resolve `await_page_load/4` calls when matching events arrive.
+
+  Idempotent — safe to call more than once.
+  """
+  @spec enable_page_lifecycle_events(Session.t()) :: :ok | {:error, term}
+  def enable_page_lifecycle_events(%Session{} = session) do
+    # Subscribe BEFORE the enables so we don't miss the first
+    # lifecycle event on the next visit. The enables themselves are
+    # fire-and-forget — CDP applies commands in order per session,
+    # so subsequent blocking sends still see their effects.
+    :ok = Protocol.subscribe(session, "Page.lifecycleEvent")
+    cdp_cast(session, "Page.enable", %{})
+    cdp_cast(session, "Page.setLifecycleEventsEnabled", %{enabled: true})
     :ok
   end
 
-  # --- Navigation ---
+  @doc """
+  Installs the wallabidi browser-side bootstrap (`window.__w`):
 
-  def visit(session, url) do
-    {method, params} = Commands.navigate(url)
+    1. `Runtime.enable` — required for `Runtime.addBinding`.
+    2. `Runtime.addBinding(name: "__wallabidi")` — exposes a binding
+       that, when called from JS, fires a `Runtime.bindingCalled` event
+       up the WebSocket. Subscribes the Session to that event.
+    3. `Page.addScriptToEvaluateOnNewDocument(source: Bootstrap.cdp_iife())` —
+       runs the bootstrap IIFE in every new document. Defines
+       `window.__w` (opcode interpreter, find machinery, LV patch hook).
 
-    case send_cdp_session(session, method, params) do
-      {:ok, %{"loaderId" => loader_id} = result} ->
-        with :ok <- ResponseParser.check_navigate({:ok, result}),
-             :ok <- Wallabidi.SessionProcess.await_page_load(session, loader_id, "load") do
-          # Only inject the xpath polyfill on browsers that lack native
-          # document.evaluate support. Chrome has it natively; Lightpanda
-          # (flagged via :needs_xpath_polyfill) doesn't.
-          if session.capabilities[:needs_xpath_polyfill] do
-            inject_xpath_polyfill(session)
-          end
+  After this, push-based element finding works: the V2 find path
+  registers a query in `window.__w.queries`, calls `W.check()`, and
+  awaits a `Runtime.bindingCalled` event matching its query id.
 
-          :ok
-        end
+  Idempotent — calling twice re-registers the binding (harmless) and
+  re-installs the preload (deduped JS-side via `if (window.__w) return`).
+  """
+  @spec install_bootstrap(Session.t()) :: :ok | {:error, term}
+  def install_bootstrap(%Session{} = session) do
+    # Subscribe + Runtime.enable can be cast (CDP applies in order).
+    # Runtime.addBinding and Page.addScriptToEvaluateOnNewDocument
+    # MUST complete before any find runs — those stay blocking.
+    :ok = Protocol.subscribe(session, "Runtime.bindingCalled")
+    cdp_cast(session, "Runtime.enable", %{})
 
-      {:ok, %{} = result} ->
-        # Page.navigate without a loaderId — same-document navigations and
-        # some cached redirects. There's no new load cycle to wait for.
-        case ResponseParser.check_navigate({:ok, result}) do
-          :ok ->
-            if session.capabilities[:needs_xpath_polyfill] do
-              inject_xpath_polyfill(session)
-            end
+    with {:ok, _} <- cdp_send(session, "Runtime.addBinding", %{name: "__wallabidi"}),
+         {:ok, _} <-
+           cdp_send(session, "Page.addScriptToEvaluateOnNewDocument", %{
+             source: Wallabidi.Bootstrap.cdp_iife()
+           }) do
+      :ok
+    end
+  end
 
-            :ok
+  # ----- Page.navigate -----
 
-          error ->
-            error
-        end
+  @doc """
+  Navigates the session's target to `url`. Returns
+  `{:ok, %{loader_id: ..., frame_id: ...}}` on a successful nav.
+
+  Note: this is a blocking *send* — it returns once Chrome has
+  acknowledged the navigation request, NOT once the page has finished
+  loading. To wait for `loadEventFired`, layer
+  `await_page_load/2` (TBA) on top.
+
+  Errors:
+    * `{:error, {:navigate_failed, reason}}` for protocol-level errors
+      surfaced via the `errorText` field
+    * `{:error, term}` for transport/timeouts
+  """
+  @spec navigate(Session.t(), String.t()) ::
+          {:ok, %{loader_id: String.t() | nil, frame_id: String.t() | nil}}
+          | {:error, term}
+  def navigate(%Session{} = session, url) when is_binary(url) do
+    case cdp_send(session, "Page.navigate", %{url: url}) do
+      {:ok, %{"errorText" => msg}} when is_binary(msg) and msg != "" ->
+        {:error, {:navigate_failed, msg}}
+
+      {:ok, result} when is_map(result) ->
+        {:ok, %{loader_id: result["loaderId"], frame_id: result["frameId"]}}
 
       error ->
         error
     end
   end
 
-  defp inject_xpath_polyfill(session) do
-    {method, params} = Commands.evaluate(@xpath_polyfill, return_by_value: true)
-    send_cdp_session(session, method, params)
-    :ok
-  end
+  # ----- Element-scoped operations -----
 
-  def current_url(session) do
-    evaluate_value(session, "window.location.href")
-  end
+  @doc """
+  Runs a JS function against the given element's `objectId` (`this`),
+  optionally with positional args. Returns the serialised value.
 
-  # --- Element finding ---
+  Equivalent to `Runtime.callFunctionOn` with `returnByValue: true`.
 
-  # Element-scoped queries — find within a parent element
-  def find_elements(%Element{bidi_shared_id: parent_id} = parent, {:css, selector})
-      when not is_nil(parent_id) do
-    find_elements_on(
-      parent,
-      parent_id,
-      "function(s) { return Array.from(this.querySelectorAll(':scope ' + s)); }",
-      [selector]
-    )
-  end
+  Used as a building block for element-scoped operations (text,
+  attribute, displayed, etc.).
+  """
+  @spec call_on_element(Session.t(), Element.t(), String.t(), [term]) ::
+          {:ok, term} | {:error, term}
+  def call_on_element(
+        %Session{} = session,
+        %Element{bidi_shared_id: object_id},
+        fn_decl,
+        args \\ []
+      )
+      when is_binary(object_id) and is_binary(fn_decl) and is_list(args) do
+    encoded_args = Enum.map(args, &%{value: &1})
 
-  def find_elements(%Element{bidi_shared_id: parent_id} = parent, {:xpath, xpath})
-      when not is_nil(parent_id) do
-    find_elements_on(
-      parent,
-      parent_id,
-      """
-      function(expr) {
-        const result = document.evaluate(expr, this, null,
-          XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-        const nodes = [];
-        for (let i = 0; i < result.snapshotLength; i++) nodes.push(result.snapshotItem(i));
-        return nodes;
-      }
-      """,
-      [xpath]
-    )
-  end
+    case cdp_send(session, "Runtime.callFunctionOn", %{
+           objectId: object_id,
+           functionDeclaration: fn_decl,
+           arguments: encoded_args,
+           returnByValue: true
+         }) do
+      {:ok, %{"result" => %{"value" => %{"__wallabidi_stale" => true}}}} ->
+        # JS opted into the stale sentinel by returning a flag map
+        # — translate to :stale_reference so callers don't all repeat
+        # the same pattern. Mirrors V2.BiDiClient.call_on_element.
+        {:error, :stale_reference}
 
-  # Document-level queries — find from root (Session or Element without object ID)
-  def find_elements(parent, {:css, selector}) do
-    find_elements_js(parent, """
-    Array.from(document.querySelectorAll(#{Jason.encode!(selector)}))
-    """)
-  end
+      {:ok, %{"result" => %{"value" => value}}} ->
+        {:ok, value}
 
-  def find_elements(parent, {:xpath, xpath}) do
-    find_elements_js(parent, """
-    (() => {
-      const result = document.evaluate(#{Jason.encode!(xpath)}, document, null,
-        XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-      const nodes = [];
-      for (let i = 0; i < result.snapshotLength; i++) nodes.push(result.snapshotItem(i));
-      return nodes;
-    })()
-    """)
-  end
+      {:ok, %{"result" => %{"type" => "undefined"}}} ->
+        {:ok, nil}
 
-  defp find_elements_js(parent, js) do
-    session = root_session(parent)
-    # Wrap the JS to return elements as an array, then use getProperties
-    # to extract individual objectIds. TODO: collapse into single RPC.
-    {method, params} = Commands.evaluate(js, return_by_value: false)
+      {:ok, %{"exceptionDetails" => details}} ->
+        {:error, {:js_exception, details}}
 
-    with {:ok, result} <- send_cdp_session(session, method, params),
-         {:ok, array_id} <- ResponseParser.extract_object_id({:ok, result}),
-         {:ok, result} <- send_cdp_raw(session, Commands.get_properties(array_id)),
-         {:ok, ids} <- ResponseParser.extract_element_ids({:ok, result}) do
-      if array_id, do: cast_release(session, array_id)
+      {:ok, _} = ok ->
+        ok
 
-      elements =
-        Enum.map(ids, fn object_id ->
-          %Element{
-            id: object_id,
-            bidi_shared_id: object_id,
-            parent: parent,
-            driver: session.driver,
-            url: session.session_url
-          }
-        end)
+      {:error, {_code, msg}} = err when is_binary(msg) ->
+        # CDP signals a stale objectId via these messages. Translating
+        # to :stale_reference lets Element.handle_*_result raise the
+        # expected StaleReferenceError instead of a generic Runtime.
+        if stale_marker?(msg), do: {:error, :stale_reference}, else: err
 
-      {:ok, elements}
+      error ->
+        error
     end
   end
 
-  defp find_elements_on(parent, parent_id, function, args) do
-    session = root_session(parent)
-    {method, params} = Commands.call_function_on(parent_id, function, args)
+  defp stale_marker?(msg) when is_binary(msg) do
+    String.contains?(msg, "Cannot find context") or
+      String.contains?(msg, "No node with given id") or
+      String.contains?(msg, "Could not find object with given id") or
+      String.contains?(msg, "Object has been released")
+  end
 
-    with {:ok, result} <- send_cdp_session(session, method, params),
-         {:ok, array_id} <- ResponseParser.extract_object_id({:ok, result}),
-         {:ok, result} <- send_cdp_raw(session, Commands.get_properties(array_id)),
-         {:ok, ids} <- ResponseParser.extract_element_ids({:ok, result}) do
-      if array_id, do: cast_release(session, array_id)
+  # text/2, attribute/3, displayed/2 — provided by Wallabidi.OpsShared.
 
-      elements =
-        Enum.map(ids, fn object_id ->
-          %Element{
-            id: object_id,
-            bidi_shared_id: object_id,
-            parent: parent,
-            driver: session.driver,
-            url: session.session_url
+  @doc """
+  Sets the value of an input element and dispatches `input` and
+  `change` events. Suitable for `<input>`, `<textarea>`, and
+  `<select>`. For `<select>`, sets `.value` and synthesises change.
+
+  Mirrors today's CDPClient.set_value/2 (event-dispatching) shape —
+  unlike clear/2 which has a `silent` mode that skips events.
+  """
+  @spec set_value(Session.t(), Element.t(), term) :: {:ok, nil} | {:error, term}
+  def set_value(%Session{} = session, %Element{} = element, value) do
+    # File inputs reject `.value = x` for security reasons. The only
+    # programmatic way to populate them is CDP's DOM.setFileInputFiles.
+    case file_input?(session, element) do
+      {:ok, true} ->
+        set_file_input(session, element, value)
+
+      _ ->
+        set_value_dom(session, element, value)
+    end
+  end
+
+  defp file_input?(%Session{} = session, %Element{} = element) do
+    call_on_element(
+      session,
+      element,
+      "function() { return this.tagName === 'INPUT' && (this.type || '').toLowerCase() === 'file'; }"
+    )
+  end
+
+  defp set_file_input(%Session{} = session, %Element{bidi_shared_id: object_id} = element, value) do
+    raw_paths =
+      case value do
+        list when is_list(list) -> list
+        v when is_binary(v) and v != "" -> [v]
+        _ -> []
+      end
+
+    # Filter out non-existent paths so a missing file is a no-op,
+    # matching legacy behavior. Tests rely on `Wallabidi.Element.value`
+    # being empty when the file doesn't exist on disk.
+    paths = Enum.filter(raw_paths, &File.exists?/1)
+
+    with {:ok, %{"node" => %{"backendNodeId" => bid}}} <-
+           cdp_send(session, "DOM.describeNode", %{objectId: object_id}),
+         {:ok, _} <-
+           cdp_send(session, "DOM.setFileInputFiles", %{
+             files: paths,
+             backendNodeId: bid
+           }) do
+      _ =
+        call_on_element(
+          session,
+          element,
+          """
+          function() {
+            this.dispatchEvent(new Event('input', {bubbles: true}));
+            this.dispatchEvent(new Event('change', {bubbles: true}));
+            return null;
           }
-        end)
+          """
+        )
 
-      {:ok, elements}
+      {:ok, nil}
+    else
+      # Lightpanda doesn't implement DOM.setFileInputFiles. Fall back
+      # to the DataTransfer trick — fabricate a File and assign it
+      # via el.files. The browser exposes .value as
+      # 'C:\\fakepath\\<basename>' which is what Wallabidi tests
+      # check for. File contents aren't read.
+      {:error, {-31998, "UnknownMethod"}} ->
+        set_file_input_via_data_transfer(session, element, paths)
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  defp set_file_input_via_data_transfer(_session, _element, []) do
+    # No valid paths — WebDriver contract is to no-op.
+    {:ok, nil}
+  end
+
+  defp set_file_input_via_data_transfer(session, element, [path | _]) do
+    case call_on_element(
+           session,
+           element,
+           """
+           function(p) {
+             var dt = new DataTransfer();
+             var name = p.split('/').pop() || p.split('\\\\').pop();
+             var f = new File([''], name, {type: 'application/octet-stream'});
+             dt.items.add(f);
+             this.files = dt.files;
+             this.dispatchEvent(new Event('change', {bubbles: true}));
+             return null;
+           }
+           """,
+           [path]
+         ) do
+      {:ok, _} -> {:ok, nil}
+      err -> err
+    end
+  end
+
+  # set_value_dom/3 (the DOM-based path) is provided by
+  # Wallabidi.OpsShared. set_value/3 above dispatches between
+  # file-input handling (CDP-specific via DOM.setFileInputFiles)
+  # and the shared DOM path.
+
+  @doc """
+  # clear/3 — provided by Wallabidi.OpsShared.
+
+  @doc """
+  Sends keys to the element. `keys` is a list of string segments
+  or special-key atoms (`:enter`, `:tab`, ...). For pure-text
+  input we use the shared fast path (no CDP key events — keeps
+  Lightpanda working). For mixed input we focus the element and
+  dispatch real key events via `Input.dispatchKeyEvent`.
+  """
+  @spec send_keys(Session.t(), Element.t(), [String.t()] | String.t()) ::
+          {:ok, nil} | {:error, term}
+  def send_keys(%Session{} = session, %Element{} = element, keys) when is_binary(keys) do
+    send_keys(session, element, [keys])
+  end
+
+  def send_keys(%Session{} = session, %Element{} = element, keys) when is_list(keys) do
+    if Enum.all?(keys, &is_binary/1) do
+      send_keys_text(session, element, Enum.join(keys, ""))
+    else
+      # Mixed string + atom — focus the element and dispatch real key
+      # events so :tab, :enter etc. fire. Requires a CDP browser that
+      # implements Input.dispatchKeyEvent (Chrome does; Lightpanda doesn't).
+      _ =
+        cdp_send(session, "Runtime.callFunctionOn", %{
+          objectId: element.bidi_shared_id,
+          functionDeclaration: "function() { this.focus(); }",
+          returnByValue: true
+        })
+
+      send_keys_to_session(session, keys)
     end
   end
 
   @doc """
-  Execute a Pipeline — compiles to JS, runs via evaluate or callFunctionOn,
-  extracts element objectIds via getProperties. 2 RPCs total.
-
-  If the pipeline includes a `classify` step, the classification string
-  is extracted from the array's `__classify` property and returned as
-  `{:ok, elements, classification}`. Otherwise returns `{:ok, elements}`.
+  Send keys to whatever element currently has focus on the page.
+  Atoms like `:tab`, `:enter` map to real key events via
+  `Input.dispatchKeyEvent`.
   """
-  def find_elements_pipeline(parent, %Wallabidi.CDP.Pipeline{} = pipeline) do
-    {js, _parent_id, mode} = Wallabidi.CDP.Pipeline.to_js(pipeline)
-    session = root_session(parent)
-
-    case mode do
-      :click_full ->
-        # Combined classify + prepare_patch + click. Returns
-        # {count, classification, prepared} by value. 1 RPC total.
-        # await_promise: true so the click op can wait for LiveView
-        # to finish joining before dispatching the synthetic click —
-        # without this the click can race the LV handler binding.
-        result = eval_by_value(session, pipeline, js, await_promise: true)
-
-        with {:ok, raw} <- result,
-             {:ok, value} <- ResponseParser.extract_value({:ok, raw}) do
-          count = if is_map(value), do: value["count"] || 0, else: 0
-          classification = if is_map(value), do: value["classification"] || "none", else: "none"
-          prepared = if is_map(value), do: value["prepared"] || false, else: false
-          pre_ref = if is_map(value), do: value["preRef"], else: nil
-          elements = List.duplicate(%Element{parent: parent, driver: session.driver}, count)
-          {:ok, elements, classification, prepared, pre_ref}
-        end
-
-      :count ->
-        # Click pipeline: returns {count: N} by value (1 RPC, no getProperties).
-        result = eval_by_value(session, pipeline, js)
-
-        with {:ok, raw} <- result,
-             {:ok, value} <- ResponseParser.extract_value({:ok, raw}) do
-          count = if is_map(value), do: value["count"] || 0, else: 0
-          elements = List.duplicate(%Element{parent: parent, driver: session.driver}, count)
-          {:ok, elements}
-        end
-
-      :await ->
-        # Async await+find pipeline: returns a Promise that resolves with
-        # the element array once MutationObserver sees them. Uses
-        # awaitPromise so the RPC blocks until resolved. 1 eval + 1 getProperties.
-        result =
-          if pipeline.parent_id do
-            send_cdp_session(session, "Runtime.callFunctionOn", %{
-              objectId: pipeline.parent_id,
-              functionDeclaration: js,
-              returnByValue: false,
-              awaitPromise: true
-            })
-          else
-            send_cdp_session(session, "Runtime.evaluate", %{
-              expression: js,
-              returnByValue: false,
-              awaitPromise: true
-            })
-          end
-
-        with {:ok, eval_result} <- ResponseParser.check_error(result),
-             {:ok, array_id} <- ResponseParser.extract_object_id({:ok, eval_result}),
-             {:ok, props_result} <- send_cdp_raw(session, Commands.get_properties(array_id)) do
-          if array_id, do: cast_release(session, array_id)
-
-          with {:ok, ids} <- ResponseParser.extract_element_ids({:ok, props_result}) do
-            elements =
-              Enum.map(ids, fn object_id ->
-                %Element{
-                  id: object_id,
-                  bidi_shared_id: object_id,
-                  parent: parent,
-                  driver: session.driver,
-                  url: session.session_url
-                }
-              end)
-
-            {:ok, elements}
-          end
-        end
-
-      :elements ->
-        # Find pipeline: returns array of live node refs (2 RPCs).
-        has_classify = Enum.any?(pipeline.ops, &match?({:classify, _}, &1))
-
-        result =
-          if pipeline.parent_id do
-            {method, params} = Commands.call_function_on(pipeline.parent_id, js, [])
-
-            with {:ok, result} <- send_cdp_session(session, method, params),
-                 {:ok, array_id} <- ResponseParser.extract_object_id({:ok, result}),
-                 {:ok, result} <- send_cdp_raw(session, Commands.get_properties(array_id)) do
-              if array_id, do: cast_release(session, array_id)
-              {:ok, result}
-            end
-          else
-            {method, params} = Commands.evaluate(js, return_by_value: false)
-
-            with {:ok, result} <- send_cdp_session(session, method, params),
-                 {:ok, array_id} <- ResponseParser.extract_object_id({:ok, result}),
-                 {:ok, result} <- send_cdp_raw(session, Commands.get_properties(array_id)) do
-              if array_id, do: cast_release(session, array_id)
-              {:ok, result}
-            end
-          end
-
-        with {:ok, props_result} <- result,
-             {:ok, ids} <- ResponseParser.extract_element_ids({:ok, props_result}) do
-          elements =
-            Enum.map(ids, fn object_id ->
-              %Element{
-                id: object_id,
-                bidi_shared_id: object_id,
-                parent: parent,
-                driver: session.driver,
-                url: session.session_url
-              }
-            end)
-
-          if has_classify do
-            classification = extract_classify(props_result)
-            {:ok, elements, classification}
-          else
-            {:ok, elements}
-          end
-        end
-    end
-  end
-
-  defp eval_by_value(session, pipeline, js, opts \\ []) do
-    await_promise = Keyword.get(opts, :await_promise, false)
-
-    if pipeline.parent_id do
-      {method, params} =
-        Commands.call_function_on_value(pipeline.parent_id, js, [], await_promise: await_promise)
-
-      send_cdp_session(session, method, params)
-    else
-      {method, params} =
-        Commands.evaluate(js, return_by_value: true, await_promise: await_promise)
-
-      send_cdp_session(session, method, params)
-    end
-  end
-
-  defp extract_classify(%{"result" => properties}) when is_list(properties) do
-    case Enum.find(properties, &(&1["name"] == "__classify")) do
-      %{"value" => %{"value" => val}} when is_binary(val) -> val
-      _ -> "none"
-    end
-  end
-
-  defp extract_classify(_), do: "none"
-
-  # --- Element interaction ---
-
-  def click(%Element{bidi_shared_id: object_id} = element) when not is_nil(object_id) do
-    session = root_session(element)
-
-    {method, params} =
-      Commands.call_function_on_value(object_id, """
-      function() {
-        // Scroll into view before clicking — mirrors WebDriver behavior.
-        // Without this, clicks on off-screen elements silently miss.
-        if (this.tagName !== 'OPTION') {
-          this.scrollIntoView({block: 'center', inline: 'nearest'});
-        }
-        if (this.tagName === 'OPTION') {
-          var select = this.closest('select');
-          if (select && !select.multiple) {
-            select.value = this.value;
-            Array.from(select.options).forEach(function(o) { o.selected = (o === this); }.bind(this));
-          } else {
-            this.selected = !this.selected;
-          }
-          if (select) select.dispatchEvent(new Event('change', { bubbles: true }));
-          return;
-        }
-        // Handle form reset buttons — polyfill form.reset() for Lightpanda
-        var form = this.closest('form');
-        if (form && (this.type === 'reset' || (this.tagName === 'BUTTON' && this.type === 'reset'))) {
-          Array.from(form.elements).forEach(function(el) {
-            if (el.type === 'checkbox' || el.type === 'radio') {
-              el.checked = el.defaultChecked;
-            } else if (el.tagName === 'SELECT') {
-              Array.from(el.options).forEach(function(o) { o.selected = o.defaultSelected; });
-            } else if ('defaultValue' in el) {
-              el.value = el.defaultValue;
-            }
-          });
-          form.dispatchEvent(new Event('reset', { bubbles: true }));
-          return;
-        }
-        // Handle form submit — only explicit submit/image inputs
-        if (form && this.tagName === 'INPUT' &&
-            (this.type === 'submit' || this.type === 'image')) {
-          this.focus();
-          this.click();
-          return;
-        }
-        this.focus();
-        this.click();
-      }
-      """)
-
-    case send_cdp_session(session, method, params) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
-    end
-  end
-
-  def text(%Element{bidi_shared_id: object_id} = element) when not is_nil(object_id) do
-    session = root_session(element)
-
-    # Use innerText if available (Chrome), fall back to a DOM-walking
-    # text extractor that inserts newlines between block elements
-    # (Lightpanda has no innerText since it has no rendering engine)
-    {method, params} =
-      Commands.call_function_on_value(object_id, @extract_text_js)
-
-    case send_cdp_session(session, method, params) do
-      {:ok, result} -> ResponseParser.extract_value({:ok, result})
-      error -> error
-    end
-  end
-
-  def attribute(%Element{bidi_shared_id: object_id} = element, name)
-      when not is_nil(object_id) do
-    session = root_session(element)
-
-    # For "value", read the DOM property (current value) not the HTML attribute
-    # (initial value). Same for "checked" and "selected". Throw for stale refs.
-    {method, params} =
-      Commands.call_function_on_value(
-        object_id,
-        """
-        function(name) {
-          var doc = this.ownerDocument;
-          if (!doc || !doc.body || !doc.body.contains(this)) throw new Error('stale element reference');
-          if (name === 'value' && 'value' in this) return this.value;
-          if (name === 'checked') return this.checked ? 'true' : null;
-          if (name === 'selected') return this.selected ? 'true' : null;
-          if (name === 'outerHTML') return this.outerHTML;
-          if (name === 'innerHTML') return this.innerHTML;
-          return this.getAttribute(name);
-        }
-        """,
-        [name]
-      )
-
-    case send_cdp_session(session, method, params) do
-      {:ok, result} -> ResponseParser.extract_value({:ok, result})
-      error -> error
-    end
-  end
-
-  def displayed(%Element{bidi_shared_id: object_id} = element) when not is_nil(object_id) do
-    session = root_session(element)
-
-    # Visibility check. We deliberately avoid `Element.checkVisibility`
-    # (W3C CSS4) because it returns false negatives under parallel load
-    # in headless Chrome when layout hasn't been computed yet — we saw
-    # hundreds of spurious `displayed: false` verdicts for plain <div>s
-    # that were perfectly visible. Stick to the older, layout-forcing APIs
-    # (`getComputedStyle` + `getBoundingClientRect`) which are stable.
-    #
-    # Wallaby's contract is "visible to the user":
-    # - `isConnected` — still in the document tree
-    # - own `display`/`visibility` — not explicitly hidden
-    # - non-empty rect OR `offsetParent` — actually laid out (catches
-    #   ancestor `display:none`, which is what makes the rect collapse)
-    # - not scrolled off-top/off-left of the viewport
-    {method, params} =
-      Commands.call_function_on_value(object_id, """
-      function() {
-        if (!this.isConnected) return false;
-        // OPTION elements inside a (closed) SELECT have no layout, but
-        // WebDriver considers them visible so they can be clicked. Check
-        // only that an ancestor SELECT isn't hidden.
-        if (this.tagName === 'OPTION') {
-          var select = this.closest('select');
-          if (!select) return true;
-          var ss = window.getComputedStyle(select);
-          return ss.display !== 'none' && ss.visibility !== 'hidden';
-        }
-        var style = window.getComputedStyle(this);
-        if (style.display === 'none') return false;
-        if (style.visibility === 'hidden') return false;
-        var rect = this.getBoundingClientRect();
-        // Truly unrendered (no layout at all — ancestor display:none
-        // collapses everything to 0x0 with no offsetParent).
-        if (rect.width === 0 && rect.height === 0 && this.offsetParent === null && style.position !== 'fixed') {
-          return false;
-        }
-        return true;
-      }
-      """)
-
-    case send_cdp_session(session, method, params) do
-      {:ok, result} ->
-        case ResponseParser.extract_value({:ok, result}) do
-          {:ok, true} -> {:ok, true}
-          {:ok, false} -> {:ok, false}
-          other -> other
-        end
-
-      error ->
-        error
-    end
-  end
-
-  def selected(%Element{bidi_shared_id: object_id} = element) when not is_nil(object_id) do
-    session = root_session(element)
-
-    {method, params} =
-      Commands.call_function_on_value(
-        object_id,
-        "function() { return this.selected || this.checked || false; }"
-      )
-
-    case send_cdp_session(session, method, params) do
-      {:ok, result} -> ResponseParser.extract_value({:ok, result})
-      error -> error
-    end
-  end
-
-  def set_value(%Element{bidi_shared_id: object_id} = element, value)
-      when not is_nil(object_id) do
-    session = root_session(element)
-
-    # File inputs can't be set via JS — use DOM.setFileInputFiles
-    case file_input?(session, object_id) do
-      true ->
-        files =
-          if(is_list(value), do: value, else: [value])
-          |> Enum.filter(&File.exists?/1)
-
-        send_cdp_session(session, "DOM.setFileInputFiles", %{
-          files: files,
-          objectId: object_id
-        })
-
-        {:ok, nil}
-
-      false ->
-        {method, params} =
-          Commands.call_function_on_value(
-            object_id,
-            """
-            function(value) {
-              this.focus();
-              this.value = '';
-              this.value = value;
-              this.dispatchEvent(new Event('input', { bubbles: true }));
-              this.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-            """,
-            [value]
-          )
-
-        case send_cdp_session(session, method, params) do
-          {:ok, _} -> {:ok, nil}
-          error -> error
-        end
-    end
-  end
-
-  defp file_input?(session, object_id) do
-    {method, params} =
-      Commands.call_function_on_value(object_id, "function() { return this.type === 'file'; }")
-
-    case send_cdp_session(session, method, params) do
-      {:ok, %{"result" => %{"value" => true}}} -> true
-      _ -> false
-    end
-  end
-
-  def clear(%Element{bidi_shared_id: object_id} = element) when not is_nil(object_id) do
-    session = root_session(element)
-
-    {method, params} =
-      Commands.call_function_on_value(object_id, """
-      function() {
-        this.focus();
-        this.value = '';
-        this.dispatchEvent(new Event('input', { bubbles: true }));
-        this.dispatchEvent(new Event('change', { bubbles: true }));
-      }
-      """)
-
-    case send_cdp_session(session, method, params) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
-    end
-  end
-
-  # --- Page content ---
-
-  def page_source(session) do
-    evaluate_value(session, "document.documentElement.outerHTML")
-  end
-
-  def page_title(session) do
-    evaluate_value(session, "document.title")
-  end
-
-  # --- JavaScript execution ---
-
-  def execute_script(session, script, args) do
-    session = root_session(session)
-
-    # If args contain element references, use callFunctionOn so we can pass
-    # them as objectId arguments. Otherwise, use evaluate.
-    case encode_script_args(args) do
-      {:no_elements, _} ->
-        wrapped = wrap_script(script, args)
-        evaluate_value(session, wrapped)
-
-      {:ok, cdp_args} ->
-        wrapped = """
-        function() {
-          #{script}
-        }
-        """
-
-        # callFunctionOn needs an objectId — use globalThis
-        {:ok, %{"result" => %{"objectId" => global_id}}} =
-          send_cdp_session(session, "Runtime.evaluate", %{
-            expression: "globalThis",
-            returnByValue: false
-          })
-
-        result =
-          send_cdp_session(session, "Runtime.callFunctionOn", %{
-            objectId: global_id,
-            functionDeclaration: wrapped,
-            arguments: cdp_args,
-            returnByValue: true
-          })
-
-        cast_release(session, global_id)
-
-        case result do
-          {:ok, res} -> ResponseParser.extract_value({:ok, res})
-          error -> error
-        end
-    end
-  end
-
-  def execute_script_async(session, script, args) do
-    wrapped = wrap_async_script(script, args)
-    {method, params} = Commands.evaluate(wrapped, await_promise: true)
-
-    case send_cdp_session(session, method, params) do
-      {:ok, result} -> ResponseParser.extract_value({:ok, result})
-      error -> error
-    end
-  end
-
-  @web_element_identifier "element-6066-11e4-a52e-4f735466cecf"
-
-  defp encode_script_args(args) do
-    has_element? =
-      Enum.any?(args, fn
-        %{@web_element_identifier => _} -> true
-        _ -> false
-      end)
-
-    if has_element? do
-      cdp_args =
-        Enum.map(args, fn
-          %{@web_element_identifier => id} -> %{objectId: id}
-          v when is_binary(v) -> %{value: v}
-          v when is_number(v) -> %{value: v}
-          v when is_boolean(v) -> %{value: v}
-          nil -> %{value: nil}
-          v -> %{value: v}
-        end)
-
-      {:ok, cdp_args}
-    else
-      {:no_elements, args}
-    end
-  end
-
-  # --- Send keys ---
-
-  def send_keys(%Session{} = session, keys) when is_list(keys) do
+  @spec send_keys_to_session(Session.t(), [String.t() | atom]) :: {:ok, nil}
+  def send_keys_to_session(%Session{} = session, keys) when is_list(keys) do
     Enum.each(keys, fn
       key when is_atom(key) ->
         {code, key_val} = key_mapping(key)
@@ -771,284 +367,28 @@ defmodule Wallabidi.CDPClient do
 
       text when is_binary(text) ->
         for char <- String.graphemes(text) do
-          send_cdp_session(session, "Input.dispatchKeyEvent", %{type: "keyDown", text: char})
-          send_cdp_session(session, "Input.dispatchKeyEvent", %{type: "keyUp", text: char})
+          cdp_send(session, "Input.dispatchKeyEvent", %{type: "keyDown", text: char})
+          cdp_send(session, "Input.dispatchKeyEvent", %{type: "keyUp", text: char})
         end
     end)
 
     {:ok, nil}
   end
 
-  def send_keys(%Element{bidi_shared_id: object_id} = element, keys)
-      when not is_nil(object_id) and is_list(keys) do
-    session = root_session(element)
-
-    # Chrome CDP: focus element then dispatch real key events (supports :tab, :enter, etc.)
-    # Lightpanda: Input.dispatchKeyEvent is broken, fall back to JS value setting.
-    if session.capabilities[:flat_session_id] do
-      {method, params} =
-        Commands.call_function_on_value(object_id, "function() { this.focus(); }")
-
-      send_cdp_session(session, method, params)
-      send_keys(session, keys)
-    else
-      text = keys |> Enum.filter(&is_binary/1) |> Enum.join()
-
-      {method, params} =
-        Commands.call_function_on_value(
-          object_id,
-          """
-          function(text) {
-            this.focus();
-            this.value = (this.value || '') + text;
-            this.dispatchEvent(new Event('input', { bubbles: true }));
-            this.dispatchEvent(new Event('change', { bubbles: true }));
-          }
-          """,
-          [text]
-        )
-
-      send_cdp_session(session, method, params)
-      {:ok, nil}
-    end
-  end
-
   defp send_key_event(session, code, key_val) do
-    send_cdp_session(session, "Input.dispatchKeyEvent", %{
+    cdp_send(session, "Input.dispatchKeyEvent", %{
       type: "rawKeyDown",
       key: key_val,
       code: code,
       windowsVirtualKeyCode: key_code(code)
     })
 
-    send_cdp_session(session, "Input.dispatchKeyEvent", %{
+    cdp_send(session, "Input.dispatchKeyEvent", %{
       type: "keyUp",
       key: key_val,
       code: code,
       windowsVirtualKeyCode: key_code(code)
     })
-  end
-
-  # --- Cookies ---
-
-  def cookies(session) do
-    {method, params} = Commands.get_cookies()
-
-    case send_cdp_session(session, method, params) do
-      {:ok, %{"cookies" => cookies}} -> {:ok, Enum.map(cookies, &normalize_cookie/1)}
-      {:ok, _} -> {:ok, []}
-      error -> error
-    end
-  end
-
-  defp normalize_cookie(cookie) do
-    # CDP uses `expires`, WebDriver uses `expiry`
-    case Map.pop(cookie, "expires") do
-      {nil, c} -> c
-      {-1, c} -> c
-      {expires, c} -> Map.put(c, "expiry", trunc(expires))
-    end
-  end
-
-  def set_cookie(session, name, value, attributes \\ []) do
-    domain = Keyword.get(attributes, :domain)
-    path = Keyword.get(attributes, :path, "/")
-
-    domain =
-      domain ||
-        case current_url(session) do
-          {:ok, url} -> URI.parse(url).host
-          _ -> nil
-        end
-
-    secure = Keyword.get(attributes, :secure, false)
-    http_only = Keyword.get(attributes, :httpOnly, false)
-    expiry = Keyword.get(attributes, :expiry)
-
-    {method, params} =
-      Commands.set_cookie(name, value,
-        domain: domain,
-        path: path,
-        secure: secure,
-        http_only: http_only,
-        expiry: expiry
-      )
-
-    case send_cdp_session(session, method, params) do
-      {:ok, %{"success" => true}} -> {:ok, []}
-      {:ok, _} -> {:error, :invalid_cookie_domain}
-      error -> error
-    end
-  end
-
-  # --- Window ---
-
-  def get_window_size(session) do
-    # Check if we've set a custom size (stored via JS on the session's page)
-    case evaluate_value(
-           session,
-           "JSON.stringify(window.__wallabidi_window_size || {width: window.innerWidth, height: window.innerHeight})"
-         ) do
-      {:ok, json} when is_binary(json) -> {:ok, Jason.decode!(json)}
-      other -> other
-    end
-  end
-
-  def set_window_size(session, width, height) do
-    {method, params} = Commands.set_device_metrics(width, height)
-    send_cdp_session(session, method, params)
-
-    # Also store in JS as fallback (Lightpanda doesn't implement emulation).
-    # Install via addScriptToEvaluateOnNewDocument so the value persists
-    # across navigations — otherwise the size is wiped on the first visit.
-    js = "window.__wallabidi_window_size = {width: #{width}, height: #{height}};"
-    evaluate_value(session, js)
-
-    send_cdp_session(session, "Page.addScriptToEvaluateOnNewDocument", %{source: js})
-
-    {:ok, nil}
-  end
-
-  # --- Public command sender (for driver-level features like dialogs) ---
-
-  def send_cdp_command(session, method, params) do
-    send_cdp_session(session, method, params)
-  end
-
-  # --- User-Agent ---
-
-  def set_user_agent(session, user_agent) do
-    {method, params} = Commands.set_user_agent_override(user_agent)
-
-    case send_cdp_session(session, method, params) do
-      {:ok, _} -> :ok
-      error -> error
-    end
-  end
-
-  # --- Screenshots ---
-
-  def take_screenshot(session_or_element) do
-    session = root_session(session_or_element)
-    {method, params} = Commands.capture_screenshot()
-
-    case send_cdp_session(session, method, params) do
-      {:ok, %{"data" => data}} -> Base.decode64!(data)
-      error -> error
-    end
-  end
-
-  # --- Helpers ---
-
-  defp evaluate_value(session, expression) do
-    {method, params} = Commands.evaluate(expression)
-
-    case send_cdp_session(session, method, params) do
-      {:ok, result} -> ResponseParser.extract_value({:ok, result})
-      error -> error
-    end
-  end
-
-  # No-session, top-level CDP send. Used during browser-context bootstrap
-  # before a session_id exists.
-  defp send_cdp(pid, {method, params}) when is_pid(pid) do
-    WebSocketClient.send_command(pid, method, params)
-    |> ResponseParser.check_error()
-  end
-
-  # Single dispatcher for session-scoped CDP messages. `kind` selects the
-  # WebSocketClient call:
-  #   :send → blocking send_command(_flat); returns {:ok, _} | {:error, _}
-  #   :cast → fire-and-forget; returns :ok
-  # `session.capabilities[:flat_session_id]` selects whether sessionId
-  # rides at the JSON-RPC top level (flat) or nested inside `params`.
-  defp dispatch(%Session{} = session, kind, method, params) do
-    pid = bidi_pid(session)
-    session_id = effective_session_id(session)
-    flat? = session.capabilities[:flat_session_id]
-
-    case {kind, flat?} do
-      {:send, true} ->
-        WebSocketClient.send_command_flat(pid, method, params, session_id)
-
-      {:send, _} ->
-        WebSocketClient.send_command(pid, method, Map.put(params, :sessionId, session_id))
-
-      {:cast, _} ->
-        # cast_command_flat unconditionally puts sessionId at top level;
-        # for the non-flat path we additionally keep it in params so
-        # legacy CDP servers reading it from there still work.
-        params_for_cast =
-          if flat?, do: params, else: Map.put(params, :sessionId, session_id)
-
-        WebSocketClient.cast_command_flat(pid, method, params_for_cast, session_id)
-    end
-  end
-
-  defp send_cdp_session(%Session{} = session, method, params) do
-    # Mailbox barrier on the SessionProcess: drains any pending
-    # binding events / page_ready notifications BEFORE we issue the
-    # next CDP RPC, preserving causal ordering. Previously this
-    # ordering was supplied as a side-effect of the lazy-ops queue's
-    # `drain_ops` call; with the queue gone we keep the barrier
-    # explicit. See SessionProcess.sync_barrier/1 for rationale.
-    Wallabidi.SessionProcess.sync_barrier(session)
-
-    dispatch(session, :send, method, params)
-    |> ResponseParser.check_error()
-  end
-
-  defp send_cdp_raw(%Session{} = session, {method, params}) do
-    dispatch(session, :send, method, params)
-  end
-
-  @doc false
-  def cast_cdp_command(%Session{} = session, method, params) do
-    dispatch(session, :cast, method, params)
-  end
-
-  # Pre-resolved-pid variant for the bootstrap path where the caller
-  # already has the session_id (no Session struct yet).
-  defp cast_cdp_with_session(pid, session_id, {method, params}, opts)
-       when is_pid(pid) do
-    params =
-      if Keyword.get(opts, :flat_session_id),
-        do: params,
-        else: Map.put(params, :sessionId, session_id)
-
-    WebSocketClient.cast_command_flat(pid, method, params, session_id)
-  end
-
-  defp cast_release(%Session{} = session, object_id) do
-    dispatch(session, :cast, "Runtime.releaseObject", %{objectId: object_id})
-  end
-
-  # Allow drivers to override the active CDP session_id via process dict
-  # (used e.g. for window/tab switching in ChromeCDP)
-  defp effective_session_id(%Session{} = session) do
-    case Process.get({:cdp_current_target, session.id}) do
-      {_target_id, sess_id} -> sess_id
-      _ -> session.browsing_context
-    end
-  end
-
-  defp bidi_pid(parent), do: Element.bidi_pid(parent)
-  defp root_session(parent), do: Element.root_session(parent)
-
-  defp wrap_script(script, args) do
-    encoded_args = Jason.encode!(args)
-    "(function() { var arguments = #{encoded_args}; #{script} })()"
-  end
-
-  defp wrap_async_script(script, args) do
-    encoded_args = Jason.encode!(args)
-
-    """
-    new Promise((resolve) => {
-      var arguments = [...#{encoded_args}, resolve];
-      #{script}
-    })
-    """
   end
 
   defp key_mapping(:enter), do: {"Enter", "Enter"}
@@ -1077,270 +417,1024 @@ defmodule Wallabidi.CDPClient do
   defp key_code("Space"), do: 32
   defp key_code(_), do: 0
 
-  # --- Push-based element finding ---
+  @doc """
+  Classifies what kind of LV interaction `element` represents for an
+  upcoming `interaction` (currently `:click` or `:change`).
+
+  Reads `window.__w.classify(this, interaction)` (installed by the
+  bootstrap), which inspects `phx-click` / `data-phx-link` /
+  `phx-trigger-action` / form `action` / `<a href>` to decide:
+
+    * `"patch"` — phx-click or live_redirect=patch; expect a DOM patch
+    * `"navigate"` — data-phx-link=redirect or JS.navigate; new LV mount
+    * `"full_page"` — submit button in a non-LV form, plain anchor
+    * `"none"` — JS-only interaction (hash href, target=_blank, …)
+
+  The string from JS is returned as-is.
+  """
+  @spec classify(Session.t(), Element.t(), :click | :change) ::
+          {:ok, String.t()} | {:error, term}
+  def classify(%Session{} = session, %Element{} = element, interaction)
+      when interaction in [:click, :change] do
+    call_on_element(
+      session,
+      element,
+      "function(t) { return window.__w.classify(this, t); }",
+      [Atom.to_string(interaction)]
+    )
+  end
+
+  # click/2 — provided by Wallabidi.OpsShared. Routes through
+  # window.__w.clickEl when the bootstrap is installed (handles
+  # <option> selection + change events) and falls back to
+  # scroll+focus+click otherwise.
 
   @doc """
-  Execute an opcode sequence. Single entry point for both find and click.
+  LV-aware click. Captures `pre_page_id` BEFORE the click, classifies
+  the element to decide what to await, then issues the click and
+  blocks for the appropriate signal:
 
-  For find (no side effects): registers the ops with the browser-side
-  observer, waits for the binding callback, grabs element refs.
+    * `"none"` — JS-only interaction (hash href, target=_blank).
+      Returns immediately, no wait.
+    * `"patch"` / `"navigate"` / `"full_page"` — awaits the next
+      `page_ready` notification. The bootstrap's onPatchEnd hook
+      bumps pageId on every LV patch, and a fresh document fires
+      a new page_ready, so one signal covers all three cases.
 
-  For click (has side effects): uses the old Pipeline path which captures
-  the return value before the click fires (avoiding stale context on
-  navigation), then returns `{:ok, :clicked, meta}` with classification
-  and prepared info for post-action await.
-
-  Returns:
-  - `{:ok, elements}` for find ops
-  - `{:ok, :clicked, %{classification: str, prepared: bool}}` for click ops
-  - `{:error, :invalid_selector}` for bad selectors
-  - `{:error, {:not_found, []}}` on timeout with 0 elements
+  Returns `{:ok, classification}` on success, `{:error, :timeout}`
+  if the expected signal didn't arrive within `:timeout` (default
+  5_000 ms), or `{:error, term}` for transport errors.
   """
-  def execute_ops(parent, %Wallabidi.CDP.Ops{} = ops, opts \\ []) do
-    if Wallabidi.CDP.Ops.has_side_effects?(ops) do
-      execute_ops_click(parent, ops, opts)
-    else
-      execute_ops_find(parent, ops, opts)
-    end
-  end
-
-  defp execute_ops_find(parent, ops, opts) do
-    count = Keyword.get(opts, :count)
+  @spec click_aware(Session.t(), Element.t(), keyword) ::
+          {:ok, String.t()} | {:error, term}
+  def click_aware(%Session{} = session, %Element{} = element, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, 5_000)
-    needs_elements = Keyword.get(opts, :needs_elements, true)
+    pre_page_id = Protocol.get_page_id(session)
 
-    find_elements_ops(parent, ops, timeout: timeout, count: count, needs_elements: needs_elements)
-  end
-
-  defp execute_ops_click(parent, ops, opts) do
-    alias Wallabidi.CDP.Pipeline
-
-    count = Keyword.get(opts, :count)
-    timeout = Keyword.get(opts, :timeout, 5_000)
-
-    # Step 1: Push-based wait for element (find-only ops, no click).
-    find_only_ops = %{
-      ops
-      | ops:
-          Enum.filter(ops.ops, fn
-            ["query" | _] -> true
-            ["visible" | _] -> true
-            ["text" | _] -> true
-            ["selected" | _] -> true
-            _ -> false
-          end)
-    }
-
-    find_result =
-      find_elements_ops(parent, find_only_ops,
-        timeout: timeout,
-        count: count,
-        needs_elements: false
-      )
-
-    element_found? =
-      case find_result do
-        {:ok, c, _meta} when is_integer(c) ->
-          is_nil(count) or c == count
-
-        {:ok, elements} when is_list(elements) ->
-          is_nil(count) or length(elements) == count
+    with :ok <- await_lv_ready(session, timeout),
+         {:ok, classification} <- classify(session, element, :click),
+         {:ok, _} <- click(session, element) do
+      case classification do
+        "none" ->
+          {:ok, classification}
 
         _ ->
-          false
+          case Protocol.await_page_ready_after(session, pre_page_id, timeout) do
+            :ok -> {:ok, classification}
+            :timeout -> {:error, :timeout}
+          end
       end
-
-    if element_found? do
-      # Step 2: Element present — click via Pipeline (1 eval).
-      {type, selector} = extract_query(ops)
-
-      pipeline =
-        Pipeline.new(parent)
-        |> Pipeline.query_all(type, selector)
-
-      pipeline =
-        Enum.reduce(ops.ops, pipeline, fn
-          ["visible", true], p -> Pipeline.filter_visible(p)
-          ["visible", false], p -> Pipeline.filter_not_visible(p)
-          ["text", t], p -> Pipeline.filter_text(p, t)
-          ["selected", true], p -> Pipeline.filter_selected(p, true)
-          ["selected", false], p -> Pipeline.filter_selected(p, false)
-          _, p -> p
-        end)
-
-      pipeline = Pipeline.click_full(pipeline, :click)
-
-      case find_elements_pipeline(parent, pipeline) do
-        {:ok, _elements, classification, prepared, pre_ref} ->
-          {:ok, :clicked, %{classification: classification, prepared: prepared, pre_ref: pre_ref}}
-
-        {:ok, _elements, classification, prepared} ->
-          {:ok, :clicked, %{classification: classification, prepared: prepared, pre_ref: nil}}
-
-        {:ok, _elements} ->
-          {:ok, :clicked, %{classification: "none", prepared: false, pre_ref: nil}}
-
-        error ->
-          error
-      end
-    else
-      {:error, {:not_found, []}}
-    end
-  end
-
-  defp extract_query(%Wallabidi.CDP.Ops{ops: ops}) do
-    case Enum.find(ops, fn [cmd | _] -> cmd == "query" end) do
-      ["query", type, selector] -> {String.to_existing_atom(type), selector}
-      _ -> {:css, "*"}
     end
   end
 
   @doc """
-  Opcode-based push find. Takes an `%Ops{}` struct instead of raw
-  type/selector/opts. The ops are JSON-serialized and sent to the
-  bootstrap interpreter — no JS generation.
+  Like `click_aware/3` but returns the classification AND a status
+  tag (`:ready` or `:timeout`) so callers can branch on the
+  classification before deciding whether a page-ready timeout is
+  actually an error. Patch-classified timeouts in particular are
+  silent in the legacy click pipeline.
   """
-  def find_elements_ops(parent, %Wallabidi.CDP.Ops{} = ops, find_opts \\ []) do
-    do_find_elements_ops(parent, ops, find_opts, _retries_left = 1)
-  end
+  @spec click_aware_with_classification(Session.t(), Element.t(), keyword) ::
+          {:ok, String.t(), :ready | :timeout} | {:error, term}
+  def click_aware_with_classification(%Session{} = session, %Element{} = element, opts \\ []) do
+    timeout = Keyword.get(opts, :timeout, 5_000)
+    pre_page_id = Protocol.get_page_id(session)
 
-  defp do_find_elements_ops(parent, ops, find_opts, retries_left) do
-    case run_find_elements_ops(parent, ops, find_opts) do
-      {:error, :stale_reference} when retries_left > 0 ->
-        # Concurrent navigation cleared `window.__w.queries` between the
-        # count-notification and the secondary fetch. Re-run once — the
-        # new context has a fresh `__w` already.
-        do_find_elements_ops(parent, ops, find_opts, retries_left - 1)
+    with :ok <- await_lv_ready(session, timeout),
+         {:ok, classification} <- classify(session, element, :click),
+         {:ok, _} <- click(session, element) do
+      case classification do
+        "none" ->
+          {:ok, classification, :ready}
 
-      result ->
-        result
+        _ ->
+          case Protocol.await_page_ready_after(session, pre_page_id, timeout) do
+            :ok -> {:ok, classification, :ready}
+            :timeout -> {:ok, classification, :timeout}
+          end
+      end
     end
   end
 
-  defp run_find_elements_ops(parent, ops, find_opts) do
-    session = root_session(parent)
-    query_id = "q-#{System.unique_integer([:positive])}"
-    timeout = Keyword.get(find_opts, :timeout, 5_000)
-    count = Keyword.get(find_opts, :count)
-    needs_elements = Keyword.get(find_opts, :needs_elements, true)
+  # Block until liveSocket.main is finished joining (or there's no
+  # LiveView at all). Mirrors the pre-click readiness wait the legacy
+  # click_full op does — without it, clicks fired during the join
+  # window get dropped because the LV channel hasn't bound yet.
+  defp await_lv_ready(%Session{} = session, timeout_ms) do
+    js = """
+    new Promise(function(resolve) {
+      var deadline = Date.now() + #{timeout_ms};
+      function check() {
+        var ls = window.liveSocket;
+        if (!ls || !ls.main) return resolve(true);
+        if (ls.main.joinPending !== true) return resolve(true);
+        if (Date.now() > deadline) return resolve(false);
+        setTimeout(check, 20);
+      }
+      check();
+    })
+    """
 
-    ops_json = Jason.encode!(ops.ops)
-    count_js = if is_integer(count), do: Integer.to_string(count), else: "null"
-    id_js = Jason.encode!(query_id)
+    case cdp_send(session, "Runtime.evaluate", %{
+           expression: js,
+           awaitPromise: true,
+           returnByValue: true
+         }) do
+      {:ok, _} -> :ok
+      _ -> :ok
+    end
+  end
 
-    root_js = if ops.parent_id, do: "this", else: "null"
-    register_js = Wallabidi.Bootstrap.register_js(query_id, ops_json, count_js, root_js)
+  # ----- Frame switching -----
 
-    # Register waiter BEFORE sending JS
-    Wallabidi.SessionProcess.register_find(session, query_id, timeout)
+  @doc """
+  Enables CDP's Page domain (already done by enable_page_lifecycle_events)
+  AND subscribes to Runtime execution-context events so V2.Session can
+  track the frameId → executionContextId mapping needed by
+  focus_frame_by_id/2.
 
-    if ops.parent_id do
-      cast_cdp_command(session, "Runtime.callFunctionOn", %{
-        objectId: ops.parent_id,
-        functionDeclaration: "function(){#{register_js}}",
-        returnByValue: true
+  Idempotent. Best to call once at session bootstrap, after
+  install_bootstrap/1.
+  """
+  @spec enable_frame_tracking(Session.t()) :: :ok | {:error, term}
+  def enable_frame_tracking(%Session{} = session) do
+    with :ok <- Protocol.subscribe(session, "Runtime.executionContextCreated"),
+         :ok <- Protocol.subscribe(session, "Runtime.executionContextDestroyed") do
+      :ok
+    end
+  end
+
+  @doc """
+  Push a frame's `executionContextId` (resolved from its `frameId`)
+  onto the focus stack. Subsequent JS evaluations target this frame.
+
+  Returns `:ok` on success, `{:error, :unknown_frame}` if no
+  execution context has been observed for `frame_id` yet — typically
+  because the frame hasn't loaded.
+  """
+  @spec focus_frame_by_id(Session.t(), String.t()) :: :ok | {:error, term}
+  def focus_frame_by_id(%Session{} = session, frame_id) when is_binary(frame_id) do
+    case Protocol.lookup_frame_context(session, frame_id) do
+      nil ->
+        {:error, :unknown_frame}
+
+      context_id when is_integer(context_id) ->
+        Protocol.push_frame(session, context_id)
+        :ok
+    end
+  end
+
+  @doc "Pops the top frame off the focus stack (no-op at root)."
+  @spec focus_parent_frame(Session.t()) :: :ok
+  def focus_parent_frame(%Session{} = session) do
+    Protocol.pop_frame(session)
+    :ok
+  end
+
+  # ----- Cookies -----
+
+  @doc """
+  Returns the cookies visible to the current page.
+  """
+  @spec cookies(Session.t()) :: {:ok, [map]} | {:error, term}
+  def cookies(%Session{} = session) do
+    case cdp_send(session, "Network.getCookies", %{}) do
+      {:ok, %{"cookies" => cookies}} when is_list(cookies) ->
+        {:ok, Enum.map(cookies, &normalize_cookie/1)}
+
+      {:ok, _} ->
+        {:ok, []}
+
+      error ->
+        error
+    end
+  end
+
+  # CDP returns `expires`, WebDriver tests assert `expiry`.
+  defp normalize_cookie(cookie) do
+    case Map.pop(cookie, "expires") do
+      {nil, c} -> c
+      {-1, c} -> c
+      {expires, c} -> Map.put(c, "expiry", trunc(expires))
+    end
+  end
+
+  @doc """
+  Sets a cookie. `attrs` may include any standard CDP `setCookie`
+  fields (`url`, `domain`, `path`, `expires`, `secure`, `httpOnly`,
+  `sameSite`); a `:url` is helpful when you don't have a known domain
+  and just want the cookie scoped to the current page.
+  """
+  @spec set_cookie(Session.t(), String.t(), String.t(), map) ::
+          {:ok, true | false} | {:error, term}
+  def set_cookie(%Session{} = session, name, value, attrs \\ %{})
+      when is_binary(name) and is_binary(value) do
+    # Network.setCookie requires either `url` or `domain` — pad in the
+    # current URL when callers haven't supplied one. Also translate
+    # WebDriver-style `:expiry` → CDP's `:expires`.
+    attrs = Map.new(attrs)
+
+    attrs =
+      case Map.pop(attrs, :expiry) do
+        {nil, m} -> m
+        {expiry, m} -> Map.put_new(m, :expires, expiry)
+      end
+
+    attrs =
+      if Map.has_key?(attrs, :url) or Map.has_key?(attrs, "url") or
+           Map.has_key?(attrs, :domain) or Map.has_key?(attrs, "domain") do
+        attrs
+      else
+        case current_url(session) do
+          {:ok, url} when is_binary(url) and url != "" -> Map.put(attrs, :url, url)
+          _ -> attrs
+        end
+      end
+
+    params =
+      attrs
+      |> Map.put(:name, name)
+      |> Map.put(:value, value)
+
+    case cdp_send(session, "Network.setCookie", params) do
+      {:ok, %{"success" => true}} -> {:ok, true}
+      {:ok, %{"success" => false}} -> {:ok, false}
+      {:ok, _} -> {:ok, true}
+      error -> error
+    end
+  end
+
+  # ----- Screenshot + window size -----
+
+  @doc """
+  Captures a PNG screenshot of the current page (viewport).
+  Returns the raw binary (not base64).
+  """
+  @spec take_screenshot(Session.t()) :: {:ok, binary} | {:error, term}
+  def take_screenshot(%Session{} = session) do
+    case cdp_send(session, "Page.captureScreenshot", %{format: "png"}) do
+      {:ok, %{"data" => data}} when is_binary(data) ->
+        Base.decode64(data)
+
+      {:ok, _} ->
+        {:error, :no_screenshot_data}
+
+      error ->
+        error
+    end
+  end
+
+  @doc "Returns the current viewport size as `{:ok, %{width: w, height: h}}`."
+  @spec get_window_size(Session.t()) ::
+          {:ok, %{width: non_neg_integer, height: non_neg_integer}} | {:error, term}
+  def get_window_size(%Session{} = session) do
+    # Prefer a previously-stashed `window.__wallabidi_window_size`
+    # (set by set_window_size below) — `Emulation.setDeviceMetricsOverride`
+    # is a no-op on engines without a real layout pass (Lightpanda),
+    # so the JS override is the only source of truth there.
+    case evaluate(
+           session,
+           "JSON.stringify(window.__wallabidi_window_size || {width: window.innerWidth, height: window.innerHeight})"
+         ) do
+      {:ok, json} when is_binary(json) ->
+        case Jason.decode(json) do
+          {:ok, %{"width" => w, "height" => h}} -> {:ok, %{width: w, height: h}}
+          _ -> {:error, :bad_size_response}
+        end
+
+      error ->
+        error
+    end
+  end
+
+  @doc """
+  Resizes the viewport (and optionally the device) via
+  `Emulation.setDeviceMetricsOverride`. Pass 0 for `device_scale_factor`
+  / `mobile` to use defaults.
+  """
+  @spec set_window_size(Session.t(), non_neg_integer, non_neg_integer) ::
+          {:ok, nil} | {:error, term}
+  def set_window_size(%Session{} = session, width, height)
+      when is_integer(width) and is_integer(height) do
+    _ =
+      cdp_send(session, "Emulation.setDeviceMetricsOverride", %{
+        width: width,
+        height: height,
+        deviceScaleFactor: 0,
+        mobile: false
       })
+
+    # Mirror the legacy fallback: stash the requested size as a JS
+    # global on the current page AND queue it onto every future
+    # document so it persists across navigations. Engines that don't
+    # implement Emulation (Lightpanda) read this from
+    # get_window_size/1.
+    js = "window.__wallabidi_window_size = {width: #{width}, height: #{height}};"
+    _ = cdp_send(session, "Runtime.evaluate", %{expression: js, returnByValue: true})
+
+    _ =
+      cdp_send(session, "Page.addScriptToEvaluateOnNewDocument", %{
+        source: js
+      })
+
+    {:ok, nil}
+  end
+
+  # ----- Element finding -----
+
+  @doc """
+  Find elements matching a Wallabidi.Query.
+
+  `parent` is either a `Session` (search from `document`) or an
+  `Element` (search within that element's subtree). Element-scoped
+  searches use the bootstrap's `root_js="this"` form, which compiles
+  to `callFunctionOn(parent.objectId)` so the query runs against the
+  parent in its own realm.
+
+  Uses the existing browser-side bootstrap (`window.__w`) and
+  `Bootstrap.register_js/4` to push-register a query. When the
+  bootstrap fires `__wallabidi(...)` with the matching query id,
+  V2.Session resolves the waiter; we then fetch real CDP `objectId`s
+  for the matched elements via `Runtime.getProperties` against the
+  stored `window.__w.queries[id].elements` array.
+
+  Returns `{:ok, [%Wallabidi.Element{}]}` with real `bidi_shared_id`
+  fields populated.
+  """
+  @spec find_elements(Session.t() | Element.t(), Wallabidi.Query.t(), keyword) ::
+          {:ok, [Element.t()]} | {:error, term}
+  def find_elements(parent, %Wallabidi.Query{} = query, opts \\ []) do
+    session = Element.root_session(parent)
+    timeout = Keyword.get(opts, :timeout, 5_000)
+    count = Wallabidi.Query.count(query)
+
+    with {:ok, ops, _validated} <- Ops.from_wallaby(parent, query, nil) do
+      query_id = "v2-q-#{System.unique_integer([:positive])}"
+      ops_json = Jason.encode!(ops.ops)
+      count_js = if is_integer(count), do: Integer.to_string(count), else: "null"
+      root_js = if ops.parent_id, do: "this", else: "null"
+      register_js = Bootstrap.register_js(query_id, ops_json, count_js, root_js)
+
+      :ok = Protocol.register_find(session, query_id, timeout)
+
+      # Fire-and-forget: register the query and call W.check(). The
+      # response carries no info we need — what matters is the binding
+      # event (Runtime.bindingCalled), which V2.Transport.PerSession
+      # sees on its own mailbox. CDP serializes commands per session,
+      # so subsequent operations still observe this register's effect.
+      if ops.parent_id do
+        cdp_cast(session, "Runtime.callFunctionOn", %{
+          objectId: ops.parent_id,
+          functionDeclaration: "function() { #{register_js} }",
+          returnByValue: true
+        })
+      else
+        # Thread the active frame's executionContextId so find runs
+        # inside the focused iframe (set via focus_frame_by_id).
+        base = %{expression: register_js, returnByValue: true}
+
+        params =
+          case Protocol.current_context_id(session) do
+            nil -> base
+            ctx -> Map.put(base, :contextId, ctx)
+          end
+
+        cdp_cast(session, "Runtime.evaluate", params)
+      end
+
+      case Protocol.await_find_result(session, query_id, timeout) do
+        {:ok, found_count, _meta} when found_count > 0 ->
+          fetch_element_refs(session, query_id, found_count)
+
+        {:ok, _, _} ->
+          {:ok, []}
+
+        {:error, :invalid_selector} ->
+          {:error, :invalid_selector}
+
+        {:timeout, _} ->
+          # Push didn't fire (count-shape mismatch, etc). Do a final
+          # sync exec so callers like Browser.find can see the *actual*
+          # element count for error messaging ("but 5"). Mirrors the
+          # legacy CDPClient.find_elements_ops timeout fallback.
+          final_sync_exec(session, ops_json, ops.parent_id)
+      end
+    end
+  end
+
+  defp final_sync_exec(%Session{} = session, ops_json, parent_id) do
+    # When the original query was scoped to a parent element, run the
+    # final exec via callFunctionOn so `this` is the parent — keeping
+    # the scoping intent intact. Document scope passes null root so
+    # the bootstrap's `ctx = root || document` falls through to
+    # document. Threads the focused iframe's executionContextId so
+    # the fallback runs in the same realm as the original query.
+    eval_result =
+      if parent_id do
+        cdp_send(session, "Runtime.callFunctionOn", %{
+          objectId: parent_id,
+          functionDeclaration:
+            "function() { return window.__w ? window.__w.exec(#{ops_json}, this).els : []; }",
+          returnByValue: false
+        })
+      else
+        base = %{
+          expression: "(window.__w ? window.__w.exec(#{ops_json}, null).els : [])",
+          returnByValue: false
+        }
+
+        params =
+          case Protocol.current_context_id(session) do
+            nil -> base
+            ctx -> Map.put(base, :contextId, ctx)
+          end
+
+        cdp_send(session, "Runtime.evaluate", params)
+      end
+
+    with {:ok, ev} <- eval_result,
+         {:ok, array_id} when is_binary(array_id) <-
+           ResponseParser.extract_object_id({:ok, ev}),
+         {get_method, get_params} = Commands.get_properties(array_id),
+         {:ok, props_result} <- cdp_send(session, get_method, get_params),
+         {:ok, ids} <- ResponseParser.extract_element_ids({:ok, props_result}) do
+      _ = cdp_send(session, "Runtime.releaseObject", %{objectId: array_id})
+
+      elements =
+        Enum.map(ids, fn object_id ->
+          %Element{
+            id: object_id,
+            bidi_shared_id: object_id,
+            parent: session,
+            driver: session.driver,
+            url: session.session_url
+          }
+        end)
+
+      {:ok, elements}
     else
-      cast_cdp_command(session, "Runtime.evaluate", %{
-        expression: register_js,
-        returnByValue: true
-      })
-    end
-
-    # Block until binding fires or timeout
-    case Wallabidi.SessionProcess.await_find_result(session, query_id, timeout) do
-      {:error, :invalid_selector} ->
-        cleanup_query(session, query_id)
-        {:error, :invalid_selector}
-
-      {:ok, found_count, meta} ->
-        cond do
-          not needs_elements ->
-            # Click path: return count + meta for classification
-            cleanup_query(session, query_id)
-            {:ok, found_count, meta}
-
-          found_count > 0 ->
-            grab_js = "window.__w.queries[#{id_js}].elements"
-            {method, params} = Commands.evaluate(grab_js, return_by_value: false)
-
-            with {:ok, result} <- send_cdp_session(session, method, params),
-                 {:ok, array_id} <- ResponseParser.extract_object_id({:ok, result}),
-                 {:ok, result} <- send_cdp_raw(session, Commands.get_properties(array_id)),
-                 {:ok, ids} <- ResponseParser.extract_element_ids({:ok, result}) do
-              if array_id, do: cast_release(session, array_id)
-              cleanup_query(session, query_id)
-
-              elements =
-                Enum.map(ids, fn object_id ->
-                  %Element{
-                    id: object_id,
-                    bidi_shared_id: object_id,
-                    parent: parent,
-                    driver: session.driver,
-                    url: session.session_url
-                  }
-                end)
-
-              {:ok, elements}
-            else
-              _ ->
-                # The push notification said `found_count > 0` but the
-                # secondary `window.__w.queries[id].elements` fetch
-                # returned undefined — the page navigated mid-flight or
-                # `W.queries` was cleared by a teardown elsewhere. Don't
-                # fabricate placeholder elements with nil ids; surface a
-                # stale-reference so the Browser-level retry layer can
-                # re-run the query against the new context.
-                cleanup_query(session, query_id)
-                {:error, :stale_reference}
-            end
-
-          true ->
-            # found_count == 0 — genuinely empty result, no elements to fetch.
-            cleanup_query(session, query_id)
-            {:ok, []}
-        end
-
-      {:timeout, _} ->
-        cleanup_query(session, query_id)
-        # Final sync check: re-run ops inline AND fetch real refs in
-        # one eval so we never return placeholder %Element{id: nil}.
-        # The W.exec call returns the array of matched elements; we
-        # then go through the same getProperties dance as the success
-        # path to extract real objectIds.
-        final_js = "(window.__w && window.__w.exec(#{ops_json}, null).els) || []"
-        {method, params} = Commands.evaluate(final_js, return_by_value: false)
-
-        with {:ok, result} <- send_cdp_session(session, method, params),
-             {:ok, array_id} <- ResponseParser.extract_object_id({:ok, result}),
-             true <- not is_nil(array_id),
-             {:ok, gp_result} <- send_cdp_raw(session, Commands.get_properties(array_id)),
-             {:ok, ids} <- ResponseParser.extract_element_ids({:ok, gp_result}) do
-          if array_id, do: cast_release(session, array_id)
-
-          elements =
-            Enum.map(ids, fn object_id ->
-              %Element{
-                id: object_id,
-                bidi_shared_id: object_id,
-                parent: parent,
-                driver: session.driver,
-                url: session.session_url
-              }
-            end)
-
-          {:ok, elements}
-        else
-          _ -> {:ok, []}
-        end
+      _ -> {:ok, []}
     end
   end
 
-  defp cleanup_query(session, query_id) do
-    cast_cdp_command(session, "Runtime.evaluate", %{
-      expression: Wallabidi.Bootstrap.cleanup_js(query_id),
+  # After the bootstrap reports the count, look up the matched
+  # elements array by query_id and walk it via Runtime.getProperties
+  # to extract real CDP objectIds. Falls back to count-shaped
+  # placeholder elements if the array is gone (page navigated, etc.).
+  defp fetch_element_refs(%Session{} = session, query_id, found_count) do
+    id_js = Jason.encode!(query_id)
+    grab_js = "window.__w.queries[#{id_js}].elements"
+
+    with {:ok, eval_result} <-
+           cdp_send(session, "Runtime.evaluate", %{
+             expression: grab_js,
+             returnByValue: false
+           }),
+         {:ok, array_id} when is_binary(array_id) <-
+           ResponseParser.extract_object_id({:ok, eval_result}),
+         {get_method, get_params} = Commands.get_properties(array_id),
+         {:ok, props_result} <- cdp_send(session, get_method, get_params),
+         {:ok, ids} <- ResponseParser.extract_element_ids({:ok, props_result}) do
+      # Best-effort cleanup: drop the stored array so memory/refs don't
+      # accumulate. Fire-and-forget — we don't act on the response.
+      cdp_cast(session, "Runtime.releaseObject", %{objectId: array_id})
+
+      elements =
+        Enum.map(ids, fn object_id ->
+          %Element{
+            id: object_id,
+            bidi_shared_id: object_id,
+            parent: session,
+            driver: session.driver,
+            url: session.session_url
+          }
+        end)
+
+      {:ok, elements}
+    else
+      _ ->
+        # Page navigated mid-flight or array gone — return placeholders
+        # so callers see a non-empty count, but downstream ops on these
+        # elements will fail (no objectId). The browser-driver layer
+        # decides how to handle that (retry, etc.).
+        {:ok, List.duplicate(%Element{parent: session, driver: session.driver}, found_count)}
+    end
+  end
+
+  # ----- Page introspection -----
+  #
+  # current_url/1, current_path/1, page_title/1, page_source/1 —
+  # provided by Wallabidi.OpsShared.
+
+  # ----- Visit (navigate + await load) -----
+
+  @doc """
+  Navigates to `url` and blocks until the page's `load` lifecycle
+  event has fired. Returns `:ok` or `{:error, :timeout}`.
+
+  Convenience over `navigate/2` + `await_page_load/4` for the common
+  "visit a URL and wait for it" case.
+
+  Same-document navigations (URL fragments) don't produce a new
+  loader_id — those return `:ok` immediately without waiting.
+  """
+  @spec visit(Session.t(), String.t(), keyword) :: :ok | {:error, term}
+  def visit(%Session{} = session, url, opts \\ []) when is_binary(url) do
+    timeout = Keyword.get(opts, :timeout, 10_000)
+
+    with {:ok, %{loader_id: loader_id}} <- navigate(session, url) do
+      result =
+        if is_binary(loader_id) do
+          case Protocol.await_page_load(session, loader_id, "load", timeout) do
+            :ok -> :ok
+            :timeout -> {:error, :timeout}
+          end
+        else
+          # Same-document nav (fragment / cached) — no loaderId, no
+          # new load cycle to await.
+          :ok
+        end
+
+      # Browsers without native XPath (Lightpanda) need wgxpath injected
+      # after each load — `Page.addScriptToEvaluateOnNewDocument` runs
+      # before page scripts, but the polyfill must run AFTER document
+      # parsing to attach properly.
+      if result == :ok and session.capabilities[:needs_xpath_polyfill] do
+        inject_xpath_polyfill(session)
+      end
+
+      result
+    end
+  end
+
+  @xpath_polyfill_path Path.join(:code.priv_dir(:wallabidi), "cdp/wgxpath.install.js")
+  @external_resource @xpath_polyfill_path
+  @xpath_polyfill if File.exists?(@xpath_polyfill_path),
+                    do: File.read!(@xpath_polyfill_path) <> "\nwgxpath.install(window);",
+                    else: ""
+
+  defp inject_xpath_polyfill(%Session{} = session) do
+    cdp_send(session, "Runtime.evaluate", %{
+      expression: @xpath_polyfill,
       returnByValue: true
     })
+
+    :ok
+  end
+
+  # ----- Runtime.evaluate -----
+
+  @doc """
+  Runs a JS expression in the page's main realm and returns the
+  serialised value. Equivalent to `Runtime.evaluate` with
+  `returnByValue: true`.
+
+  Examples:
+
+      iex> evaluate(session, "1 + 1")
+      {:ok, 2}
+
+      iex> evaluate(session, "document.title")
+      {:ok, "Wallabidi Test"}
+  """
+  @spec evaluate(Session.t(), String.t()) :: {:ok, term} | {:error, term}
+  def evaluate(%Session{} = session, expression) when is_binary(expression) do
+    evaluate_raw(session, expression)
+  end
+
+  @doc """
+  Like `evaluate/2` but threads `args` into the script via
+  `arguments[]`. Wraps the body so `return X` and `arguments[0]`
+  references work like the user-facing `execute_script` API expects.
+
+  When the script has no `return`/`arguments` references, this still
+  works — but a bare expression like `"2 + 2"` evaluates inside a
+  function with no return statement (yielding `undefined`). Callers
+  who want plain expression evaluation should use `evaluate/2`.
+  """
+  @spec evaluate(Session.t(), String.t(), list) :: {:ok, term} | {:error, term}
+  def evaluate(%Session{} = session, expression, args) when is_binary(expression) and is_list(args) do
+    case encode_script_args(args) do
+      {:elements, cdp_args} ->
+        # Args contain WebDriver-encoded element references — pass them
+        # through as real CDP objectIds via Runtime.callFunctionOn so
+        # the script's `arguments[n]` is a live Element, not a JSON
+        # blob. callFunctionOn needs an objectId, so use globalThis.
+        evaluate_with_element_args(session, expression, cdp_args)
+
+      {:no_elements, _} ->
+        if needs_wrap?(expression, args) do
+          args_json = Jason.encode!(args)
+          wrapped = "(function(){#{expression}}).apply(this, #{args_json})"
+          evaluate_raw(session, wrapped)
+        else
+          evaluate_raw(session, expression)
+        end
+    end
+  end
+
+  @web_element_identifier "element-6066-11e4-a52e-4f735466cecf"
+
+  defp encode_script_args(args) do
+    has_element? =
+      Enum.any?(args, fn
+        %{@web_element_identifier => _} -> true
+        _ -> false
+      end)
+
+    if has_element? do
+      cdp_args =
+        Enum.map(args, fn
+          %{@web_element_identifier => id} -> %{objectId: id}
+          v -> %{value: v}
+        end)
+
+      {:elements, cdp_args}
+    else
+      {:no_elements, args}
+    end
+  end
+
+  defp evaluate_with_element_args(%Session{} = session, expression, cdp_args) do
+    # Wrap the script body in a function so `arguments[n]` and bare
+    # `return X` work — same shape as the no-element path.
+    wrapped = "function() { #{expression} }"
+
+    with {:ok, eval_result} <-
+           cdp_send(session, "Runtime.evaluate", %{
+             expression: "globalThis",
+             returnByValue: false
+           }),
+         {:ok, global_id} when is_binary(global_id) <-
+           ResponseParser.extract_object_id({:ok, eval_result}) do
+      result =
+        cdp_send(session, "Runtime.callFunctionOn", %{
+          objectId: global_id,
+          functionDeclaration: wrapped,
+          arguments: cdp_args,
+          returnByValue: true
+        })
+
+      _ = cdp_send(session, "Runtime.releaseObject", %{objectId: global_id})
+
+      case result do
+        {:ok, %{"result" => %{"value" => v}}} -> {:ok, v}
+        {:ok, %{"result" => %{"type" => "undefined"}}} -> {:ok, nil}
+        {:ok, %{"exceptionDetails" => details}} -> {:error, {:js_exception, details}}
+        other -> other
+      end
+    end
+  end
+
+  # If the script uses `return`/`arguments`, wrap. Otherwise treat as
+  # an expression so `execute_script(s, "2+2", [])` returns 4 like the
+  # legacy CDPClient.evaluate path.
+  defp needs_wrap?(_expression, args) when args != [], do: true
+
+  defp needs_wrap?(expression, []) do
+    String.contains?(expression, "return") or String.contains?(expression, "arguments")
+  end
+
+  @doc """
+  Async-script semantics: the script's last argument is a callback that
+  resolves the awaited promise. Mirrors WebDriver's
+  `Execute Async Script` so test code like
+  `arguments[arguments.length - 1](value)` works.
+  """
+  @spec evaluate_async(Session.t(), String.t(), list) :: {:ok, term} | {:error, term}
+  def evaluate_async(%Session{} = session, expression, args) when is_binary(expression) do
+    args = args || []
+    args_json = Jason.encode!(args)
+
+    wrapped = """
+    new Promise(function(__resolve, __reject) {
+      try {
+        (function() {
+          var __args = #{args_json}.concat([__resolve]);
+          (function() { #{expression} }).apply(this, __args);
+        })();
+      } catch (e) { __reject(e); }
+    })
+    """
+
+    params =
+      case Protocol.current_context_id(session) do
+        nil ->
+          %{expression: wrapped, returnByValue: true, awaitPromise: true}
+
+        ctx ->
+          %{expression: wrapped, returnByValue: true, awaitPromise: true, contextId: ctx}
+      end
+
+    case cdp_send(session, "Runtime.evaluate", params) do
+      {:ok, %{"result" => %{"value" => value}}} -> {:ok, value}
+      {:ok, %{"result" => %{"type" => "undefined"}}} -> {:ok, nil}
+      {:ok, %{"exceptionDetails" => details}} -> {:error, {:js_exception, details}}
+      {:ok, _} = ok -> ok
+      error -> error
+    end
+  end
+
+  defp evaluate_raw(%Session{} = session, expression) do
+    params =
+      case Protocol.current_context_id(session) do
+        nil -> %{expression: expression, returnByValue: true}
+        ctx -> %{expression: expression, returnByValue: true, contextId: ctx}
+      end
+
+    case cdp_send(session, "Runtime.evaluate", params) do
+      {:ok, %{"result" => %{"value" => value}}} -> {:ok, value}
+      {:ok, %{"result" => %{"type" => "undefined"}}} -> {:ok, nil}
+      {:ok, %{"exceptionDetails" => details}} -> {:error, {:js_exception, details}}
+      {:ok, _} = ok -> ok
+      error -> error
+    end
+  end
+
+  # ----- Element geometry -----
+
+  @doc "Element width/height in CSS pixels via getBoundingClientRect."
+  @spec element_size(Element.t()) :: {:ok, {number, number}} | {:error, term}
+  def element_size(%Element{bidi_shared_id: object_id} = element) do
+    session = Element.root_session(element)
+
+    case cdp_send(session, "Runtime.callFunctionOn", %{
+           objectId: object_id,
+           functionDeclaration:
+             "function() { var r = this.getBoundingClientRect(); return JSON.stringify([Math.round(r.width), Math.round(r.height)]); }",
+           returnByValue: true
+         }) do
+      {:ok, %{"result" => %{"value" => json}}} ->
+        case Jason.decode(json) do
+          {:ok, [w, h]} -> {:ok, {w, h}}
+          err -> err
+        end
+
+      err ->
+        err
+    end
+  end
+
+  @doc "Element top-left position in CSS pixels."
+  @spec element_location(Element.t()) :: {:ok, {number, number}} | {:error, term}
+  def element_location(%Element{bidi_shared_id: object_id} = element) do
+    session = Element.root_session(element)
+
+    case cdp_send(session, "Runtime.callFunctionOn", %{
+           objectId: object_id,
+           functionDeclaration:
+             "function() { var r = this.getBoundingClientRect(); return JSON.stringify([Math.round(r.x), Math.round(r.y)]); }",
+           returnByValue: true
+         }) do
+      {:ok, %{"result" => %{"value" => json}}} ->
+        case Jason.decode(json) do
+          {:ok, [x, y]} -> {:ok, {x, y}}
+          err -> err
+        end
+
+      err ->
+        err
+    end
+  end
+
+  defp element_center(%Element{bidi_shared_id: object_id} = element) do
+    session = Element.root_session(element)
+
+    case cdp_send(session, "Runtime.callFunctionOn", %{
+           objectId: object_id,
+           functionDeclaration:
+             "function() { var r = this.getBoundingClientRect(); return JSON.stringify({x: r.x + r.width/2, y: r.y + r.height/2}); }",
+           returnByValue: true
+         }) do
+      {:ok, %{"result" => %{"value" => json}}} ->
+        %{"x" => x, "y" => y} = Jason.decode!(json)
+        {:ok, {x, y}}
+
+      error ->
+        error
+    end
+  end
+
+  defp element_topleft(%Element{bidi_shared_id: object_id} = element) do
+    session = Element.root_session(element)
+
+    case cdp_send(session, "Runtime.callFunctionOn", %{
+           objectId: object_id,
+           functionDeclaration:
+             "function() { var r = this.getBoundingClientRect(); return JSON.stringify({x: r.x, y: r.y}); }",
+           returnByValue: true
+         }) do
+      {:ok, %{"result" => %{"value" => json}}} ->
+        %{"x" => x, "y" => y} = Jason.decode!(json)
+        {:ok, {x, y}}
+
+      error ->
+        error
+    end
+  end
+
+  # ----- Mouse / touch -----
+
+  @doc "Move the virtual mouse to the element's center."
+  @spec hover(Element.t()) :: {:ok, nil} | {:error, term}
+  def hover(%Element{} = element) do
+    case element_center(element) do
+      {:ok, {x, y}} ->
+        put_mouse_pos(element, x, y)
+        dispatch_mouse(element, "mouseMoved", x, y)
+
+      err ->
+        err
+    end
+  end
+
+  @doc "Synthesize a single tap (touchStart + touchEnd) at element center."
+  @spec tap(Element.t()) :: {:ok, nil} | {:error, term}
+  def tap(%Element{} = element) do
+    session = Element.root_session(element)
+
+    case element_center(element) do
+      {:ok, {x, y}} ->
+        dispatch_touch(session, "touchStart", trunc(x), trunc(y))
+        dispatch_touch(session, "touchEnd", trunc(x), trunc(y))
+
+      err ->
+        err
+    end
+  end
+
+  @doc "Press a touch point at element top-left + offset."
+  @spec touch_down(Session.t(), Element.t() | nil, integer, integer) ::
+          {:ok, nil} | {:error, term}
+  def touch_down(%Session{} = session, nil, x, y) do
+    dispatch_touch(session, "touchStart", x, y)
+  end
+
+  def touch_down(%Session{}, %Element{} = element, x_offset, y_offset) do
+    session = Element.root_session(element)
+
+    case element_topleft(element) do
+      {:ok, {ex, ey}} ->
+        dispatch_touch(session, "touchStart", trunc(ex + x_offset), trunc(ey + y_offset))
+
+      err ->
+        err
+    end
+  end
+
+  @doc "Release any active touch points."
+  @spec touch_up(Session.t() | Element.t()) :: {:ok, nil}
+  def touch_up(parent), do: dispatch_touch(parent, "touchEnd", 0, 0)
+
+  @doc "Move the active touch point to absolute coordinates."
+  @spec touch_move(Session.t() | Element.t(), integer, integer) :: {:ok, nil}
+  def touch_move(parent, x, y), do: dispatch_touch(parent, "touchMove", x, y)
+
+  @doc "Press a mouse button at the current cursor position."
+  @spec button_down(Session.t() | Element.t(), :left | :middle | :right) :: {:ok, nil}
+  def button_down(parent, button) do
+    {x, y} = get_mouse_pos(parent)
+    dispatch_mouse(parent, "mousePressed", x, y, button: mouse_button(button), clickCount: 1)
+  end
+
+  @doc "Release a mouse button at the current cursor position."
+  @spec button_up(Session.t() | Element.t(), :left | :middle | :right) :: {:ok, nil}
+  def button_up(parent, button) do
+    {x, y} = get_mouse_pos(parent)
+    dispatch_mouse(parent, "mouseReleased", x, y, button: mouse_button(button), clickCount: 1)
+  end
+
+  @doc "Mouse-pos-aware click: press+release at current cursor position."
+  @spec click_at_cursor(Session.t() | Element.t(), :left | :middle | :right) :: {:ok, nil}
+  def click_at_cursor(parent, button) do
+    {x, y} = get_mouse_pos(parent)
+    btn = mouse_button(button)
+    dispatch_mouse(parent, "mousePressed", x, y, button: btn, clickCount: 1)
+    dispatch_mouse(parent, "mouseReleased", x, y, button: btn, clickCount: 1)
+  end
+
+  @doc "Move mouse cursor by an offset from its last known position."
+  @spec move_mouse_by(Session.t() | Element.t(), integer, integer) :: {:ok, nil}
+  def move_mouse_by(parent, x_offset, y_offset) do
+    {cx, cy} = get_mouse_pos(parent)
+    nx = cx + x_offset
+    ny = cy + y_offset
+    put_mouse_pos(parent, nx, ny)
+    dispatch_mouse(parent, "mouseMoved", nx, ny)
+  end
+
+  @doc "Double-click at the current cursor position."
+  @spec double_click(Session.t() | Element.t()) :: {:ok, nil}
+  def double_click(parent) do
+    {x, y} = get_mouse_pos(parent)
+    dispatch_mouse(parent, "mousePressed", x, y, button: "left", clickCount: 2)
+    dispatch_mouse(parent, "mouseReleased", x, y, button: "left", clickCount: 2)
+  end
+
+  defp dispatch_mouse(parent, type, x, y, opts \\ []) do
+    session = Element.root_session(parent)
+    params = %{type: type, x: trunc(x), y: trunc(y)} |> Map.merge(Map.new(opts))
+    cdp_send(session, "Input.dispatchMouseEvent", params)
+    {:ok, nil}
+  end
+
+  defp dispatch_touch(parent, type, x, y) do
+    session = Element.root_session(parent)
+    touch_points = if type == "touchEnd", do: [], else: [%{x: x, y: y}]
+
+    cdp_send(session, "Input.dispatchTouchEvent", %{
+      type: type,
+      touchPoints: touch_points
+    })
+
+    {:ok, nil}
+  end
+
+  defp put_mouse_pos(parent, x, y) do
+    id = Element.root_session(parent).id
+    Process.put({:v2_mouse, id}, {trunc(x), trunc(y)})
+  end
+
+  defp get_mouse_pos(parent) do
+    id = Element.root_session(parent).id
+    Process.get({:v2_mouse, id}, {0, 0})
+  end
+
+  defp mouse_button(:left), do: "left"
+  defp mouse_button(:middle), do: "middle"
+  defp mouse_button(:right), do: "right"
+  defp mouse_button(other), do: to_string(other)
+
+  @doc "True when the page is on a known blank URL (about:blank, data:,)."
+  @spec blank_page?(Session.t()) :: boolean
+  def blank_page?(%Session{} = session) do
+    case current_url(session) do
+      {:ok, url} -> url in ["data:,", "about:blank", ""]
+      _ -> false
+    end
+  end
+
+  # ----- Dialog handling (Page.javascriptDialogOpening) -----
+
+  @doc """
+  Spawn an inner action that opens a JavaScript dialog
+  (`alert/confirm/prompt`), then accept or dismiss it. Mirrors
+  `Wallabidi.ChromeCDP.handle_dialog/4`.
+
+  `fun` must be the action that triggers the dialog (e.g. clicking
+  the button that calls `alert(...)`). It runs concurrently with the
+  dialog handler, since clicking the button blocks until the dialog
+  is dismissed.
+
+  Returns the dialog's message (the string passed to alert/confirm/prompt).
+  """
+  @spec handle_dialog(Session.t(), (Session.t() -> any), boolean, String.t() | nil) :: String.t()
+  def handle_dialog(%Session{} = session, fun, accept, prompt_text \\ nil) do
+    caller = self()
+
+    # Subscribe BEFORE the action so the dialog event isn't missed.
+    # Page domain must be enabled for the event to fire.
+    _ = cdp_send(session, "Page.enable", %{})
+
+    handler =
+      spawn(fn ->
+        # Subscribe directly at the V2.WebSocket level so the event is
+        # routed straight to this handler — V2.Session normally
+        # consumes events itself, but for one-shot dialog handling we
+        # don't need its routing.
+        ctx = session.browsing_context || :global
+        :ok = WebSocket.subscribe(session.bidi_pid, "Page.javascriptDialogOpening", ctx, self())
+
+        receive do
+          {:v2_event, "Page.javascriptDialogOpening", event} ->
+            msg = get_in(event, ["params", "message"]) || ""
+            default = get_in(event, ["params", "defaultPrompt"])
+            effective_text = prompt_text || default
+
+            params = %{accept: accept}
+
+            params =
+              if is_binary(effective_text),
+                do: Map.put(params, :promptText, effective_text),
+                else: params
+
+            _ = cdp_send(session, "Page.handleJavaScriptDialog", params)
+            send(caller, {:dialog_handled, msg})
+        after
+          10_000 -> send(caller, {:dialog_handled, ""})
+        end
+      end)
+
+    fun.(session)
+
+    message =
+      receive do
+        {:dialog_handled, msg} -> msg
+      after
+        10_000 -> ""
+      end
+
+    _ = handler
+    message
   end
 end

@@ -89,27 +89,22 @@ defmodule Wallabidi.Protocol do
   # --- Dispatch helpers (call the session's protocol adapter) ---
 
   @spec eval(Session.t(), String.t()) :: result
-  def eval(%Session{protocol: mod} = session, js) when not is_nil(mod),
-    do: mod.eval(session, js)
-
-  def eval(%Session{driver: driver} = session, js) when driver in [Wallabidi.LightpandaDriver, Wallabidi.ChromeDriver],
-    do: Wallabidi.V2CDPClient.evaluate(session, js)
+  def eval(%Session{driver: driver} = session, js)
+      when driver in [Wallabidi.LightpandaDriver, Wallabidi.ChromeDriver],
+      do: Wallabidi.CDPClient.evaluate(session, js)
 
   def eval(%Session{driver: Wallabidi.BiDiDriver} = session, js),
-    do: Wallabidi.V2BiDiClient.evaluate(session, js)
+    do: Wallabidi.BiDiClient.evaluate(session, js)
 
   @spec eval_async(Session.t(), String.t(), timeout()) :: result
   def eval_async(session, js, timeout \\ 10_000)
-
-  def eval_async(%Session{protocol: mod} = session, js, timeout) when not is_nil(mod),
-    do: mod.eval_async(session, js, timeout)
 
   def eval_async(%Session{driver: driver} = session, js, _timeout)
       when driver in [Wallabidi.LightpandaDriver, Wallabidi.ChromeDriver] do
     # V2.CDPClient.evaluate_async wraps the body so the caller's
     # final `arguments[N]` resolves the awaited promise. The legacy
     # eval_async expects the JS to itself be a Promise — unwrap.
-    case Wallabidi.V2CDPClient.cdp_send(session, "Runtime.evaluate", %{
+    case Wallabidi.CDPClient.cdp_send(session, "Runtime.evaluate", %{
            expression: js,
            awaitPromise: true,
            returnByValue: true
@@ -121,48 +116,25 @@ defmodule Wallabidi.Protocol do
   end
 
   def eval_async(%Session{driver: Wallabidi.BiDiDriver} = session, js, _timeout),
-    do: Wallabidi.V2BiDiClient.evaluate_async(session, js)
+    do: Wallabidi.BiDiClient.evaluate_async(session, js)
 
   @spec current_url(Session.t()) :: result
-  def current_url(%Session{protocol: mod} = session) when not is_nil(mod),
-    do: mod.current_url(session)
-
   def current_url(%Session{driver: driver} = session)
       when driver in [Wallabidi.LightpandaDriver, Wallabidi.ChromeDriver],
-      do: Wallabidi.V2CDPClient.current_url(session)
+      do: Wallabidi.CDPClient.current_url(session)
 
   def current_url(%Session{driver: Wallabidi.BiDiDriver} = session),
-    do: Wallabidi.V2BiDiClient.current_url(session)
+    do: Wallabidi.BiDiClient.current_url(session)
 
+  # subscribe/unsubscribe/wire_methods were V1-protocol-adapter hooks.
+  # V2 transport has direct subscriptions baked in — these are no-ops
+  # kept for callers that haven't migrated.
   @spec subscribe(Session.t(), semantic_event) :: :ok
-  def subscribe(%Session{protocol: mod} = session, event)
-      when not is_nil(mod) and is_atom(event) do
-    # Code.ensure_loaded?/1 is required here — function_exported?/3 returns
-    # false for not-yet-loaded modules, giving a false negative.
-    if Code.ensure_loaded?(mod) and function_exported?(mod, :subscribe, 2) do
-      mod.subscribe(session, event)
-    else
-      :ok
-    end
-  end
+  def subscribe(%Session{} = _session, event) when is_atom(event), do: :ok
 
   @spec unsubscribe(Session.t(), semantic_event) :: :ok
-  def unsubscribe(%Session{protocol: mod} = session, event)
-      when not is_nil(mod) and is_atom(event) do
-    if Code.ensure_loaded?(mod) and function_exported?(mod, :unsubscribe, 2) do
-      mod.unsubscribe(session, event)
-    else
-      :ok
-    end
-  end
+  def unsubscribe(%Session{} = _session, event) when is_atom(event), do: :ok
 
   @spec wire_methods(Session.t(), semantic_event) :: [String.t()]
-  def wire_methods(%Session{protocol: mod}, event)
-      when not is_nil(mod) and is_atom(event) do
-    if Code.ensure_loaded?(mod) and function_exported?(mod, :wire_methods, 1) do
-      mod.wire_methods(event)
-    else
-      []
-    end
-  end
+  def wire_methods(%Session{} = _session, event) when is_atom(event), do: []
 end
