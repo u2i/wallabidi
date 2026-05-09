@@ -97,21 +97,31 @@ defmodule Wallabidi.CDPClient do
   """
   @spec install_bootstrap(Session.t()) :: :ok | {:error, term}
   def install_bootstrap(%Session{} = session) do
-    # Subscribe + Runtime.enable can be cast (CDP applies in order).
-    # Runtime.addBinding and Page.addScriptToEvaluateOnNewDocument
-    # MUST complete before any find runs — those stay blocking.
-    # (Casting addBinding races with the next Page.navigate: the
-    # bootstrap script runs before the binding lands and the
-    # `__wallabidi` callback fails to fire.)
+    # CDP guarantees in-order per-session frame processing on the
+    # wire. So if we cast Runtime.enable, Runtime.addBinding, and
+    # Page.addScriptToEvaluateOnNewDocument and then sync-send a
+    # barrier, the barrier's response proves all three preceding
+    # commands have been applied — making it safe for the caller's
+    # next `Page.navigate` to see both the binding AND the preload
+    # script registered.
+    #
+    # Why a single barrier rather than two sync sends: the previous
+    # implementation paid one round-trip for addBinding *and* one for
+    # addScript. Pipelining both as casts behind one barrier saves
+    # one round-trip per session bring-up. Uses Page.getFrameTree as
+    # the barrier — cheap, no side effects, available in both Chrome
+    # and Lightpanda.
     :ok = Protocol.subscribe(session, "Runtime.bindingCalled")
     cdp_cast(session, "Runtime.enable", %{})
+    cdp_cast(session, "Runtime.addBinding", %{name: "__wallabidi"})
 
-    with {:ok, _} <- cdp_send(session, "Runtime.addBinding", %{name: "__wallabidi"}),
-         {:ok, _} <-
-           cdp_send(session, "Page.addScriptToEvaluateOnNewDocument", %{
-             source: Wallabidi.Bootstrap.cdp_iife()
-           }) do
-      :ok
+    cdp_cast(session, "Page.addScriptToEvaluateOnNewDocument", %{
+      source: Wallabidi.Bootstrap.cdp_iife()
+    })
+
+    case cdp_send(session, "Page.getFrameTree", %{}) do
+      {:ok, _} -> :ok
+      err -> err
     end
   end
 
