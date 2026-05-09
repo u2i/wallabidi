@@ -95,9 +95,11 @@ defmodule Wallabidi.Chrome.SharedConnection do
   end
 
   # The driver supervisor records the server-pool's name (if any)
-  # via Application.put_env at boot — read it back here.
+  # via :persistent_term at boot — read it back here. Avoids the
+  # tuple-key deprecation warning that Application.get_env emits
+  # and skips an Application lookup on every start_session.
   defp server_pool_name(driver_mod) do
-    Application.get_env(:wallabidi, {__MODULE__, :pool_name, driver_mod})
+    :persistent_term.get({__MODULE__, :pool_name, driver_mod}, nil)
   end
 
   # Same /json/version discovery logic as ChromeCDP.SharedConnection.

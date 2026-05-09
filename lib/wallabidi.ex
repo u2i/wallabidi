@@ -81,19 +81,7 @@ defmodule Wallabidi do
     # SessionProcess monitors the caller and runs cleanup in terminate/2
     # when the caller dies, so we don't need on_exit hooks or SessionStore
     # monitoring for crashed-test cleanup.
-    driver = resolve_driver(opts)
-
-    # Pool routing: when `config :wallabidi, :pools, %{<driver> => MyPool}`
-    # is configured, route through the pool's checkout. Falls through
-    # to the legacy direct-start path otherwise — backwards-compatible.
-    case pool_for(driver) do
-      nil -> direct_start_session(driver, opts)
-      pool_name -> checkout_from_pool(pool_name, opts)
-    end
-  end
-
-  defp direct_start_session(driver, opts) do
-    case driver do
+    case resolve_driver(opts) do
       :live_view -> Wallabidi.LiveViewDriver.start_session(opts)
       d when d in [:lightpanda, :lightpanda_v2] -> Wallabidi.LightpandaDriver.start_session(opts)
       d when d in [:chrome_cdp, :chrome_cdp_v2] -> Wallabidi.ChromeDriver.start_session(opts)
@@ -102,50 +90,12 @@ defmodule Wallabidi do
     end
   end
 
-  defp checkout_from_pool(pool_name, opts) do
-    # Inject the caller PID as :owner so the pool's prepare_session
-    # callback can wire per-test event subscriptions to the right
-    # process. Without this, prepare_session runs in the Pool
-    # GenServer's context and self() is the pool — events would land
-    # in the pool's mailbox rather than the test's.
-    opts = Keyword.put_new(opts, :owner, self())
-
-    case Wallabidi.Pool.checkout(pool_name, opts) do
-      {:ok, slot_id, _slot_handle, %{session: session}} ->
-        # Tag the session with pool metadata so end_session/1 routes
-        # the teardown back through the pool's checkin instead of
-        # disposing directly.
-        capabilities =
-          Map.put(session.capabilities, :__pool, %{name: pool_name, slot_id: slot_id})
-
-        {:ok, %{session | capabilities: capabilities}}
-
-      {:error, _} = err ->
-        err
-    end
-  end
-
-  defp pool_for(driver) do
-    pools = Application.get_env(:wallabidi, :pools, %{})
-    Map.get(pools, driver)
-  end
-
   @doc """
   Ends a browser session.
   """
   @spec end_session(Session.t()) :: :ok | {:error, reason}
-  def end_session(%Session{driver: driver, capabilities: caps} = session) do
-    result =
-      case Map.get(caps || %{}, :__pool) do
-        %{name: pool_name, slot_id: slot_id} ->
-          # Pool-managed session: hand back to the pool. The pool will
-          # call its impl's finalize_session/2 (which runs the legacy
-          # driver.end_session under the hood for Phase 1 :rebuild).
-          Wallabidi.Pool.checkin(pool_name, slot_id, %{session: session})
-
-        _ ->
-          driver.end_session(session)
-      end
+  def end_session(%Session{driver: driver} = session) do
+    result = driver.end_session(session)
 
     # Drain any in-flight WebSocket events that arrived after session
     # teardown. Without this, :bidi_event messages linger in the test

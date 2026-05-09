@@ -50,8 +50,7 @@ defmodule Wallabidi.ChromeDriver do
       pool_size() > 1 ->
         # Multiple Chrome processes via ServerPool. SharedConnection
         # round-robins across them on every get/1.
-        Application.put_env(
-          :wallabidi,
+        :persistent_term.put(
           {SharedConnection, :pool_name, __MODULE__},
           @chrome_server_pool_name
         )

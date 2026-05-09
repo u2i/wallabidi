@@ -107,126 +107,125 @@ For Chrome CDP V2 specifically, that build sequence is:
 Teardown is `Target.disposeBrowserContext`. The shared WS itself
 stays alive across sessions.
 
-## Session pooling
+## Browser-server pools
 
-For Chrome CDP V2 only. The pool is opt-in via app config and
-relieves shared-WS GenServer mailbox contention under high
-concurrency.
+For both Chrome CDP V2 and Chrome BiDi V2 wallabidi can spawn
+multiple independent browser-server processes and round-robin
+sessions across them. This is the highest-impact perf knob in the
+codebase.
 
-### Why pool only for Chrome CDP V2
+### What gets pooled
 
-Pool wins come from one specific source: pre-warming N sessions at
-pool startup so the per-session bring-up cost (steps 1–6 above)
-isn't on the test critical path. That cost compounds under
-concurrency because the bring-up RPCs serialize through the shared
-WebSocket's GenServer mailbox.
+- **Chrome CDP V2**: N `Wallabidi.Chrome.Server` instances, each
+  launching its own headless Chrome on its own random port. Each
+  has its own `Wallabidi.WebSocket` cached by `SharedConnection`.
+- **Chrome BiDi V2**: N `Wallabidi.Chrome.BidiServer` instances,
+  each launching its own chromium-bidi Node process + Chrome.
 
-For drivers without that mailbox shape:
+Sessions are distributed via per-pool atomic counters; the load
+balancer is round-robin (no liveness or load awareness — under
+uniform test workloads this is close enough to optimal).
 
-- **Chrome BiDi**: each session has its own WS — no shared mailbox
-  to relieve. Plus chromium-bidi's own internal session pool is the
-  real bottleneck. Pooling here would just stack two pools and
-  cause exhaustion.
-- **Lightpanda**: per-session WS, no shared mailbox. Pre-warming
-  buys nothing because nothing was queueing. Measured: 0% to +9%
-  wallclock (slightly negative from bookkeeping overhead).
-- **LiveView**: in-process, no transport at all. Pool would just
-  add overhead.
+### Why this works
 
-Measured pool impact on perf_bench (136 tests):
+A single browser process serializes:
 
-| driver         | mc=1 | mc=4 | mc=8 |
-|----------------|------|------|------|
-| Chrome CDP V2  | 0%   | +3%  | **−22%** |
-| Chrome BiDi V2 | net negative (collides w/ chromium-bidi pool) |
-| Lightpanda V2  | ~0%  | 0%   | +9%  |
+- V8 GC, parser, and isolate scheduling
+- Renderer thread per page
+- Network thread shared across BrowserContexts
+- (BiDi only) the chromium-bidi Node process's own
+  session.subscribe queue
 
-### Behaviour contract: `Wallabidi.Driver.Pool`
+Splitting across N processes scales linearly through those
+bottlenecks until the BEAM/test-machine itself runs out of CPU or
+memory headroom.
 
-A driver wires into the pool by implementing this behaviour:
+### Measured impact on perf_bench (136 tests)
 
-```elixir
-@callback open_slot(opts) :: {:ok, handle} | {:error, reason}
-@callback prepare_session(handle, session_opts) :: {:ok, session_state} | {:error, reason}
-@callback finalize_session(handle, session_state | :crashed) :: :ok
-@callback close_slot(handle) :: :ok
+Chrome CDP V2:
 
-# optional
-@callback reset_slot(handle) :: :ok | :must_recreate
-```
+| mc | servers=1 | servers=4 | Δ |
+|----|-----------|-----------|----|
+| 4  | 73s | 72s | −1% (noise) |
+| 8  | 63s | **47s** | **−25%** |
+| 16 | 61s | **44s** | **−28%** |
 
-Slot handle vs session state:
+Chrome BiDi V2:
 
-- **Handle** is per-slot, lasts the slot's lifetime (returned by
-  `open_slot`, passed back to all subsequent calls). For Chrome CDP
-  it's a small map referencing the shared WS pid.
-- **Session state** is per-checkout, returned by `prepare_session`
-  and passed to `finalize_session` on checkin. Holds the active
-  Session struct + caller info.
+| mc | servers=1 | servers=4 | Δ |
+|----|-----------|-----------|----|
+| 4  | 113s, 2 fails | 103s, 0 fails | −9%, fails eliminated |
+| 8  | 95s, 4 fails  | 86s, 4 fails  | −9% |
+| 16 | 102s, 6 fails | 106s, 4 fails | flat, fails reduced |
 
-### Phase 1 strategy: `:rebuild`
+BiDi gains less wallclock because the per-Chrome bottleneck for
+BiDi is comparatively smaller — the bigger win there is reliability
+under concurrency.
 
-Today's behaviour. On checkin, `finalize_session` runs the standard
-driver `end_session` — `Target.disposeBrowserContext` tears down the
-BrowserContext, then the slot's `prepare_session` (called by the next
-checkout) builds a fresh one.
-
-Wins come from concurrent pre-warming at pool startup, not from
-state-reuse on subsequent checkouts.
-
-### `:reset` strategy (deferred)
-
-A `reset_slot/1` callback could clear browser state in place
-(`Network.clearBrowserCookies` + `Storage.clearDataForOrigin` +
-`Page.navigate("about:blank")` + Session GenServer state cleanup +
-input dispatcher reset) and keep the BrowserContext alive across
-many tests. Unlike :rebuild, this would benefit mc=1 too.
-
-Investigated and not yet shipped: Chrome's input dispatcher state
-(pressed mouse buttons, partial touch sequences, modifier keys)
-isn't fully clearable via standard CDP methods. Even with all the
-state-reset Playwright uses (and more), residual cumulative drift
-breaks input-sensitive tests under heavy load. Playwright sidesteps
-this by defaulting to fresh-BrowserContext-per-test rather than
-true reuse.
-
-The `:reset` work is intentionally deferred — Phase 1's wins are
-real, contained, and don't require the dispatcher-reset rabbit
-hole.
+Lightpanda is **not** server-pooled: per-session-WS architecture
+means there's no shared-process bottleneck, and LP scales better
+under concurrency than Chrome already (272ms/test at mc=8 vs
+537ms/test on Chrome CDP).
 
 ### Configuration
 
-Enable the pool via app config:
+```sh
+# Chrome CDP — opt into N=4 Chrome processes
+CHROME_SERVER_COUNT=4 mix test
 
-```elixir
-# config/test.exs
-config :wallabidi, :pools, %{chrome_cdp_v2: MyApp.WallabidiPool}
+# Chrome BiDi — opt into N=4 chromium-bidi processes
+BIDI_SERVER_COUNT=4 mix test
 ```
 
-…then start the pool in your application supervisor or test helper:
+Or via app config:
 
 ```elixir
-{:ok, _} =
-  Wallabidi.Pool.start_link(
-    name: MyApp.WallabidiPool,
-    impl: Wallabidi.ChromeDriver.PoolImpl,
-    size: System.schedulers_online()
-  )
+config :wallabidi,
+  chrome_server_count: 4,
+  bidi_server_count: 4
 ```
 
-`Wallabidi.start_session/1` automatically routes through the
-configured pool when one matches the active driver. No test-side
-changes required — pool-managed and direct sessions look identical
-to test code.
+Default for both is `1` — a single server process, identical to the
+pre-pool behavior.
+
+### Trade-off
+
+Each additional Chrome process costs ~200–500MB resident memory at
+idle (more once Pages exist). Each chromium-bidi Node + Chrome pair
+costs similar. Default `count=1` keeps the cost off users who
+aren't currently fighting concurrency bottlenecks; `count=4` is
+worth turning on once you're running at `mc>=8` and CI has memory
+headroom.
+
+### Why no wallabidi-side session pool
+
+An earlier iteration shipped a wallabidi-side session pool
+(`Wallabidi.Pool` + `Driver.Pool` behaviour) that pre-warmed N
+sessions and round-robined them across tests. It was real (saw a
+−22% mc=8 win in isolation) but ended up subsumed by the
+browser-server pool.
+
+Stacking both pools wasn't multiplicative — they relieve the
+**same** bottleneck (Chrome-process serialization), just at
+different points. With `CHROME_SERVER_COUNT=4` the per-Chrome load
+is already low enough that pre-warmed sessions buy nothing, and
+the session pool's bookkeeping overhead made the combined config
+slightly slower than server-pool-only.
+
+The session pool was removed (commits `006108d` and `95c8cbf`
+shipped the server pools; commit removing the session pool follows
+this doc). Single knob = clearer story.
 
 ## Useful entry points
 
 - `Wallabidi.start_session/1`, `Wallabidi.end_session/1` — public
-  entry points; route through pool when configured
-- `Wallabidi.Pool` — the generic pool GenServer
-- `Wallabidi.Driver.Pool` — the behaviour drivers implement to plug
-  in
-- `Wallabidi.ChromeDriver.PoolImpl` — the only currently-shipped
-  pool impl
+  entry points; both delegate straight to the active driver
+- `Wallabidi.Chrome.ServerPool` — N-Chrome supervisor for the
+  CDP V2 driver
+- `Wallabidi.Chrome.BidiServerPool` — N-chromium-bidi supervisor
+  for the BiDi V2 driver
+- `Wallabidi.Chrome.SharedConnection` — caches the
+  `Wallabidi.WebSocket` pid per Chrome server name; round-robins
+  via `ServerPool.next_server/1` when a pool is active
 - `Wallabidi.Transport.SharedWS`, `Wallabidi.Transport.PerSession`,
   `Wallabidi.Transport.BiDi` — driver-specific transport shapes
