@@ -45,12 +45,12 @@ defmodule Wallabidi.BiDiDriver do
     Supervisor.start_link(__MODULE__, :ok, opts)
   end
 
-  @bidi_server_name __MODULE__.BidiServer
+  @bidi_server_pool_name __MODULE__.BidiServerPool
 
   @impl Supervisor
   def init(_) do
     children = [
-      {Wallabidi.Chrome.BidiServer, [name: @bidi_server_name]}
+      {Wallabidi.Chrome.BidiServerPool, [name: @bidi_server_pool_name]}
     ]
 
     Supervisor.init(children, strategy: :one_for_one)
@@ -116,9 +116,15 @@ defmodule Wallabidi.BiDiDriver do
         url
 
       _ ->
-        # Convert the BidiServer's WS URL to its HTTP equivalent —
-        # they share the host/port; chromium-bidi serves both.
-        ws_url = Wallabidi.Chrome.BidiServer.ws_url(@bidi_server_name)
+        # Pull a WS URL from the next BidiServer in the pool's
+        # round-robin rotation. chromium-bidi has internal
+        # serialization that makes a single Node process stall
+        # under high concurrency; spreading sessions across N
+        # processes (each handling ~mc/N concurrently) keeps
+        # individual servers in their performance comfort zone.
+        # Convert WS to HTTP — chromium-bidi serves both on the
+        # same host/port.
+        ws_url = Wallabidi.Chrome.BidiServerPool.next_url(@bidi_server_pool_name)
 
         ws_url
         |> URI.parse()
