@@ -363,13 +363,13 @@ defmodule Wallabidi.LightpandaDriver do
 
   @impl true
   def selected(%Element{} = element) do
-    case CDPClient.cdp_send(Element.root_session(element), "Runtime.callFunctionOn", %{
-           objectId: element.bidi_shared_id,
-           functionDeclaration:
-             "function() { return this.checked === true || this.selected === true; }",
-           returnByValue: true
-         }) do
-      {:ok, %{"result" => %{"value" => v}}} -> {:ok, v == true}
+    case CDPClient.call_on_element(
+           Element.root_session(element),
+           element,
+           Wallabidi.OpsShared.dispatch_fn(),
+           ["is_selected", []]
+         ) do
+      {:ok, v} -> {:ok, v == true}
       err -> err
     end
   end

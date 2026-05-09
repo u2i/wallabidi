@@ -7,359 +7,64 @@ defmodule Wallabidi.Bootstrap do
   # as a free variable — the caller provides it as either:
   #   - CDP: a global binding via Runtime.addBinding
   #   - BiDi: a channel callback via script.addPreloadScript argument
+  #
+  # Source of truth lives in priv/wallabidi.js. We read it at compile time
+  # via @external_resource so edits to the .js file trigger a recompile,
+  # and the string is baked into the BEAM (no runtime FS reads).
+
+  # Prefer the minified bundle when present (committed to repo via
+  # `mix wallabidi.minify`). Falls back to the readable source so dev
+  # edits to wallabidi.js take effect without a rebuild step. Both
+  # paths are listed as @external_resource so Mix recompiles on
+  # either change.
+  @bootstrap_min_path Path.join([__DIR__, "..", "..", "priv", "wallabidi.min.js"])
+  @bootstrap_src_path Path.join([__DIR__, "..", "..", "priv", "wallabidi.js"])
+  @external_resource @bootstrap_min_path
+  @external_resource @bootstrap_src_path
+  @body (case File.read(@bootstrap_min_path) do
+           {:ok, content} -> content
+           _ -> File.read!(@bootstrap_src_path)
+         end)
+
+  @cdp_iife "(function() {\n" <> @body <> "\n})()"
+  @bidi_preload "(__wallabidi) => {\n" <> @body <> "\n}"
 
   @doc "CDP form: IIFE that assumes `__wallabidi` is a global binding."
-  def cdp_iife, do: "(function() {\n#{body()}\n})()"
+  def cdp_iife, do: @cdp_iife
 
   @doc "BiDi form: arrow function receiving `__wallabidi` as channel parameter."
-  def bidi_preload, do: "(__wallabidi) => {\n#{body()}\n}"
+  def bidi_preload, do: @bidi_preload
 
   @doc """
-  Build the register_js snippet that stores a query in W.queries and
-  calls W.check(). Used by both CDPClient and BiDi find paths.
+  Build a JS expression that calls `window.__w.registerQuery(id, ops,
+  count, root)`. Called from CDPClient and BiDiClient find paths.
 
   `root_js` is `"this"` for scoped (Element parent) or `"null"` for document.
+  Bootstrap must be installed before this runs — V2 install_bootstrap
+  guarantees that, so there's no fallback path.
   """
   def register_js(query_id, ops_json, count_js, root_js \\ "null") do
     id_js = Jason.encode!(query_id)
 
+    # Hot path: bootstrap is installed → delegate to W.registerQuery,
+    # which lives in priv/wallabidi.js.
+    # Cold path: no bootstrap yet (e.g. find runs on about:blank before
+    # any navigation has loaded the preload script). Inline a minimal
+    # querySelectorAll + binding push so the caller still gets a
+    # syntax error surfaced via the binding event.
     "var W=window.__w;" <>
-      "if(W){" <>
-      "W.queries[#{id_js}]={ops:#{ops_json},count:#{count_js},resolved:false,elements:[],root:#{root_js}};" <>
-      "W.check();" <>
-      "}else{" <>
-      "try{" <>
+      "if(W){W.registerQuery(#{id_js},#{ops_json},#{count_js},#{root_js});}" <>
+      "else{try{" <>
       "var r={els:[],error:null};" <>
       "try{var _o=#{ops_json};for(var i=0;i<_o.length;i++){var o=_o[i];if(o[0]==='query'){r.els=Array.from(document.querySelectorAll(o[2]));}}}catch(e){r.error=e.message;}" <>
       "if(r.error)__wallabidi(JSON.stringify({id:#{id_js},count:0,error:r.error}));" <>
       "else{var c=r.els.length;var m=#{count_js}===null?c>0:c===#{count_js};if(m)__wallabidi(JSON.stringify({id:#{id_js},count:c}));}" <>
-      "}catch(e){}" <>
-      "}"
+      "}catch(e){}}"
   end
 
   @doc "JS to clean up a resolved query from window.__w.queries."
   def cleanup_js(query_id) do
     id_js = Jason.encode!(query_id)
-    "if(window.__w&&window.__w.queries)delete window.__w.queries[#{id_js}];"
-  end
-
-  defp body do
-    ~S"""
-    if (window.__w) return;
-    var W = window.__w = {};
-    W.queries = {};
-
-    // --- Visibility check ---
-    W.isVisible = function(el) {
-      if (!el.isConnected) return false;
-      // Head and its descendants are never user-visible regardless of CSS
-      // (real browsers enforce this via UA stylesheet; some headless engines
-      // like Lightpanda don't, so check explicitly).
-      if (el.ownerDocument && el.ownerDocument.head && el.ownerDocument.head.contains(el)) return false;
-      if (el.tagName === 'OPTION') {
-        var s = el.closest('select');
-        if (!s) return true;
-        var ss = getComputedStyle(s);
-        return ss.display !== 'none' && ss.visibility !== 'hidden';
-      }
-      var st = getComputedStyle(el);
-      if (st.display === 'none' || st.visibility === 'hidden') return false;
-      var r = el.getBoundingClientRect();
-      if (r.width === 0 && r.height === 0 && el.offsetParent === null && st.position !== 'fixed') return false;
-      return true;
-    };
-
-    // --- Click handler ---
-    W.clickEl = function(el) {
-      if (!el) return;
-      if (el.tagName !== 'OPTION') {
-        el.scrollIntoView({block: 'center', inline: 'nearest'});
-      }
-      if (el.tagName === 'OPTION') {
-        var sel = el.closest('select');
-        if (sel && !sel.multiple) {
-          sel.value = el.value;
-          Array.from(sel.options).forEach(function(o) { o.selected = (o === el); });
-        } else { el.selected = !el.selected; }
-        if (sel) sel.dispatchEvent(new Event('change', {bubbles: true}));
-        return;
-      }
-      var form = el.closest('form');
-      if (form && (el.type === 'reset' || (el.tagName === 'BUTTON' && el.type === 'reset'))) {
-        Array.from(form.elements).forEach(function(fe) {
-          if (fe.type === 'checkbox' || fe.type === 'radio') fe.checked = fe.defaultChecked;
-          else if (fe.tagName === 'SELECT') Array.from(fe.options).forEach(function(o) { o.selected = o.defaultSelected; });
-          else if ('defaultValue' in fe) fe.value = fe.defaultValue;
-        });
-        form.dispatchEvent(new Event('reset', {bubbles: true}));
-        return;
-      }
-      el.focus();
-      el.click();
-    };
-
-    // --- Classify handler ---
-    W.classify = function(el, type) {
-      if (!el) return 'none';
-      if (type === 'click') {
-        var link = el.closest('[data-phx-link]');
-        if (link) return link.getAttribute('data-phx-link') === 'redirect' ? 'navigate' : 'patch';
-        var pc = el.getAttribute('phx-click');
-        if (pc) {
-          if (pc.startsWith('[')) {
-            if (pc.indexOf('"navigate"') !== -1) return 'navigate';
-            if (pc.indexOf('"patch"') !== -1) return 'patch';
-            if (pc.indexOf('"push"') !== -1) return 'patch';
-            return 'none';
-          }
-          return 'patch';
-        }
-        // Only buttons/inputs that submit a form trigger navigation.
-        // type='reset' and type='button' run JS but never submit/navigate.
-        var submits = (el.type === 'submit' || el.type === 'image') ||
-                      (el.tagName === 'BUTTON' && el.type !== 'reset' && el.type !== 'button');
-        if (submits) {
-          var f = el.closest('form');
-          if (f && f.hasAttribute('phx-trigger-action')) return 'full_page';
-          if (f && f.getAttribute('phx-submit')) return 'patch';
-          if (f) return 'full_page';
-        }
-        var a = el.closest('a[href]');
-        if (a && a.getAttribute('href') && !a.getAttribute('href').startsWith('#')) {
-          // target="_blank" / target="newwindow" / etc. open in a new tab —
-          // the source page doesn't navigate, so don't await a load.
-          var tgt = a.getAttribute('target');
-          if (tgt && tgt !== '_self' && tgt !== '_top' && tgt !== '_parent') return 'none';
-          // onclick handler may preventDefault — can't statically tell.
-          // Defer to the JS to decide; if it does navigate, downstream
-          // assertions will retry-with-timeout anyway.
-          if (a.hasAttribute('onclick')) return 'none';
-          return 'full_page';
-        }
-        return 'none';
-      }
-      if (type === 'change') {
-        var phxC = el.getAttribute('phx-change') || (el.form && el.form.getAttribute('phx-change'));
-        return phxC ? 'patch' : 'none';
-      }
-      return 'none';
-    };
-
-    // --- Opcode interpreter ---
-    // Executes an array of opcodes against a root element.
-    // Returns {els, meta, error} where meta has classification/prepared.
-    W.exec = function(ops, root) {
-      var els = [], meta = {}, error = null;
-      for (var i = 0; i < ops.length; i++) {
-        var op = ops[i], cmd = op[0];
-        try {
-          switch(cmd) {
-            case 'query':
-              var t = op[1], sel = op[2], ctx = root || document;
-              if (t === 'css') {
-                els = Array.from(ctx.querySelectorAll(sel));
-              } else {
-                if (!ctx.nodeType) ctx = document;
-                var xr = document.evaluate(sel, ctx, null, 7, null);
-                els = [];
-                for (var j = 0; j < xr.snapshotLength; j++) els.push(xr.snapshotItem(j));
-              }
-              break;
-            case 'visible':
-              var wantVis = op[1];
-              els = wantVis ? els.filter(W.isVisible) : els.filter(function(e) { return !W.isVisible(e); });
-              break;
-            case 'text':
-              var txt = op[1];
-              els = els.filter(function(e) {
-                var t = (e.innerText || e.textContent || '').replace(/[\s\u00a0]+/g, ' ').trim();
-                return t.indexOf(txt) !== -1;
-              });
-              break;
-            case 'selected':
-              var wantSel = op[1];
-              els = wantSel
-                ? els.filter(function(e) { return e.selected || e.checked || false; })
-                : els.filter(function(e) { return !(e.selected || e.checked); });
-              break;
-            case 'classify':
-              if (els.length > 0) meta.classification = W.classify(els[0], op[1]);
-              else meta.classification = 'none';
-              break;
-            case 'prepare_patch':
-              var ls = window.liveSocket;
-              if (ls && ls.main) {
-                if (!window.__wallabidi_patch_hooked) {
-                  var orig = ls.domCallbacks.onPatchEnd;
-                  ls.domCallbacks.onPatchEnd = function(container) {
-                    orig(container);
-                    if (window.__wallabidi_patch_resolve) {
-                      var r = window.__wallabidi_patch_resolve;
-                      window.__wallabidi_patch_resolve = null;
-                      r(true);
-                    }
-                  };
-                  window.__wallabidi_patch_hooked = true;
-                }
-                window.__wallabidi_patch_promise = new Promise(function(resolve) {
-                  window.__wallabidi_patch_resolve = resolve;
-                  window.addEventListener('beforeunload', function() {
-                    if (window.__wallabidi_patch_resolve) {
-                      window.__wallabidi_patch_resolve = null;
-                      resolve('navigated');
-                    }
-                  }, {once: true});
-                });
-                meta.prepared = true;
-              }
-              break;
-            case 'click':
-              // Capture result BEFORE clicking (click may navigate)
-              meta.count = els.length;
-              W.clickEl(els[0]);
-              break;
-          }
-        } catch(e) {
-          error = e.message || String(e);
-          els = [];
-          break;
-        }
-      }
-      return {els: els, meta: meta, error: error};
-    };
-
-    // --- Query checker ---
-    W.check = function() {
-      for (var id in W.queries) {
-        var q = W.queries[id];
-        if (q.resolved) continue;
-        var result = W.exec(q.ops, q.root);
-        if (result.error) {
-          q.resolved = true;
-          try { __wallabidi(JSON.stringify({id: id, count: 0, error: result.error})); } catch(e) {}
-          continue;
-        }
-        var count = result.meta.count != null ? result.meta.count : result.els.length;
-        var match = q.count == null ? count > 0 : count === q.count;
-        if (match) {
-          q.resolved = true;
-          q.elements = result.els;
-          q.meta = result.meta;
-          try { __wallabidi(JSON.stringify({id: id, count: count, meta: result.meta})); } catch(e) {}
-        }
-      }
-    };
-
-    // MutationObserver on document (before body exists)
-    new MutationObserver(function() {
-      requestAnimationFrame(W.check);
-    }).observe(document, {childList: true, subtree: true, attributes: true, characterData: true});
-
-    // --- Page-ready detection + LiveView patch hook ---
-    //
-    // Each new document gets a fresh pageId. When the page is ready
-    // (DOM parsed + LV connected mount applied, OR non-LV detected),
-    // we set pageReady and fire a channel notification. Elixir captures
-    // the pre-click pageId, then waits for a page_ready notification
-    // with a new pageId.
-    //
-    // State machine (each page_ready carries its current state):
-    //
-    //   Initial
-    //     │ DOMContentLoaded
-    //     │
-    //     ├─ no [data-phx-session] ─→ NonLVReady (terminal for non-LV)
-    //     │
-    //     └─ has [data-phx-session] ─→ AwaitingHook
-    //                                    │ liveSocket.domCallbacks present
-    //                                    ▼
-    //                                  HookInstalled
-    //                                    │ first onPatchEnd
-    //                                    ▼
-    //                                  LVReady ←─┐
-    //                                    │       │ subsequent
-    //                                    └───────┘ onPatchEnd
-    //
-    // Allowed transitions only. The Elixir side raises on invalid
-    // ones (e.g. LVReady → AwaitingHook on the same document) so we
-    // see violations instead of silently flaking.
-    W.pageId = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
-    W.docId = W.pageId; // stable identifier for the bootstrap's lifetime
-    W.pageReady = false;
-    W.lvHooked = false;
-    W.observedPatch = false;
-    W.state = 'Initial';
-
-    function transition(next) {
-      W.state = next;
-    }
-
-    function notify(reason) {
-      try {
-        __wallabidi(JSON.stringify({
-          type: 'page_ready',
-          pageId: W.pageId,
-          docId: W.docId,
-          state: W.state,
-          reason: reason
-        }));
-      } catch(e) {}
-    }
-
-    function bumpPageId(reason) {
-      W.pageId = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
-      W.pageReady = true;
-      notify(reason || 'patch');
-    }
-
-    function installLvHook() {
-      if (W.lvHooked) return true;
-      try {
-        var ls = window.liveSocket;
-        if (ls && ls.domCallbacks) {
-          var origPatch = ls.domCallbacks.onPatchEnd;
-          ls.domCallbacks.onPatchEnd = function(c) {
-            if (origPatch) origPatch(c);
-            if (!W.observedPatch) {
-              W.observedPatch = true;
-              transition('LVReady');
-            }
-            W.check();
-            bumpPageId('onPatchEnd');
-          };
-          W.lvHooked = true;
-          transition('HookInstalled');
-          return true;
-        }
-      } catch(e) {}
-      return false;
-    }
-
-    function markReady(reason) {
-      if (W.pageReady) return;
-      W.pageReady = true;
-      notify(reason);
-    }
-
-    function detectReady() {
-      if (!document.querySelector('[data-phx-session]')) {
-        transition('NonLVReady');
-        return markReady('non-lv');
-      }
-      if (W.state === 'Initial') transition('AwaitingHook');
-      var hooked = installLvHook();
-      if (hooked && W.observedPatch) {
-        return markReady('lv-ready');
-      }
-      if (W.pageReady) return; // bumpPageId beat us
-      requestAnimationFrame(detectReady);
-    }
-
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', detectReady);
-    } else {
-      detectReady();
-    }
-    """
+    "if(window.__w)window.__w.cleanupQuery(#{id_js});"
   end
 end

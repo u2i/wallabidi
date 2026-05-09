@@ -387,13 +387,13 @@ defmodule Wallabidi.ChromeDriver do
     # checked/selected. The browser DOM property (`.checked` or
     # `.selected`) is the source of truth; the HTML *attribute* may
     # not reflect later state changes.
-    case CDPClient.cdp_send(Element.root_session(element), "Runtime.callFunctionOn", %{
-           objectId: element.bidi_shared_id,
-           functionDeclaration:
-             "function() { return this.checked === true || this.selected === true; }",
-           returnByValue: true
-         }) do
-      {:ok, %{"result" => %{"value" => v}}} -> {:ok, v == true}
+    case CDPClient.call_on_element(
+           Element.root_session(element),
+           element,
+           Wallabidi.OpsShared.dispatch_fn(),
+           ["is_selected", []]
+         ) do
+      {:ok, v} -> {:ok, v == true}
       err -> err
     end
   end

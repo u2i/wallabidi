@@ -296,7 +296,8 @@ defmodule Wallabidi.BiDiDriver do
     BiDiClient.call_on_element(
       Element.root_session(element),
       element,
-      "function() { return this.checked === true || this.selected === true; }"
+      Wallabidi.OpsShared.dispatch_fn(),
+      ["is_selected", []]
     )
   end
 

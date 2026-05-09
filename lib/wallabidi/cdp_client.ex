@@ -17,7 +17,7 @@ defmodule Wallabidi.CDPClient do
   # Operations are added one at a time, each with an integration test
   # against a live Lightpanda server. See test/wallabidi/v2/.
 
-  alias Wallabidi.{Bootstrap, Element, Session}
+  alias Wallabidi.{Bootstrap, Element, OpsShared, Session}
   alias Wallabidi.CDP.{Commands, Ops, ResponseParser}
   alias Wallabidi.Transport.Protocol
   alias Wallabidi.WebSocket
@@ -158,23 +158,31 @@ defmodule Wallabidi.CDPClient do
   Used as a building block for element-scoped operations (text,
   attribute, displayed, etc.).
   """
-  @spec call_on_element(Session.t(), Element.t(), String.t(), [term]) ::
+  @spec call_on_element(Session.t(), Element.t(), String.t(), [term], keyword) ::
           {:ok, term} | {:error, term}
   def call_on_element(
         %Session{} = session,
         %Element{bidi_shared_id: object_id},
         fn_decl,
-        args \\ []
+        args \\ [],
+        opts \\ []
       )
       when is_binary(object_id) and is_binary(fn_decl) and is_list(args) do
     encoded_args = Enum.map(args, &%{value: &1})
 
-    case cdp_send(session, "Runtime.callFunctionOn", %{
-           objectId: object_id,
-           functionDeclaration: fn_decl,
-           arguments: encoded_args,
-           returnByValue: true
-         }) do
+    params = %{
+      objectId: object_id,
+      functionDeclaration: fn_decl,
+      arguments: encoded_args,
+      returnByValue: true
+    }
+
+    params =
+      if Keyword.get(opts, :await_promise, false),
+        do: Map.put(params, :awaitPromise, true),
+        else: params
+
+    case cdp_send(session, "Runtime.callFunctionOn", params) do
       {:ok, %{"result" => %{"value" => %{"__wallabidi_stale" => true}}}} ->
         # JS opted into the stale sentinel by returning a flag map
         # — translate to :stale_reference so callers don't all repeat
@@ -235,11 +243,7 @@ defmodule Wallabidi.CDPClient do
   end
 
   defp file_input?(%Session{} = session, %Element{} = element) do
-    call_on_element(
-      session,
-      element,
-      "function() { return this.tagName === 'INPUT' && (this.type || '').toLowerCase() === 'file'; }"
-    )
+    call_on_element(session, element, OpsShared.dispatch_fn(), ["is_file_input", []])
   end
 
   defp set_file_input(%Session{} = session, %Element{bidi_shared_id: object_id} = element, value) do
@@ -345,13 +349,7 @@ defmodule Wallabidi.CDPClient do
       # Mixed string + atom — focus the element and dispatch real key
       # events so :tab, :enter etc. fire. Requires a CDP browser that
       # implements Input.dispatchKeyEvent (Chrome does; Lightpanda doesn't).
-      _ =
-        cdp_send(session, "Runtime.callFunctionOn", %{
-          objectId: element.bidi_shared_id,
-          functionDeclaration: "function() { this.focus(); }",
-          returnByValue: true
-        })
-
+      _ = call_on_element(session, element, OpsShared.dispatch_fn(), ["focus", []])
       send_keys_to_session(session, keys)
     end
   end
@@ -465,12 +463,10 @@ defmodule Wallabidi.CDPClient do
           {:ok, String.t()} | {:error, term}
   def classify(%Session{} = session, %Element{} = element, interaction)
       when interaction in [:click, :change] do
-    call_on_element(
-      session,
-      element,
-      "function(t) { return window.__w.classify(this, t); }",
+    call_on_element(session, element, OpsShared.dispatch_fn(), [
+      "classify",
       [Atom.to_string(interaction)]
-    )
+    ])
   end
 
   # click/2 — provided by Wallabidi.OpsShared. Routes through
@@ -498,10 +494,12 @@ defmodule Wallabidi.CDPClient do
           {:ok, String.t()} | {:error, term}
   def click_aware(%Session{} = session, %Element{} = element, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, 5_000)
-    pre_page_id = Protocol.get_page_id(session)
 
-    with :ok <- await_lv_ready(session, timeout),
-         {:ok, classification} <- classify(session, element, :click),
+    # Merge the LV-ready wait + classify into one Runtime.callFunctionOn:
+    # the JS Promise awaits joinPending → false then returns the
+    # classification. Saves one round-trip per click.
+    with {:ok, classification} <- await_lv_ready_and_classify(session, element, :click, timeout),
+         pre_page_id <- Protocol.get_page_id(session),
          {:ok, _} <- click(session, element) do
       case classification do
         "none" ->
@@ -527,10 +525,11 @@ defmodule Wallabidi.CDPClient do
           {:ok, String.t(), :ready | :timeout} | {:error, term}
   def click_aware_with_classification(%Session{} = session, %Element{} = element, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, 5_000)
-    pre_page_id = Protocol.get_page_id(session)
 
-    with :ok <- await_lv_ready(session, timeout),
-         {:ok, classification} <- classify(session, element, :click),
+    # Merge LV-ready wait + classify into one Runtime.callFunctionOn —
+    # saves a round-trip on every click.
+    with {:ok, classification} <- await_lv_ready_and_classify(session, element, :click, timeout),
+         pre_page_id <- Protocol.get_page_id(session),
          {:ok, _} <- click(session, element) do
       case classification do
         "none" ->
@@ -549,29 +548,20 @@ defmodule Wallabidi.CDPClient do
   # LiveView at all). Mirrors the pre-click readiness wait the legacy
   # click_full op does — without it, clicks fired during the join
   # window get dropped because the LV channel hasn't bound yet.
-  defp await_lv_ready(%Session{} = session, timeout_ms) do
-    js = """
-    new Promise(function(resolve) {
-      var deadline = Date.now() + #{timeout_ms};
-      function check() {
-        var ls = window.liveSocket;
-        if (!ls || !ls.main) return resolve(true);
-        if (ls.main.joinPending !== true) return resolve(true);
-        if (Date.now() > deadline) return resolve(false);
-        setTimeout(check, 20);
-      }
-      check();
-    })
-    """
-
-    case cdp_send(session, "Runtime.evaluate", %{
-           expression: js,
-           awaitPromise: true,
-           returnByValue: true
-         }) do
-      {:ok, _} -> :ok
-      _ -> :ok
-    end
+  # Merged LV-ready wait + classify in one Runtime.callFunctionOn so
+  # the click path saves a round-trip per click. The function awaits
+  # joinPending → false (or no LV at all), then calls
+  # window.__w.classify(this, interaction) and resolves with the
+  # classification string.
+  defp await_lv_ready_and_classify(%Session{} = session, %Element{} = element, interaction, timeout_ms)
+       when interaction in [:click, :change] do
+    call_on_element(
+      session,
+      element,
+      OpsShared.dispatch_fn(),
+      ["await_lv_ready_and_classify", [Atom.to_string(interaction), timeout_ms]],
+      await_promise: true
+    )
   end
 
   # ----- Frame switching -----
@@ -1184,81 +1174,45 @@ defmodule Wallabidi.CDPClient do
 
   @doc "Element width/height in CSS pixels via getBoundingClientRect."
   @spec element_size(Element.t()) :: {:ok, {number, number}} | {:error, term}
-  def element_size(%Element{bidi_shared_id: object_id} = element) do
-    session = Element.root_session(element)
-
-    case cdp_send(session, "Runtime.callFunctionOn", %{
-           objectId: object_id,
-           functionDeclaration:
-             "function() { var r = this.getBoundingClientRect(); return JSON.stringify([Math.round(r.width), Math.round(r.height)]); }",
-           returnByValue: true
-         }) do
-      {:ok, %{"result" => %{"value" => json}}} ->
-        case Jason.decode(json) do
-          {:ok, [w, h]} -> {:ok, {w, h}}
-          err -> err
-        end
-
-      err ->
-        err
+  def element_size(%Element{} = element) do
+    case call_on_element(Element.root_session(element), element, OpsShared.dispatch_fn(), [
+           "rect",
+           ["size"]
+         ]) do
+      {:ok, [w, h]} -> {:ok, {w, h}}
+      err -> err
     end
   end
 
   @doc "Element top-left position in CSS pixels."
   @spec element_location(Element.t()) :: {:ok, {number, number}} | {:error, term}
-  def element_location(%Element{bidi_shared_id: object_id} = element) do
-    session = Element.root_session(element)
-
-    case cdp_send(session, "Runtime.callFunctionOn", %{
-           objectId: object_id,
-           functionDeclaration:
-             "function() { var r = this.getBoundingClientRect(); return JSON.stringify([Math.round(r.x), Math.round(r.y)]); }",
-           returnByValue: true
-         }) do
-      {:ok, %{"result" => %{"value" => json}}} ->
-        case Jason.decode(json) do
-          {:ok, [x, y]} -> {:ok, {x, y}}
-          err -> err
-        end
-
-      err ->
-        err
+  def element_location(%Element{} = element) do
+    case call_on_element(Element.root_session(element), element, OpsShared.dispatch_fn(), [
+           "rect",
+           ["position"]
+         ]) do
+      {:ok, [x, y]} -> {:ok, {x, y}}
+      err -> err
     end
   end
 
-  defp element_center(%Element{bidi_shared_id: object_id} = element) do
-    session = Element.root_session(element)
-
-    case cdp_send(session, "Runtime.callFunctionOn", %{
-           objectId: object_id,
-           functionDeclaration:
-             "function() { var r = this.getBoundingClientRect(); return JSON.stringify({x: r.x + r.width/2, y: r.y + r.height/2}); }",
-           returnByValue: true
-         }) do
-      {:ok, %{"result" => %{"value" => json}}} ->
-        %{"x" => x, "y" => y} = Jason.decode!(json)
-        {:ok, {x, y}}
-
-      error ->
-        error
+  defp element_center(%Element{} = element) do
+    case call_on_element(Element.root_session(element), element, OpsShared.dispatch_fn(), [
+           "rect",
+           ["center"]
+         ]) do
+      {:ok, %{"x" => x, "y" => y}} -> {:ok, {x, y}}
+      err -> err
     end
   end
 
-  defp element_topleft(%Element{bidi_shared_id: object_id} = element) do
-    session = Element.root_session(element)
-
-    case cdp_send(session, "Runtime.callFunctionOn", %{
-           objectId: object_id,
-           functionDeclaration:
-             "function() { var r = this.getBoundingClientRect(); return JSON.stringify({x: r.x, y: r.y}); }",
-           returnByValue: true
-         }) do
-      {:ok, %{"result" => %{"value" => json}}} ->
-        %{"x" => x, "y" => y} = Jason.decode!(json)
-        {:ok, {x, y}}
-
-      error ->
-        error
+  defp element_topleft(%Element{} = element) do
+    case call_on_element(Element.root_session(element), element, OpsShared.dispatch_fn(), [
+           "rect",
+           ["origin"]
+         ]) do
+      {:ok, %{"x" => x, "y" => y}} -> {:ok, {x, y}}
+      err -> err
     end
   end
 

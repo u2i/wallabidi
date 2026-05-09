@@ -22,6 +22,7 @@ defmodule Wallabidi.BiDiClient do
   alias Wallabidi.Bootstrap
   alias Wallabidi.CDP.Ops
   alias Wallabidi.Element
+  alias Wallabidi.OpsShared
   alias Wallabidi.Session
   alias Wallabidi.Transport.Protocol
 
@@ -541,20 +542,21 @@ defmodule Wallabidi.BiDiClient do
   node. Returns the deserialized value, or `{:error, :stale_reference}`
   for a detached node sentinel.
   """
-  @spec call_on_element(Session.t(), Element.t(), String.t(), [term]) ::
+  @spec call_on_element(Session.t(), Element.t(), String.t(), [term], keyword) ::
           {:ok, term} | {:error, term}
   def call_on_element(
         %Session{} = session,
         %Element{bidi_shared_id: shared_id},
         fn_decl,
-        args \\ []
+        args \\ [],
+        opts \\ []
       )
       when is_binary(shared_id) and is_binary(fn_decl) do
     params = %{
       "functionDeclaration" => fn_decl,
       "this" => %{"sharedId" => shared_id},
       "arguments" => Enum.map(args, &encode_arg/1),
-      "awaitPromise" => false,
+      "awaitPromise" => Keyword.get(opts, :await_promise, false),
       "target" => %{"context" => ctx(session)}
     }
 
@@ -598,12 +600,10 @@ defmodule Wallabidi.BiDiClient do
           {:ok, String.t()} | {:error, term}
   def classify(%Session{} = session, %Element{} = element, interaction)
       when interaction in [:click, :change] do
-    call_on_element(
-      session,
-      element,
-      "function(t) { return window.__w.classify(this, t); }",
+    call_on_element(session, element, OpsShared.dispatch_fn(), [
+      "classify",
       [Atom.to_string(interaction)]
-    )
+    ])
   end
 
   @doc """
@@ -688,10 +688,11 @@ defmodule Wallabidi.BiDiClient do
           {:ok, String.t(), :ready | :timeout} | {:error, term}
   def click_aware_with_classification(%Session{} = session, %Element{} = element, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, 5_000)
-    pre_page_id = Protocol.get_page_id(session)
 
-    with :ok <- await_lv_ready(session, timeout),
-         {:ok, classification} <- classify(session, element, :click) do
+    # Merge LV-ready wait + classify into one script.callFunction —
+    # saves a round-trip on every click. Mirrors CDPClient.click_aware.
+    with {:ok, classification} <- await_lv_ready_and_classify(session, element, :click, timeout),
+         pre_page_id <- Protocol.get_page_id(session) do
       # For LV-aware classifications, capture a pre-ref AND install
       # the patch promise BEFORE the click — otherwise the event ref
       # counter has already moved on and patch detection races the
@@ -718,28 +719,18 @@ defmodule Wallabidi.BiDiClient do
     end
   end
 
-  # Block until liveSocket.main has finished joining (or there's no
-  # LiveView). Mirrors CDPClient.await_lv_ready — without it, clicks
-  # fired during the join window get dropped.
-  defp await_lv_ready(%Session{} = session, timeout_ms) do
-    js = """
-    new Promise(function(resolve) {
-      var deadline = Date.now() + #{timeout_ms};
-      function check() {
-        var ls = window.liveSocket;
-        if (!ls || !ls.main) return resolve(true);
-        if (ls.main.joinPending !== true) return resolve(true);
-        if (Date.now() > deadline) return resolve(false);
-        setTimeout(check, 20);
-      }
-      check();
-    })
-    """
-
-    case evaluate_async(session, js) do
-      {:ok, _} -> :ok
-      _ -> :ok
-    end
+  # Merged LV-ready wait + classify — one script.callFunction round-trip
+  # instead of two. The JS body lives in priv/wallabidi.js as
+  # W.awaitLvReadyAndClassify.
+  defp await_lv_ready_and_classify(%Session{} = session, %Element{} = element, interaction, timeout_ms)
+       when interaction in [:click, :change] do
+    call_on_element(
+      session,
+      element,
+      OpsShared.dispatch_fn(),
+      ["await_lv_ready_and_classify", [Atom.to_string(interaction), timeout_ms]],
+      await_promise: true
+    )
   end
 
   # click/2 — provided by Wallabidi.OpsShared.
@@ -764,11 +755,7 @@ defmodule Wallabidi.BiDiClient do
   end
 
   defp file_input?(session, element) do
-    call_on_element(
-      session,
-      element,
-      "function() { return this.tagName === 'INPUT' && (this.type || '').toLowerCase() === 'file'; }"
-    )
+    call_on_element(session, element, OpsShared.dispatch_fn(), ["is_file_input", []])
   end
 
   defp set_file_value(session, element, path) do
@@ -820,7 +807,7 @@ defmodule Wallabidi.BiDiClient do
       # Mixed string + special-key atoms — focus the element, then
       # dispatch a key-source action sequence via input.performActions.
       with {:ok, _} <-
-             call_on_element(session, element, "function() { this.focus(); return null; }") do
+             call_on_element(session, element, OpsShared.dispatch_fn(), ["focus", []]) do
         send_keys_to_session(session, keys)
       end
     end
@@ -941,13 +928,10 @@ defmodule Wallabidi.BiDiClient do
   @doc "Element width/height in CSS pixels via getBoundingClientRect."
   @spec element_size(Element.t()) :: {:ok, {number, number}} | {:error, term}
   def element_size(%Element{} = element) do
-    session = Element.root_session(element)
-
-    case call_on_element(
-           session,
-           element,
-           "function() { var r = this.getBoundingClientRect(); return [r.width, r.height]; }"
-         ) do
+    case call_on_element(Element.root_session(element), element, OpsShared.dispatch_fn(), [
+           "rect",
+           ["size"]
+         ]) do
       {:ok, [w, h]} -> {:ok, {w, h}}
       {:ok, other} -> {:error, {:unexpected_size, other}}
       err -> err
@@ -957,13 +941,10 @@ defmodule Wallabidi.BiDiClient do
   @doc "Element top-left coordinates relative to the viewport."
   @spec element_location(Element.t()) :: {:ok, {number, number}} | {:error, term}
   def element_location(%Element{} = element) do
-    session = Element.root_session(element)
-
-    case call_on_element(
-           session,
-           element,
-           "function() { var r = this.getBoundingClientRect(); return [r.left, r.top]; }"
-         ) do
+    case call_on_element(Element.root_session(element), element, OpsShared.dispatch_fn(), [
+           "rect",
+           ["position"]
+         ]) do
       {:ok, [x, y]} -> {:ok, {x, y}}
       {:ok, other} -> {:error, {:unexpected_location, other}}
       err -> err

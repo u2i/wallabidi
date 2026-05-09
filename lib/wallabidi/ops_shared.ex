@@ -30,138 +30,20 @@ defmodule Wallabidi.OpsShared do
 
   alias Wallabidi.{Element, Session}
 
-  @extract_text_js """
-  function() {
-    var blocks = ['DIV','P','H1','H2','H3','H4','H5','H6','LI','TR','BR',
-                  'SECTION','ARTICLE','HEADER','FOOTER','NAV','MAIN','UL','OL','DL',
-                  'BLOCKQUOTE','PRE','TABLE','THEAD','TBODY','TFOOT','FORM','FIELDSET','HR'];
-    function walk(node) {
-      if (node.nodeType === 3) return node.nodeValue.replace(/\\s+/g, ' ');
-      if (node.nodeType !== 1) return '';
-      if (node.tagName === 'BR') return '\\n';
-      var parts = [];
-      for (var i = 0; i < node.childNodes.length; i++) {
-        parts.push(walk(node.childNodes[i]));
-      }
-      var text = parts.join('');
-      if (blocks.indexOf(node.tagName) >= 0) text = '\\n' + text + '\\n';
-      return text;
-    }
-    var result = walk(this);
-    return result.split('\\n').map(function(l) { return l.trim(); }).filter(Boolean).join('\\n');
-  }
-  """
+  # Single dispatch function — the Elixir side never ships per-op JS
+  # bodies; just an opcode + args. Implementations live in
+  # priv/wallabidi.js as W.dispatch / W.text / W.attribute / etc.
+  @dispatch_fn "function(op,args){return window.__w.dispatch(this,op,args);}"
 
-  @attribute_js """
-  function(name) {
-    if (this && !this.isConnected) return {__wallabidi_stale: true};
-    if (name === 'value' && 'value' in this) return this.value;
-    if (name === 'checked') return this.checked ? 'true' : null;
-    if (name === 'selected') return this.selected ? 'true' : null;
-    if (name === 'outerHTML') return this.outerHTML;
-    if (name === 'innerHTML') return this.innerHTML;
-    return this.getAttribute(name);
-  }
-  """
-
-  @displayed_js """
-  function() {
-    if (!this.isConnected) return false;
-    if (this.tagName === 'OPTION') {
-      var sel = this.closest('select');
-      if (!sel) return true;
-      var ss = window.getComputedStyle(sel);
-      return ss.display !== 'none' && ss.visibility !== 'hidden';
-    }
-    var st = window.getComputedStyle(this);
-    if (st.display === 'none' || st.visibility === 'hidden') return false;
-    var r = this.getBoundingClientRect();
-    if (r.width === 0 && r.height === 0 && this.offsetParent === null && st.position !== 'fixed') return false;
-    return true;
-  }
-  """
-
-  @click_js """
-  function() {
-    if (window.__w && window.__w.clickEl) {
-      if (this.tagName !== 'OPTION') {
-        this.scrollIntoView({block: 'center', inline: 'nearest'});
-        if (typeof this.focus === 'function') this.focus();
-      }
-      window.__w.clickEl(this);
-      return null;
-    }
-    this.scrollIntoView({block: 'center', inline: 'nearest'});
-    if (typeof this.focus === 'function') this.focus();
-    this.click();
-    return null;
-  }
-  """
-
-  @set_value_dom_js """
-  function(v) {
-    var t = this.tagName;
-    var ty = (this.type || '').toLowerCase();
-
-    if (t === 'INPUT' && (ty === 'checkbox' || ty === 'radio')) {
-      this.checked = !!v;
-      this.dispatchEvent(new Event('input', {bubbles: true}));
-      this.dispatchEvent(new Event('change', {bubbles: true}));
-      return null;
-    }
-
-    if (t === 'OPTION') {
-      var sel = this.closest('select');
-      if (sel) {
-        if (sel.multiple) {
-          this.selected = !!v;
-        } else {
-          sel.value = this.value;
-          for (var i = 0; i < sel.options.length; i++) {
-            sel.options[i].selected = (sel.options[i] === this);
-          }
-        }
-        sel.dispatchEvent(new Event('input', {bubbles: true}));
-        sel.dispatchEvent(new Event('change', {bubbles: true}));
-      } else {
-        this.selected = !!v;
-      }
-      return null;
-    }
-
-    this.value = v;
-    this.dispatchEvent(new Event('input', {bubbles: true}));
-    this.dispatchEvent(new Event('change', {bubbles: true}));
-    return null;
-  }
-  """
-
-  @clear_silent_js "function() { this.value = ''; return null; }"
-
-  @clear_loud_js """
-  function() {
-    this.value = '';
-    this.dispatchEvent(new Event('input', {bubbles: true}));
-    this.dispatchEvent(new Event('change', {bubbles: true}));
-    return null;
-  }
-  """
-
-  @send_keys_text_js """
-  function(s) {
-    this.value = (this.value || '') + s;
-    this.dispatchEvent(new Event('input', {bubbles: true}));
-    this.dispatchEvent(new Event('change', {bubbles: true}));
-    return null;
-  }
-  """
+  @doc false
+  def dispatch_fn, do: @dispatch_fn
 
   defmacro __using__(_opts) do
     quote do
       @doc "Returns the element's visible text content."
       @spec text(Session.t(), Element.t()) :: {:ok, String.t()} | {:error, term}
       def text(%Session{} = session, %Element{} = element) do
-        call_on_element(session, element, unquote(@extract_text_js))
+        call_on_element(session, element, unquote(@dispatch_fn), ["text", []])
       end
 
       @doc """
@@ -173,7 +55,7 @@ defmodule Wallabidi.OpsShared do
       @spec attribute(Session.t(), Element.t(), String.t()) ::
               {:ok, String.t() | nil} | {:error, term}
       def attribute(%Session{} = session, %Element{} = element, name) when is_binary(name) do
-        call_on_element(session, element, unquote(@attribute_js), [name])
+        call_on_element(session, element, unquote(@dispatch_fn), ["attribute", [name]])
       end
 
       @doc """
@@ -187,18 +69,17 @@ defmodule Wallabidi.OpsShared do
       """
       @spec displayed(Session.t(), Element.t()) :: {:ok, boolean} | {:error, term}
       def displayed(%Session{} = session, %Element{} = element) do
-        call_on_element(session, element, unquote(@displayed_js))
+        call_on_element(session, element, unquote(@dispatch_fn), ["displayed", []])
       end
 
       @doc """
       Click an element. Routes through `window.__w.clickEl` (the
-      bootstrap's helper) when available, which knows how to
-      properly trigger `<option>` selection + `change` events. Falls
-      back to a plain scroll+focus+click otherwise.
+      bootstrap's helper) which knows how to properly trigger
+      `<option>` selection + `change` events.
       """
       @spec click(Session.t(), Element.t()) :: {:ok, nil} | {:error, term}
       def click(%Session{} = session, %Element{} = element) do
-        case call_on_element(session, element, unquote(@click_js)) do
+        case call_on_element(session, element, unquote(@dispatch_fn), ["click", []]) do
           {:ok, _} -> {:ok, nil}
           err -> err
         end
@@ -214,7 +95,7 @@ defmodule Wallabidi.OpsShared do
       """
       @spec set_value_dom(Session.t(), Element.t(), term) :: {:ok, nil} | {:error, term}
       def set_value_dom(%Session{} = session, %Element{} = element, value) do
-        case call_on_element(session, element, unquote(@set_value_dom_js), [value]) do
+        case call_on_element(session, element, unquote(@dispatch_fn), ["set_value_dom", [value]]) do
           {:ok, _} -> {:ok, nil}
           err -> err
         end
@@ -228,9 +109,8 @@ defmodule Wallabidi.OpsShared do
       @spec clear(Session.t(), Element.t(), keyword) :: {:ok, nil} | {:error, term}
       def clear(%Session{} = session, %Element{} = element, opts \\ []) do
         silent? = Keyword.get(opts, :silent, true)
-        fn_decl = if silent?, do: unquote(@clear_silent_js), else: unquote(@clear_loud_js)
 
-        case call_on_element(session, element, fn_decl) do
+        case call_on_element(session, element, unquote(@dispatch_fn), ["clear", [silent?]]) do
           {:ok, _} -> {:ok, nil}
           err -> err
         end
@@ -248,7 +128,7 @@ defmodule Wallabidi.OpsShared do
       @spec send_keys_text(Session.t(), Element.t(), String.t()) ::
               {:ok, nil} | {:error, term}
       def send_keys_text(%Session{} = session, %Element{} = element, text) when is_binary(text) do
-        case call_on_element(session, element, unquote(@send_keys_text_js), [text]) do
+        case call_on_element(session, element, unquote(@dispatch_fn), ["send_keys_text", [text]]) do
           {:ok, _} -> {:ok, nil}
           err -> err
         end
