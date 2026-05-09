@@ -128,7 +128,8 @@ defmodule Wallabidi.Mixfile do
     [
       extras: [
         "README.md": [title: "Introduction"],
-        "TESTING.md": [title: "Testing"]
+        "TESTING.md": [title: "Testing"],
+        "ARCHITECTURE.md": [title: "Architecture"]
       ],
       source_ref: "v#{@version}",
       source_url: @source_url,

@@ -174,6 +174,14 @@ case System.get_env("WALLABIDI_POOL_SIZE") do
   size_str ->
     pool_size = String.to_integer(size_str)
 
+    # Pool is currently Chrome-CDP-only by design.
+    # - BiDi tried + removed: chromium-bidi's per-session-WS cap
+    #   collides with the pool, causing exhaustion and timeouts.
+    # - Lightpanda tried + removed: per-session-WS architecture has
+    #   no shared mailbox to relieve, so pool benefit is 0% (and
+    #   slightly negative under mc=8 from bookkeeping overhead).
+    # The shared-WS Chrome CDP V2 driver is the only one whose
+    # contention model the pool is actually built to relieve.
     impl =
       case driver do
         d when d in [:chrome_cdp, :chrome_cdp_v2] -> Wallabidi.ChromeDriver.PoolImpl
