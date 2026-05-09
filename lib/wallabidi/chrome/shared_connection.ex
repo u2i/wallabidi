@@ -1,44 +1,74 @@
 defmodule Wallabidi.Chrome.SharedConnection do
   @moduledoc false
 
-  # Single shared `V2.WebSocket` connection to Chrome's browser-level
-  # debugging endpoint. All `V2ChromeDriver` sessions multiplex over
-  # this one WS via CDP flat-session protocol.
+  # Caches lazily-connected `V2.WebSocket` pids keyed by Chrome
+  # server name. Originally a single shared WS to one Chrome
+  # instance; extended to a small per-server map so the
+  # `Wallabidi.Chrome.ServerPool` can spread sessions across
+  # multiple Chrome processes.
   #
-  # Lazy-connect on first `get/1` call — by then the driver supervisor
-  # has already started either a local Chrome (`Chrome.Server`) or we
-  # have a remote URL to connect to.
+  # The default keyed entry is `:default`, matching the legacy
+  # single-Chrome supervised by `ChromeDriver.init/1` — that path
+  # still works unchanged. With the server pool active, each call
+  # to `get/1` round-robins across N entries via
+  # `ServerPool.next_server/1`.
 
   use Agent
 
   alias Wallabidi.WebSocket
 
   def start_link(_opts) do
-    Agent.start_link(fn -> nil end, name: __MODULE__)
+    # State: %{server_name_atom => ws_pid}
+    Agent.start_link(fn -> %{} end, name: __MODULE__)
   end
 
   @doc """
-  Returns the shared V2.WebSocket pid, lazily connecting on first call.
-  Caller passes the driver module so we can resolve the local server
-  name when no remote URL is configured.
+  Returns a V2.WebSocket pid for the given Chrome driver. Routes
+  through the configured `Wallabidi.Chrome.ServerPool` when one
+  is present (round-robins across N Chrome processes); falls back
+  to a single default WS otherwise.
   """
   @spec get(module) :: pid
   def get(driver_mod) do
-    Agent.get_and_update(__MODULE__, fn
-      pid when is_pid(pid) ->
-        if Process.alive?(pid), do: {pid, pid}, else: connect(driver_mod)
+    server_name =
+      case server_pool_name(driver_mod) do
+        nil -> Module.concat(driver_mod, Server)
+        pool -> Wallabidi.Chrome.ServerPool.next_server(pool)
+      end
 
-      nil ->
-        connect(driver_mod)
+    get_for(driver_mod, server_name)
+  end
+
+  @doc """
+  Returns the V2.WebSocket pid for a specific Chrome server name,
+  lazily connecting on first call.
+  """
+  @spec get_for(module, atom) :: pid
+  def get_for(driver_mod, server_name) do
+    Agent.get_and_update(__MODULE__, fn cache ->
+      case Map.get(cache, server_name) do
+        pid when is_pid(pid) ->
+          if Process.alive?(pid),
+            do: {pid, cache},
+            else: connect_and_cache(cache, driver_mod, server_name)
+
+        nil ->
+          connect_and_cache(cache, driver_mod, server_name)
+      end
     end)
   end
 
-  defp connect(driver_mod) do
+  defp connect_and_cache(cache, driver_mod, server_name) do
+    pid = connect(driver_mod, server_name)
+    {pid, Map.put(cache, server_name, pid)}
+  end
+
+  defp connect(driver_mod, server_name) do
     ws_url =
       case Wallabidi.BrowserPaths.chrome_url() || legacy_remote_url() do
         nil ->
-          # Local Chrome — get ws_url from the server we launched.
-          Wallabidi.Chrome.Server.ws_url(Module.concat(driver_mod, Server))
+          # Local Chrome — get ws_url from the named server.
+          Wallabidi.Chrome.Server.ws_url(server_name)
 
         "ws://" <> _ = url ->
           url
@@ -54,12 +84,20 @@ defmodule Wallabidi.Chrome.SharedConnection do
           Task.await(task, 10_000)
       end
 
+    _ = driver_mod
+
     # WebSocket.start_link would link to the *current caller* (the test
     # process invoking Agent.get_and_update), so the shared WS would die
     # when each test exits. Use `start/1` for an unlinked process whose
     # lifetime is tied to the SharedConnection Agent instead.
     {:ok, pid} = WebSocket.start(ws_url)
-    {pid, pid}
+    pid
+  end
+
+  # The driver supervisor records the server-pool's name (if any)
+  # via Application.put_env at boot — read it back here.
+  defp server_pool_name(driver_mod) do
+    Application.get_env(:wallabidi, {__MODULE__, :pool_name, driver_mod})
   end
 
   # Same /json/version discovery logic as ChromeCDP.SharedConnection.
