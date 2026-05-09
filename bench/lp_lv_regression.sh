@@ -256,5 +256,160 @@ probe_capability "Network.getAllCookies"        "%{}"
 probe_capability "Network.getCookies"           '%{"urls" => ["http://localhost:4321/"]}'
 probe_capability "Network.deleteCookies"        '%{"name" => "x", "url" => "http://localhost:4321/"}'
 
+# --- Reset-related capability probes ----------------------------------------
+# These are the methods Wallabidi.Driver.reset/1 would call on a checkin
+# in a session pool. UNKNOWN means LP doesn't implement it; OK means the
+# method dispatched (doesn't necessarily mean it has correct behavior —
+# see the behavior probes below).
+echo
+echo "Reset capability probes (needed for session pool reset_strategy=:reset):"
+
+probe_capability "Network.clearBrowserCache"    "%{}"
+probe_capability "Network.clearBrowserCookies"  "%{}"
+probe_capability "Storage.clearDataForOrigin"   '%{"origin" => "http://localhost:4321", "storageTypes" => "all"}'
+probe_capability "Storage.clearCookies"         '%{}'
+probe_capability "ServiceWorker.unregister"     '%{"scopeURL" => "http://localhost:4321/"}'
+
+# --- Reset BEHAVIOR probes (does it actually clear?) -----------------------
+# Capability-OK doesn't mean correct. These set state, run the alleged
+# reset, then verify state is gone. PASS only if the verifier sees zero.
+echo
+echo "Reset behavior probes (does the method actually clear state?):"
+
+probe_behavior() {
+  local label="$1"
+  local script="$2"
+
+  cat > "$TMPDIR/behavior.exs" <<EOF
+$(cat "$TMPDIR/prelude.exs")
+{:ok, _} = Wallabidi.WebSocket.send_sync(ws, "Runtime.enable", %{"sessionId" => sess})
+{:ok, _} = Wallabidi.WebSocket.send_sync(ws, "Page.navigate", %{"sessionId" => sess, "url" => "http://localhost:4321/counter"})
+:timer.sleep(2000)
+$script
+System.halt(0)
+EOF
+  local result
+  result=$(MIX_ENV=test elixir -S mix run --no-halt "$TMPDIR/behavior.exs" 2>/dev/null \
+    | grep "BEHAVIOR_RESULT" | head -1 | sed 's/^BEHAVIOR_RESULT //')
+  printf "  %-50s %s\n" "$label" "${result:-NO RESPONSE}"
+}
+
+# Probe A — localStorage cleared by Storage.clearDataForOrigin?
+probe_behavior "localStorage cleared by Storage.clearDataForOrigin" '
+{:ok, _} = Wallabidi.WebSocket.send_sync(ws, "Runtime.evaluate", %{
+  "sessionId" => sess,
+  "expression" => "localStorage.setItem(\"k\", \"v\")"
+})
+{:ok, _} = Wallabidi.WebSocket.send_sync(ws, "Storage.clearDataForOrigin", %{
+  "sessionId" => sess,
+  "origin" => "http://localhost:4321",
+  "storageTypes" => "all"
+})
+result = Wallabidi.WebSocket.send_sync(ws, "Runtime.evaluate", %{
+  "sessionId" => sess,
+  "expression" => "localStorage.getItem(\"k\")",
+  "returnByValue" => true
+})
+case result do
+  {:ok, %{"result" => %{"value" => nil}}} -> IO.puts("BEHAVIOR_RESULT PASS")
+  {:ok, %{"result" => %{"value" => v}}} -> IO.puts("BEHAVIOR_RESULT FAIL (still has value: " <> inspect(v) <> ")")
+  other -> IO.puts("BEHAVIOR_RESULT ERR " <> inspect(other))
+end
+'
+
+# Probe B — cookies cleared by Network.clearBrowserCookies?
+probe_behavior "cookies cleared by Network.clearBrowserCookies" '
+{:ok, _} = Wallabidi.WebSocket.send_sync(ws, "Network.setCookie", %{
+  "sessionId" => sess,
+  "name" => "test_reset_probe",
+  "value" => "abc",
+  "domain" => "localhost",
+  "path" => "/",
+  "url" => "http://localhost:4321/"
+})
+{:ok, _} = Wallabidi.WebSocket.send_sync(ws, "Network.clearBrowserCookies", %{"sessionId" => sess})
+result = Wallabidi.WebSocket.send_sync(ws, "Network.getCookies", %{
+  "sessionId" => sess,
+  "urls" => ["http://localhost:4321/"]
+})
+case result do
+  {:ok, %{"cookies" => []}} -> IO.puts("BEHAVIOR_RESULT PASS")
+  {:ok, %{"cookies" => cs}} -> IO.puts("BEHAVIOR_RESULT FAIL (cookies remain: " <> Integer.to_string(length(cs)) <> ")")
+  other -> IO.puts("BEHAVIOR_RESULT ERR " <> inspect(other))
+end
+'
+
+# Probe C — sessionStorage cleared by Storage.clearDataForOrigin?
+probe_behavior "sessionStorage cleared by Storage.clearDataForOrigin" '
+{:ok, _} = Wallabidi.WebSocket.send_sync(ws, "Runtime.evaluate", %{
+  "sessionId" => sess,
+  "expression" => "sessionStorage.setItem(\"k\", \"v\")"
+})
+{:ok, _} = Wallabidi.WebSocket.send_sync(ws, "Storage.clearDataForOrigin", %{
+  "sessionId" => sess,
+  "origin" => "http://localhost:4321",
+  "storageTypes" => "all"
+})
+result = Wallabidi.WebSocket.send_sync(ws, "Runtime.evaluate", %{
+  "sessionId" => sess,
+  "expression" => "sessionStorage.getItem(\"k\")",
+  "returnByValue" => true
+})
+case result do
+  {:ok, %{"result" => %{"value" => nil}}} -> IO.puts("BEHAVIOR_RESULT PASS")
+  {:ok, %{"result" => %{"value" => v}}} -> IO.puts("BEHAVIOR_RESULT FAIL (still has value: " <> inspect(v) <> ")")
+  other -> IO.puts("BEHAVIOR_RESULT ERR " <> inspect(other))
+end
+'
+
+# Probe D — IndexedDB cleared by Storage.clearDataForOrigin?
+# Uses a Promise-yielding eval and waits via awaitPromise.
+probe_behavior "IndexedDB cleared by Storage.clearDataForOrigin" '
+# Open an IDB and write a row.
+{:ok, _} = Wallabidi.WebSocket.send_sync(ws, "Runtime.evaluate", %{
+  "sessionId" => sess,
+  "awaitPromise" => true,
+  "expression" => """
+  new Promise((res) => {
+    const r = indexedDB.open("probe", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("s");
+    r.onsuccess = () => {
+      const tx = r.result.transaction("s", "readwrite");
+      tx.objectStore("s").put("v", "k");
+      tx.oncomplete = () => res(true);
+    };
+  })
+  """
+})
+{:ok, _} = Wallabidi.WebSocket.send_sync(ws, "Storage.clearDataForOrigin", %{
+  "sessionId" => sess,
+  "origin" => "http://localhost:4321",
+  "storageTypes" => "all"
+})
+result = Wallabidi.WebSocket.send_sync(ws, "Runtime.evaluate", %{
+  "sessionId" => sess,
+  "awaitPromise" => true,
+  "returnByValue" => true,
+  "expression" => """
+  new Promise((res) => {
+    const r = indexedDB.open("probe", 1);
+    r.onupgradeneeded = () => res("recreated_empty");
+    r.onsuccess = () => {
+      const tx = r.result.transaction("s", "readonly");
+      const g = tx.objectStore("s").get("k");
+      g.onsuccess = () => res(g.result == null ? "empty" : "leftover:" + g.result);
+      g.onerror = () => res("err");
+    };
+    r.onerror = () => res("open_err");
+  })
+  """
+})
+case result do
+  {:ok, %{"result" => %{"value" => v}}} when v in ["empty", "recreated_empty"] -> IO.puts("BEHAVIOR_RESULT PASS")
+  {:ok, %{"result" => %{"value" => v}}} -> IO.puts("BEHAVIOR_RESULT FAIL (got: " <> inspect(v) <> ")")
+  other -> IO.puts("BEHAVIOR_RESULT ERR " <> inspect(other))
+end
+'
+
 echo
 echo "Done. Full log: $OUT"
