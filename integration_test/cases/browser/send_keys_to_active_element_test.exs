@@ -1,6 +1,9 @@
 defmodule Wallabidi.Integration.Browser.SendKeysToActiveElementTest do
   use Wallabidi.Integration.SessionCase, async: true
   @moduletag :browser
+  # Mixed text + :tab dispatches per-key via Input.dispatchKeyEvent;
+  # each event is a separate WS round-trip.
+  @moduletag slow: 10_000
 
   setup %{session: session} do
     page = visit(session, "forms.html")

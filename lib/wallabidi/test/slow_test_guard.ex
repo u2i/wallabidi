@@ -26,8 +26,13 @@ defmodule Wallabidi.Test.SlowTestGuard do
 
   use GenServer
 
-  @default_threshold_ms 1500
-  @default_slow_budget_ms 5000
+  # 4000ms ≈ Wallaby's default max_wait_time (3500ms) plus a small
+  # buffer for setup/teardown. Anything slower than ONE max-wait-time
+  # round is doing something legitimately interesting (e.g. multiple
+  # refute-visible? checks each burning the full wait, or a slow
+  # interaction). Tests that legitimately need more should @tag slow.
+  @default_threshold_ms 4_000
+  @default_slow_budget_ms 8_000
 
   @impl true
   def init(_opts) do
