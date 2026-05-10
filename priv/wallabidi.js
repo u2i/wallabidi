@@ -290,6 +290,206 @@ W.awaitLvReadyAndClassify = function(el, interaction, timeoutMs) {
   });
 };
 
+// --- LiveView-aware operations ---
+// These were previously inlined as JS heredocs in
+// lib/wallabidi/remote/live_view_aware.ex. Keeping them here means
+// (a) one source of truth for the page-side logic, (b) the bundle is
+// installed once via Page.addScriptToEvaluateOnNewDocument so callers
+// just invoke W.x() rather than shipping fresh JS each call.
+
+// Install a one-shot promise on window.__wallabidi_patch_promise that
+// resolves after the next LiveView onPatchEnd fires (or to "navigated"
+// if a beforeunload happens first). Idempotently installs the hook.
+W.preparePatch = function() {
+  var ls = window.liveSocket;
+  if (!ls || !ls.main) return false;
+  if (!window.__wallabidi_patch_hooked) {
+    var orig = ls.domCallbacks.onPatchEnd;
+    ls.domCallbacks.onPatchEnd = function(container) {
+      orig(container);
+      if (window.__wallabidi_patch_resolve) {
+        var r = window.__wallabidi_patch_resolve;
+        window.__wallabidi_patch_resolve = null;
+        r(true);
+      }
+    };
+    window.__wallabidi_patch_hooked = true;
+  }
+  window.__wallabidi_patch_promise = new Promise(function(resolve) {
+    window.__wallabidi_patch_resolve = resolve;
+    window.addEventListener('beforeunload', function() {
+      if (window.__wallabidi_patch_resolve) {
+        window.__wallabidi_patch_resolve = null;
+        resolve('navigated');
+      }
+    }, {once: true});
+  });
+  return true;
+};
+
+// Resolve when the patch promise installed by preparePatch settles, or
+// after `timeoutMs`. If no promise is in flight we return 'no-promise'
+// so the caller can distinguish stale from "patch never armed."
+W.awaitPatch = function(timeoutMs) {
+  if (!window.__wallabidi_patch_promise) return Promise.resolve('no-promise');
+  var p = window.__wallabidi_patch_promise;
+  window.__wallabidi_patch_promise = null;
+  return Promise.race([
+    p,
+    new Promise(function(resolve) { setTimeout(function() { resolve(false); }, timeoutMs || 5000); })
+  ]);
+};
+
+// Resolve once no LV patch has fired for `idleMs`. Used after multi-
+// event interactions (fill_in fires phx-change for each char) where we
+// want the post-quiet state, not the first patch.
+W.drainPatches = function(idleMs) {
+  var ls = window.liveSocket;
+  if (!ls || !ls.domCallbacks) return Promise.resolve(true);
+  return new Promise(function(resolve) {
+    var timer = null;
+    var idle = idleMs || 300;
+    var orig = ls.domCallbacks.onPatchEnd;
+    function done() { ls.domCallbacks.onPatchEnd = orig; resolve(true); }
+    function reset() {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(done, idle);
+    }
+    ls.domCallbacks.onPatchEnd = function(c) { orig(c); reset(); };
+    reset();
+  });
+};
+
+// Resolve once liveSocket.main.lastAckRef >= target, meaning the
+// server has finished processing whatever event our click triggered
+// (regardless of whether it produced a diff, redirect, or nothing).
+// Returns 'acked' / 'no-liveview' / 'navigated' / false.
+W.awaitAck = function(target, timeoutMs) {
+  return new Promise(function(resolve) {
+    var deadline = Date.now() + (timeoutMs || 5000);
+    function check() {
+      var ls = window.liveSocket;
+      if (!ls || !ls.main) return resolve('no-liveview');
+      if (ls.main.lastAckRef !== null && ls.main.lastAckRef >= target) return resolve('acked');
+      if (Date.now() > deadline) return resolve(false);
+      setTimeout(check, 20);
+    }
+    window.addEventListener('beforeunload', function() {
+      resolve('navigated');
+    }, {once: true});
+    check();
+  });
+};
+
+// Resolve when a CSS selector matches in the live DOM, using
+// MutationObserver + onPatchEnd hooks. opts.text adds a text-includes
+// constraint. Resolves 'navigated' if the page navigates mid-wait.
+W.awaitSelector = function(selector, opts) {
+  opts = opts || {};
+  var text = opts.text || null;
+  var timeoutMs = opts.timeoutMs || 200;
+
+  function matches() {
+    if (!text) return !!document.querySelector(selector);
+    var els = document.querySelectorAll(selector);
+    for (var i = 0; i < els.length; i++) {
+      if (els[i].textContent.indexOf(text) !== -1) return true;
+    }
+    return false;
+  }
+
+  if (matches()) return Promise.resolve(true);
+
+  return new Promise(function(resolve) {
+    var timer = setTimeout(function() { cleanup(); resolve(false); }, timeoutMs);
+    var origOnPatchEnd;
+    var ls = window.liveSocket;
+    if (ls && ls.domCallbacks) {
+      origOnPatchEnd = ls.domCallbacks.onPatchEnd;
+      ls.domCallbacks.onPatchEnd = function(container) {
+        if (origOnPatchEnd) origOnPatchEnd(container);
+        if (matches()) { cleanup(); resolve(true); }
+      };
+    }
+    var observer = new MutationObserver(function() {
+      requestAnimationFrame(function() {
+        if (matches()) { cleanup(); resolve(true); }
+      });
+    });
+    observer.observe(document.body, {
+      childList: true, subtree: true,
+      attributes: true, characterData: true
+    });
+
+    var startUrl = window.location.href;
+    function onNav() { cleanup(); resolve('navigated'); }
+    window.addEventListener('beforeunload', onNav, {once: true});
+    var navCheck = setInterval(function() {
+      if (window.location.href !== startUrl) {
+        requestAnimationFrame(function() {
+          if (matches()) { cleanup(); resolve(true); }
+          else { cleanup(); resolve('navigated'); }
+        });
+      }
+    }, 50);
+    function cleanup() {
+      clearTimeout(timer);
+      clearInterval(navCheck);
+      observer.disconnect();
+      window.removeEventListener('beforeunload', onNav);
+      if (origOnPatchEnd && ls && ls.domCallbacks) {
+        ls.domCallbacks.onPatchEnd = origOnPatchEnd;
+      }
+    }
+  });
+};
+
+W.liveViewConnected = function() {
+  var ls = window.liveSocket;
+  if (!ls || !ls.main) return false;
+  return !ls.main.joinPending;
+};
+
+// Wait until the current page's LiveSocket is connected. preUrl forces
+// a "wait for URL change first" mode used post-navigation. Resolves
+// true / 'no-liveview' / false (timeout).
+W.awaitLiveViewConnected = function(preUrl, timeoutMs) {
+  return new Promise(function(resolve) {
+    var deadline = Date.now() + (timeoutMs || 5000);
+    function check() {
+      if (preUrl && window.location.href === preUrl) {
+        if (Date.now() > deadline) return resolve(false);
+        return setTimeout(check, 30);
+      }
+      if (document.readyState === 'loading') {
+        if (Date.now() > deadline) return resolve(false);
+        return setTimeout(check, 20);
+      }
+      if (!document.querySelector('[data-phx-session]')) return resolve('no-liveview');
+      var ls = window.liveSocket;
+      if (ls && ls.main && !ls.main.joinPending) return resolve(true);
+      if (Date.now() > deadline) return resolve(false);
+      setTimeout(check, 30);
+    }
+    check();
+  });
+};
+
+// --- Trivia accessors ---
+// Stable callable shims for common one-line evaluates. Each replaces
+// a per-call JS string compile with a stable call.
+W.url = function() { return location.href; };
+W.path = function() { return location.pathname; };
+W.title = function() { return document.title; };
+W.source = function() { return document.documentElement.outerHTML; };
+W.getWindowSize = function() {
+  return JSON.stringify(window.__wallabidi_window_size ||
+    {width: window.innerWidth, height: window.innerHeight});
+};
+W.setWindowSize = function(w, h) {
+  window.__wallabidi_window_size = {width: w, height: h};
+};
+
 // Register a push-find query and trigger an immediate check. Called
 // from the Elixir side via Runtime.evaluate / Runtime.callFunctionOn
 // with this body wrapped in a function — bootstrap is already
@@ -378,31 +578,9 @@ W.exec = function(ops, root) {
           else meta.classification = 'none';
           break;
         case 'prepare_patch':
-          var ls = window.liveSocket;
-          if (ls && ls.main) {
-            if (!window.__wallabidi_patch_hooked) {
-              var orig = ls.domCallbacks.onPatchEnd;
-              ls.domCallbacks.onPatchEnd = function(container) {
-                orig(container);
-                if (window.__wallabidi_patch_resolve) {
-                  var r = window.__wallabidi_patch_resolve;
-                  window.__wallabidi_patch_resolve = null;
-                  r(true);
-                }
-              };
-              window.__wallabidi_patch_hooked = true;
-            }
-            window.__wallabidi_patch_promise = new Promise(function(resolve) {
-              window.__wallabidi_patch_resolve = resolve;
-              window.addEventListener('beforeunload', function() {
-                if (window.__wallabidi_patch_resolve) {
-                  window.__wallabidi_patch_resolve = null;
-                  resolve('navigated');
-                }
-              }, {once: true});
-            });
-            meta.prepared = true;
-          }
+          // Delegates to W.preparePatch — single source of truth for
+          // patch-promise installation.
+          if (W.preparePatch()) meta.prepared = true;
           break;
         case 'click':
           // Capture result BEFORE clicking (click may navigate)

@@ -3,98 +3,19 @@ defmodule Wallabidi.Remote.LiveViewAware do
 
   # LiveView-aware operations that work across all BiDi/CDP drivers.
   #
-  # The JS payloads are identical regardless of protocol — the only thing
-  # that differs is HOW the JS gets evaluated. This module uses
-  # `Wallabidi.Remote.Protocol` to dispatch to the appropriate adapter (BiDi or
-  # CDP), so the same LiveView integration works for all drivers.
+  # All page-side logic lives in priv/wallabidi.js as `W.preparePatch`,
+  # `W.awaitPatch`, `W.drainPatches`, `W.awaitAck`, `W.awaitSelector`,
+  # `W.liveViewConnected`, and `W.awaitLiveViewConnected`. This module
+  # is a thin BEAM-side adapter that invokes them via Protocol.eval /
+  # Protocol.eval_async — same dispatch shape for CDP and BiDi.
   #
-  # These operations were originally in `Wallabidi.Remote.BiDi.Client`, tying them
-  # to the BiDi protocol. Now they live here and are protocol-agnostic.
+  # Centralising the JS here means: one source of truth, smaller wire
+  # payload (a stable `window.__w.X()` invocation rather than a fresh
+  # multi-line script per call), and the JS is testable in isolation
+  # against priv/wallabidi.js.
 
   alias Wallabidi.Remote.Protocol
   alias Wallabidi.Session
-
-  @prepare_patch_js """
-  (() => {
-    const ls = window.liveSocket;
-    if (!ls || !ls.main) return false;
-
-    // Install the onPatchEnd hook once (preserves any existing callback)
-    if (!window.__wallabidi_patch_hooked) {
-      const orig = ls.domCallbacks.onPatchEnd;
-      ls.domCallbacks.onPatchEnd = function(container) {
-        orig(container);
-        if (window.__wallabidi_patch_resolve) {
-          let r = window.__wallabidi_patch_resolve;
-          window.__wallabidi_patch_resolve = null;
-          r(true);
-        }
-      };
-      window.__wallabidi_patch_hooked = true;
-    }
-
-    // Set up the one-shot promise for the NEXT patch.
-    // Also listen for beforeunload — if the action causes a redirect
-    // instead of a patch, resolve immediately with "navigated".
-    window.__wallabidi_patch_promise = new Promise(resolve => {
-      window.__wallabidi_patch_resolve = resolve;
-      window.addEventListener('beforeunload', () => {
-        if (window.__wallabidi_patch_resolve) {
-          window.__wallabidi_patch_resolve = null;
-          resolve("navigated");
-        }
-      }, {once: true});
-    });
-    return true;
-  })()
-  """
-
-  @await_patch_js """
-  (() => {
-    // Promise missing means either prepare_patch wasn't called, OR
-    // the page navigated and we're now in a fresh JS context. Tell
-    // Elixir which so it can skip the slow await_ack path on nav.
-    if (!window.__wallabidi_patch_promise) return Promise.resolve('no-promise');
-    const p = window.__wallabidi_patch_promise;
-    window.__wallabidi_patch_promise = null;
-    return Promise.race([
-      p,
-      new Promise(resolve => {
-        setTimeout(() => resolve(false), 5000);
-      })
-    ]);
-  })()
-  """
-
-  @drain_patches_js """
-  (() => {
-    const ls = window.liveSocket;
-    if (!ls || !ls.domCallbacks) return Promise.resolve(true);
-
-    return new Promise(resolve => {
-      let timer = null;
-      const idle = 300;
-      const orig = ls.domCallbacks.onPatchEnd;
-
-      function done() {
-        ls.domCallbacks.onPatchEnd = orig;
-        resolve(true);
-      }
-
-      function resetTimer() {
-        if (timer) clearTimeout(timer);
-        timer = setTimeout(done, idle);
-      }
-
-      ls.domCallbacks.onPatchEnd = function(container) {
-        orig(container);
-        resetTimer();
-      };
-
-      resetTimer();
-    });
-  })()
-  """
 
   @doc """
   Installs a one-shot promise on `window.__wallabidi_patch_promise` that
@@ -103,7 +24,7 @@ defmodule Wallabidi.Remote.LiveViewAware do
   """
   @spec prepare_patch(Session.t()) :: :prepared | :no_liveview
   def prepare_patch(%Session{} = session) do
-    case Protocol.eval(session, @prepare_patch_js) do
+    case Protocol.eval(session, "window.__w.preparePatch()") do
       {:ok, true} -> :prepared
       _ -> :no_liveview
     end
@@ -126,35 +47,7 @@ defmodule Wallabidi.Remote.LiveViewAware do
   @spec await_ack(Session.t(), non_neg_integer(), timeout()) ::
           {:ok, :acked | :no_liveview | :page_navigated} | {:error, :timeout}
   def await_ack(%Session{} = session, pre_ref_next, timeout \\ 5_000) do
-    js = """
-    new Promise(resolve => {
-      var deadline = Date.now() + #{timeout};
-      var target = #{pre_ref_next};
-
-      function check() {
-        var ls = window.liveSocket;
-        if (!ls || !ls.main) return resolve('no-liveview');
-
-        // `ref` here is the NEXT ref the view will issue. Before the
-        // click we snapshotted it as `target`. The server acks with
-        // the ref it received; lastAckRef is the highest so far. Our
-        // click triggered an event with ref === target, so we wait for
-        // lastAckRef >= target.
-        if (ls.main.lastAckRef !== null && ls.main.lastAckRef >= target) {
-          return resolve('acked');
-        }
-
-        if (Date.now() > deadline) return resolve(false);
-        setTimeout(check, 20);
-      }
-
-      window.addEventListener('beforeunload', function() {
-        resolve('navigated');
-      }, {once: true});
-
-      check();
-    })
-    """
+    js = "window.__w.awaitAck(#{pre_ref_next}, #{timeout})"
 
     case Protocol.eval_async(session, js, timeout + 1_000) do
       {:ok, "acked"} -> {:ok, :acked}
@@ -182,7 +75,9 @@ defmodule Wallabidi.Remote.LiveViewAware do
   """
   @spec await_patch(Session.t(), timeout()) :: :ok | :page_navigated | :timeout
   def await_patch(%Session{} = session, timeout \\ 5_000) do
-    case Protocol.eval_async(session, @await_patch_js, timeout) do
+    js = "window.__w.awaitPatch(#{timeout})"
+
+    case Protocol.eval_async(session, js, timeout) do
       {:ok, "navigated"} ->
         :page_navigated
 
@@ -218,7 +113,7 @@ defmodule Wallabidi.Remote.LiveViewAware do
   """
   @spec drain_patches(Session.t(), timeout()) :: :ok
   def drain_patches(%Session{} = session, timeout \\ 5_000) do
-    _ = Protocol.eval_async(session, @drain_patches_js, timeout)
+    _ = Protocol.eval_async(session, "window.__w.drainPatches()", timeout)
     :ok
   end
 
@@ -251,79 +146,13 @@ defmodule Wallabidi.Remote.LiveViewAware do
     timeout = Keyword.get(opts, :timeout, 200)
     text = Keyword.get(opts, :text)
 
-    text_js = if text, do: Jason.encode!(text), else: "null"
+    js_opts =
+      Jason.encode!(%{
+        "timeoutMs" => timeout,
+        "text" => text
+      })
 
-    js = """
-    (() => {
-      const selector = #{Jason.encode!(css_selector)};
-      const text = #{text_js};
-
-      function matches() {
-        if (!text) return !!document.querySelector(selector);
-        var els = document.querySelectorAll(selector);
-        for (var i = 0; i < els.length; i++) {
-          if (els[i].textContent.includes(text)) return true;
-        }
-        return false;
-      }
-
-      // Already present?
-      if (matches()) return Promise.resolve(true);
-
-      return new Promise((resolve) => {
-        let timer = setTimeout(() => { cleanup(); resolve(false); }, #{timeout});
-
-        // LiveView: check after each complete patch
-        let origOnPatchEnd;
-        const ls = window.liveSocket;
-        if (ls && ls.domCallbacks) {
-          origOnPatchEnd = ls.domCallbacks.onPatchEnd;
-          ls.domCallbacks.onPatchEnd = function(container) {
-            if (origOnPatchEnd) origOnPatchEnd(container);
-            if (matches()) { cleanup(); resolve(true); }
-          };
-        }
-
-        // Fallback: MutationObserver for JS-driven changes
-        const observer = new MutationObserver(() => {
-          requestAnimationFrame(() => {
-            if (matches()) { cleanup(); resolve(true); }
-          });
-        });
-        observer.observe(document.body, {
-          childList: true, subtree: true,
-          attributes: true, characterData: true
-        });
-
-        // Detect navigation — resolve with "navigated" so Elixir can
-        // wait for the new page and re-run await_selector.
-        var startUrl = window.location.href;
-        function onNav() { cleanup(); resolve("navigated"); }
-        window.addEventListener('beforeunload', onNav, {once: true});
-
-        // Poll URL for LiveView push_navigate (no beforeunload for SPA nav)
-        var navCheck = setInterval(function() {
-          if (window.location.href !== startUrl) {
-            // URL changed — wait for new DOM to be ready, then check
-            requestAnimationFrame(function() {
-              if (matches()) { cleanup(); resolve(true); }
-              else { cleanup(); resolve("navigated"); }
-            });
-          }
-        }, 50);
-
-        function cleanup() {
-          clearTimeout(timer);
-          clearInterval(navCheck);
-          observer.disconnect();
-          window.removeEventListener('beforeunload', onNav);
-          if (origOnPatchEnd && ls && ls.domCallbacks) {
-            ls.domCallbacks.onPatchEnd = origOnPatchEnd;
-          }
-        }
-      });
-    })()
-    """
+    js = "window.__w.awaitSelector(#{Jason.encode!(css_selector)}, #{js_opts})"
 
     result =
       case Protocol.eval_async(session, js, timeout + 1_000) do
@@ -354,15 +183,7 @@ defmodule Wallabidi.Remote.LiveViewAware do
   """
   @spec live_view_connected?(Session.t()) :: boolean
   def live_view_connected?(%Session{} = session) do
-    js = """
-    (() => {
-      const ls = window.liveSocket;
-      if (!ls || !ls.main) return false;
-      return !ls.main.joinPending;
-    })()
-    """
-
-    case Protocol.eval(session, js) do
+    case Protocol.eval(session, "window.__w.liveViewConnected()") do
       {:ok, true} -> true
       _ -> false
     end
@@ -391,43 +212,9 @@ defmodule Wallabidi.Remote.LiveViewAware do
   def await_liveview_connected(%Session{} = session, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, 5_000)
     pre_url = Keyword.get(opts, :pre_url)
-
     pre_url_js = if pre_url, do: Jason.encode!(pre_url), else: "null"
 
-    js = """
-    new Promise(resolve => {
-      const preUrl = #{pre_url_js};
-      const deadline = Date.now() + #{timeout};
-
-      function check() {
-        // Waiting for a NEW LV (post-navigation) — keep polling until
-        // URL changes or deadline hits.
-        if (preUrl && window.location.href === preUrl) {
-          if (Date.now() > deadline) return resolve(false);
-          return setTimeout(check, 30);
-        }
-
-        // Wait for the DOM to finish parsing before checking for the
-        // server-rendered LiveView marker.
-        if (document.readyState === 'loading') {
-          if (Date.now() > deadline) return resolve(false);
-          return setTimeout(check, 20);
-        }
-
-        // Not a LiveView page (no server-rendered [data-phx-session]).
-        if (!document.querySelector('[data-phx-session]')) {
-          return resolve('no-liveview');
-        }
-
-        const ls = window.liveSocket;
-        if (ls && ls.main && !ls.main.joinPending) return resolve(true);
-        if (Date.now() > deadline) return resolve(false);
-        setTimeout(check, 30);
-      }
-
-      check();
-    })
-    """
+    js = "window.__w.awaitLiveViewConnected(#{pre_url_js}, #{timeout})"
 
     case Protocol.eval_async(session, js, timeout + 1_000) do
       {:ok, true} -> {:ok, :connected}

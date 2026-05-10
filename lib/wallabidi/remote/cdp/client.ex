@@ -726,10 +726,12 @@ defmodule Wallabidi.Remote.CDP.Client do
     # (set by set_window_size below) — `Emulation.setDeviceMetricsOverride`
     # is a no-op on engines without a real layout pass (Lightpanda),
     # so the JS override is the only source of truth there.
-    case evaluate(
-           session,
-           "JSON.stringify(window.__wallabidi_window_size || {width: window.innerWidth, height: window.innerHeight})"
-         ) do
+    js =
+      "(window.__w && window.__w.getWindowSize()) || " <>
+        "JSON.stringify(window.__wallabidi_window_size || " <>
+        "{width: window.innerWidth, height: window.innerHeight})"
+
+    case evaluate(session, js) do
       {:ok, json} when is_binary(json) ->
         case Jason.decode(json) do
           {:ok, %{"width" => w, "height" => h}} -> {:ok, %{width: w, height: h}}
@@ -763,13 +765,20 @@ defmodule Wallabidi.Remote.CDP.Client do
     # document so it persists across navigations. Engines that don't
     # implement Emulation (Lightpanda) read this from
     # get_window_size/1.
-    js = "window.__wallabidi_window_size = {width: #{width}, height: #{height}};"
-    _ = cdp_send(session, "Runtime.evaluate", %{expression: js, returnByValue: true})
+    # Use the centralised W.setWindowSize when available, fall back to
+    # the raw global write — handles the case where this is called on a
+    # page that booted before W was installed.
+    set_js =
+      "if (window.__w) window.__w.setWindowSize(#{width}, #{height}); " <>
+        "else window.__wallabidi_window_size = {width: #{width}, height: #{height}};"
 
-    _ =
-      cdp_send(session, "Page.addScriptToEvaluateOnNewDocument", %{
-        source: js
-      })
+    _ = cdp_send(session, "Runtime.evaluate", %{expression: set_js, returnByValue: true})
+
+    # The bootstrap doesn't necessarily exist when an early addScript
+    # runs, so the preload form uses the raw global to be safe in
+    # either case.
+    persist_js = "window.__wallabidi_window_size = {width: #{width}, height: #{height}};"
+    _ = cdp_send(session, "Page.addScriptToEvaluateOnNewDocument", %{source: persist_js})
 
     {:ok, nil}
   end

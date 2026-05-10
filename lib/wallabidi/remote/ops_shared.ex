@@ -136,22 +136,37 @@ defmodule Wallabidi.Remote.OpsShared do
 
       # ----- Page introspection (shared) -----
 
-      @doc "Page URL via `location.href`."
+      # Trivia accessors fall back to native expressions when window.__w
+      # hasn't been installed yet (e.g. on about:blank before the
+      # bootstrap preload runs). `(window.__w && window.__w.X()) || ...`
+      # keeps centralization-aware callers happy without breaking the
+      # blank-page case.
+
+      @doc "Page URL via `W.url()` (location.href)."
       @spec current_url(Session.t()) :: {:ok, String.t()} | {:error, term}
-      def current_url(%Session{} = session), do: evaluate(session, "location.href")
+      def current_url(%Session{} = session) do
+        evaluate(session, "(window.__w && window.__w.url()) || location.href")
+      end
 
-      @doc "Path component of the URL via `location.pathname`."
+      @doc "Path component of the URL via `W.path()` (location.pathname)."
       @spec current_path(Session.t()) :: {:ok, String.t()} | {:error, term}
-      def current_path(%Session{} = session), do: evaluate(session, "location.pathname")
+      def current_path(%Session{} = session) do
+        evaluate(session, "(window.__w && window.__w.path()) || location.pathname")
+      end
 
-      @doc "Page title via `document.title`."
+      @doc "Page title via `W.title()` (document.title)."
       @spec page_title(Session.t()) :: {:ok, String.t()} | {:error, term}
-      def page_title(%Session{} = session), do: evaluate(session, "document.title")
+      def page_title(%Session{} = session) do
+        evaluate(session, "(window.__w && window.__w.title()) || document.title")
+      end
 
-      @doc "Outer HTML of `document.documentElement`."
+      @doc "Outer HTML via `W.source()`."
       @spec page_source(Session.t()) :: {:ok, String.t()} | {:error, term}
       def page_source(%Session{} = session) do
-        evaluate(session, "document.documentElement.outerHTML")
+        evaluate(
+          session,
+          "(window.__w && window.__w.source()) || document.documentElement.outerHTML"
+        )
       end
 
       defoverridable text: 2,
