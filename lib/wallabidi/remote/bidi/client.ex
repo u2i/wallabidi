@@ -1013,6 +1013,20 @@ defmodule Wallabidi.Remote.BiDi.Client do
   @spec find_elements(Session.t() | Element.t(), Wallabidi.Query.t(), keyword) ::
           {:ok, [Element.t()]} | {:error, term}
   def find_elements(parent, %Wallabidi.Query{} = query, opts \\ []) do
+    do_find_elements(parent, query, opts, :eager)
+  end
+
+  @doc """
+  BiDi twin of CDPClient.find_elements_lazy/3 — returns Elements with
+  `bidi_shared_id: {:lazy, ops, index}` instead of fetching sharedIds.
+  """
+  @spec find_elements_lazy(Session.t() | Element.t(), Wallabidi.Query.t(), keyword) ::
+          {:ok, [Element.t()]} | {:error, term}
+  def find_elements_lazy(parent, %Wallabidi.Query{} = query, opts \\ []) do
+    do_find_elements(parent, query, opts, :lazy)
+  end
+
+  defp do_find_elements(parent, %Wallabidi.Query{} = query, opts, mode) do
     session = Element.root_session(parent)
     timeout = Keyword.get(opts, :timeout, 5_000)
     count = Wallabidi.Query.count(query)
@@ -1032,7 +1046,10 @@ defmodule Wallabidi.Remote.BiDi.Client do
 
       case Protocol.await_find_result(session, query_id, timeout) do
         {:ok, found, _meta} when found > 0 ->
-          fetch_element_refs(session, query_id, found)
+          case mode do
+            :lazy -> {:ok, lazy_elements(parent, ops.ops, found)}
+            :eager -> fetch_element_refs(session, query_id, found)
+          end
 
         {:ok, _, _} ->
           {:ok, []}
@@ -1048,6 +1065,18 @@ defmodule Wallabidi.Remote.BiDi.Client do
           final_sync_exec(session, ops_json, ops.parent_id)
       end
     end
+  end
+
+  defp lazy_elements(%{driver: driver, session_url: url} = parent, ops, count) do
+    Enum.map(0..(count - 1), fn idx ->
+      %Element{
+        bidi_shared_id: {:lazy, ops, idx},
+        parent: parent,
+        driver: driver,
+        url: url,
+        session_url: url
+      }
+    end)
   end
 
   defp final_sync_exec(%Session{} = session, ops_json, parent_shared_id) do

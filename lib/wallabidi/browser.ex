@@ -948,7 +948,7 @@ defmodule Wallabidi.Browser do
   @spec text(parent, Query.t()) :: String.t()
   def text(parent, query) do
     parent
-    |> find(query)
+    |> find_lazy(query)
     |> Element.text()
   end
 
@@ -964,7 +964,7 @@ defmodule Wallabidi.Browser do
   @spec attr(parent, Query.t(), String.t()) :: String.t() | nil
   def attr(parent, query, name) do
     parent
-    |> find(query)
+    |> find_lazy(query)
     |> Element.attr(name)
   end
 
@@ -974,7 +974,7 @@ defmodule Wallabidi.Browser do
   @spec selected?(parent, Query.t()) :: boolean()
   def selected?(parent, query) do
     parent
-    |> find(query)
+    |> find_lazy(query)
     |> Element.selected?()
   end
 
@@ -1015,6 +1015,56 @@ defmodule Wallabidi.Browser do
   @spec find(parent, Query.t()) :: Element.t() | [Element.t()]
   def find(parent, %Query{} = query) do
     do_find(parent, query, current_time())
+  end
+
+  # Internal find that returns lazy Elements (no V8 ref-fetch round
+  # trip). Use only when the caller will discard the elements after
+  # one or two ops — e.g. Browser.text/2, attr/3. Subsequent ops on
+  # lazy elements re-resolve via [query, target N] inside W.run.
+  #
+  # Falls back to eager find on drivers that don't support the V2
+  # ops pipeline (LiveView driver), since the lazy path requires the
+  # W.run interpreter on the page.
+  defp find_lazy(parent, %Query{} = query) do
+    session = get_session(parent)
+
+    if session && session.driver in [
+         Wallabidi.Remote.Drivers.LightpandaCDP,
+         Wallabidi.Remote.Drivers.ChromeCDP,
+         Wallabidi.Remote.Drivers.ChromeBiDi
+       ] && not in_frame?(session) && not in_switched_window?(session) do
+      do_find_lazy(parent, query, current_time())
+    else
+      do_find(parent, query, current_time())
+    end
+  end
+
+  defp do_find_lazy(parent, query, start_time) do
+    case execute_query(parent, query, lazy: true) do
+      {:ok, query} ->
+        Query.result(query)
+
+      {:error, :stale_reference} ->
+        if max_time_exceeded?(start_time) do
+          raise Wallabidi.QueryError, ErrorMessage.message(query, :not_found)
+        else
+          do_find_lazy(parent, query, start_time)
+        end
+
+      {:error, {:not_found, result}} ->
+        query = %{query | result: result}
+
+        case validate_html(parent, query) do
+          {:ok, _} ->
+            raise Wallabidi.QueryError, ErrorMessage.message(query, :not_found)
+
+          {:error, html_error} ->
+            raise Wallabidi.QueryError, ErrorMessage.message(query, html_error)
+        end
+
+      {:error, e} ->
+        raise Wallabidi.QueryError, ErrorMessage.message(query, e)
+    end
   end
 
   # The find path can return :stale_reference when a concurrent
@@ -1113,7 +1163,7 @@ defmodule Wallabidi.Browser do
   @spec has_value?(Element.t(), any()) :: boolean()
   def has_value?(parent, query, value) do
     parent
-    |> find(query)
+    |> find_lazy(query)
     |> has_value?(value)
   end
 
@@ -1575,7 +1625,9 @@ defmodule Wallabidi.Browser do
     end
   end
 
-  def execute_query(%{driver: driver} = parent, query) do
+  def execute_query(parent, query, opts \\ [])
+
+  def execute_query(%{driver: driver} = parent, query, opts) do
     session = get_session(parent)
 
     cond do
@@ -1584,13 +1636,13 @@ defmodule Wallabidi.Browser do
           not in_frame?(session) && not in_switched_window?(session) ->
         # V2 transport uses the same ops pipeline shape (push-based finds
         # via Runtime.addBinding). Routes through V2.CDPClient.
-        execute_query_pipeline(parent, driver, query)
+        execute_query_pipeline(parent, driver, query, opts)
 
       session && not is_nil(session.protocol) &&
           not in_frame?(session) && not in_switched_window?(session) ->
         # Both CDP and BiDi use the ops pipeline for find+filter in one eval.
         # Push-based: CDP uses Runtime.addBinding, BiDi uses script.channel.
-        execute_query_pipeline(parent, driver, query)
+        execute_query_pipeline(parent, driver, query, opts)
 
       true ->
         maybe_await_selector(parent, query)
@@ -1602,19 +1654,27 @@ defmodule Wallabidi.Browser do
   # JS evaluation. Both CDP and BiDi use push-based find:
   # CDP: Runtime.addBinding → Runtime.bindingCalled
   # BiDi: script.addPreloadScript channel → script.message
-  defp execute_query_pipeline(parent, _driver, query) do
+  defp execute_query_pipeline(parent, _driver, query, opts) do
     alias Wallabidi.Remote.CDP.Ops
 
     session = get_session(parent)
+    lazy? = Keyword.get(opts, :lazy, false)
 
     with {:ok, _ops, validated} <- Ops.from_wallaby(parent, query) do
       timeout = query_timeout(validated)
 
       result =
         cond do
+          session.driver == Wallabidi.Remote.Drivers.ChromeBiDi and lazy? ->
+            Wallabidi.Remote.BiDi.Client.find_elements_lazy(parent, validated, timeout: timeout)
+
           session.driver == Wallabidi.Remote.Drivers.ChromeBiDi ->
             # V2 BiDi: push-based bootstrap pipeline speaking BiDi.
             Wallabidi.Remote.BiDi.Client.find_elements(parent, validated, timeout: timeout)
+
+          session.driver in [Wallabidi.Remote.Drivers.LightpandaCDP, Wallabidi.Remote.Drivers.ChromeCDP] and
+              lazy? ->
+            Wallabidi.Remote.CDP.Client.find_elements_lazy(parent, validated, timeout: timeout)
 
           session.driver in [Wallabidi.Remote.Drivers.LightpandaCDP, Wallabidi.Remote.Drivers.ChromeCDP] ->
             # V2 CDP: same push pipeline routed through V2.Session.
