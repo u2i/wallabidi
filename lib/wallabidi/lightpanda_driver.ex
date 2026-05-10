@@ -30,13 +30,12 @@ defmodule Wallabidi.LightpandaDriver do
   #
   # Starts a single shared Lightpanda binary if the package is on
   # the load path. Sessions multiplex over this binary by opening
-  # their own V2.WebSocket against its URL — the
-  # `Transport.PerSessionWS` model, mirroring legacy
-  # `Wallabidi.Lightpanda`.
+  # their own WebSocket against its URL — the `Transport.PerSession`
+  # model, where each session's WS lives inside a `PerSession.Actor`.
   #
   # Falls back to per-session binary spawn (`Transport.IsolatedProcess`)
   # if no shared server is running. Useful for ad-hoc tests that hit
-  # V2Driver directly without going through the application supervisor.
+  # the driver directly without going through the application supervisor.
   # -----
 
   def child_spec(opts) do
