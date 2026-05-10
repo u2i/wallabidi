@@ -1,4 +1,4 @@
-defmodule Wallabidi.OpsShared do
+defmodule Wallabidi.Remote.OpsShared do
   @moduledoc false
 
   # Shared op bodies between V2.CDPClient and V2.BiDiClient.
@@ -12,7 +12,7 @@ defmodule Wallabidi.OpsShared do
   #
   # ## Contract
   #
-  # Modules that `use Wallabidi.OpsShared` must export:
+  # Modules that `use Wallabidi.Remote.OpsShared` must export:
   #
   #   * `call_on_element(session, element, fn_decl, args \\ [])` —
   #     run `fn_decl` (a JS function expression) with `this` bound

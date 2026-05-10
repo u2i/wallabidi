@@ -179,10 +179,10 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
       # Use execute_script to trigger the click, then call
       # await_liveview_connected manually — without await_patch's delay.
       session = visit(session, "#{url}/nav-source")
-      {:ok, pre_url} = Wallabidi.Protocol.current_url(session)
+      {:ok, pre_url} = Wallabidi.Remote.Protocol.current_url(session)
       execute_script(session, "document.getElementById('go-to-dest').click()")
       Wallabidi.SessionProcess.await_next_page_load(session)
-      Wallabidi.LiveViewAware.await_liveview_connected(session, pre_url: pre_url)
+      Wallabidi.Remote.LiveViewAware.await_liveview_connected(session, pre_url: pre_url)
 
       execute_script(
         session,

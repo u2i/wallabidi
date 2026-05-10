@@ -10,8 +10,8 @@ defmodule Wallabidi.Integration.V2SessionHelper do
   # `{session, ws_pid, server}` triple AND registers an `on_exit`
   # to tear it down at test end.
 
-  alias Wallabidi.WebSocket
-  alias Wallabidi.Transport.Session, as: V2Session
+  alias Wallabidi.Remote.WebSocket
+  alias Wallabidi.Remote.Transport.Session, as: V2Session
 
   @doc """
   Brings up a Lightpanda server, V2.WebSocket, V2.Session, and

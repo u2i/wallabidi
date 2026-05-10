@@ -1,4 +1,4 @@
-defmodule Wallabidi.Transport.Protocol do
+defmodule Wallabidi.Remote.Transport.Protocol do
   @moduledoc false
 
   # Documents the message protocol every transport-actor honors, and

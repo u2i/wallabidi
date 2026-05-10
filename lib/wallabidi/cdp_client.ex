@@ -1,7 +1,7 @@
 defmodule Wallabidi.CDPClient do
   @moduledoc false
 
-  # Thin façade over `Wallabidi.Transport.Session` providing CDP-shaped
+  # Thin façade over `Wallabidi.Remote.Transport.Session` providing CDP-shaped
   # operations (`Page.navigate`, `Runtime.evaluate`, etc.). Exists so
   # callers (drivers, tests) can write `V2.CDPClient.evaluate(s, ...)`
   # without knowing about the Session GenServer or wire-id correlation.
@@ -17,16 +17,16 @@ defmodule Wallabidi.CDPClient do
   # Operations are added one at a time, each with an integration test
   # against a live Lightpanda server. See test/wallabidi/v2/.
 
-  alias Wallabidi.{Bootstrap, Element, OpsShared, Session}
+  alias Wallabidi.{Element, Session}
   alias Wallabidi.CDP.{Commands, Ops, ResponseParser}
-  alias Wallabidi.Transport.Protocol
-  alias Wallabidi.WebSocket
+  alias Wallabidi.Remote.{Bootstrap, OpsShared, WebSocket}
+  alias Wallabidi.Remote.Transport.Protocol
 
   # Pulls in shared op bodies (text/2, attribute/3, displayed/2,
   # click/2, set_value_dom/3, clear/2, send_keys_text/3, page-info
   # ops). They call this module's call_on_element/4 + evaluate/2,3
   # for the wire layer.
-  use Wallabidi.OpsShared
+  use Wallabidi.Remote.OpsShared
 
   @doc """
   Returns the CDP send opts (`:flat_session_id` + `:session_id`) for
@@ -116,7 +116,7 @@ defmodule Wallabidi.CDPClient do
     cdp_cast(session, "Runtime.addBinding", %{name: "__wallabidi"})
 
     cdp_cast(session, "Page.addScriptToEvaluateOnNewDocument", %{
-      source: Wallabidi.Bootstrap.cdp_iife()
+      source: Wallabidi.Remote.Bootstrap.cdp_iife()
     })
 
     case cdp_send(session, "Page.getFrameTree", %{}) do
@@ -229,7 +229,7 @@ defmodule Wallabidi.CDPClient do
       String.contains?(msg, "Object has been released")
   end
 
-  # text/2, attribute/3, displayed/2 — provided by Wallabidi.OpsShared.
+  # text/2, attribute/3, displayed/2 — provided by Wallabidi.Remote.OpsShared.
 
   @doc """
   Sets the value of an input element and dispatches `input` and
@@ -332,12 +332,12 @@ defmodule Wallabidi.CDPClient do
   end
 
   # set_value_dom/3 (the DOM-based path) is provided by
-  # Wallabidi.OpsShared. set_value/3 above dispatches between
+  # Wallabidi.Remote.OpsShared. set_value/3 above dispatches between
   # file-input handling (CDP-specific via DOM.setFileInputFiles)
   # and the shared DOM path.
 
   @doc """
-  # clear/3 — provided by Wallabidi.OpsShared.
+  # clear/3 — provided by Wallabidi.Remote.OpsShared.
 
   @doc """
   Sends keys to the element. `keys` is a list of string segments
@@ -479,7 +479,7 @@ defmodule Wallabidi.CDPClient do
     ])
   end
 
-  # click/2 — provided by Wallabidi.OpsShared. Routes through
+  # click/2 — provided by Wallabidi.Remote.OpsShared. Routes through
   # window.__w.clickEl when the bootstrap is installed (handles
   # <option> selection + change events) and falls back to
   # scroll+focus+click otherwise.
@@ -504,11 +504,15 @@ defmodule Wallabidi.CDPClient do
           {:ok, String.t()} | {:error, term}
   def click_aware(%Session{} = session, %Element{} = element, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, 5_000)
+    # Pre-click "is LV mounted enough to receive this click?" — short.
+    # Empirically, if the channel hasn't joined within ~200ms it almost
+    # certainly won't from this point either. Post-click "did the patch
+    # land?" still uses :timeout (5s default) because slow handle_event
+    # handlers legitimately take seconds.
+    pre_click_timeout = Keyword.get(opts, :pre_click_timeout, 200)
 
-    # Merge the LV-ready wait + classify into one Runtime.callFunctionOn:
-    # the JS Promise awaits joinPending → false then returns the
-    # classification. Saves one round-trip per click.
-    with {:ok, classification} <- await_lv_ready_and_classify(session, element, :click, timeout),
+    with {:ok, classification} <-
+           await_lv_ready_and_classify(session, element, :click, pre_click_timeout),
          pre_page_id <- Protocol.get_page_id(session),
          {:ok, _} <- click(session, element) do
       case classification do
@@ -535,10 +539,10 @@ defmodule Wallabidi.CDPClient do
           {:ok, String.t(), :ready | :timeout} | {:error, term}
   def click_aware_with_classification(%Session{} = session, %Element{} = element, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, 5_000)
+    pre_click_timeout = Keyword.get(opts, :pre_click_timeout, 200)
 
-    # Merge LV-ready wait + classify into one Runtime.callFunctionOn —
-    # saves a round-trip on every click.
-    with {:ok, classification} <- await_lv_ready_and_classify(session, element, :click, timeout),
+    with {:ok, classification} <-
+           await_lv_ready_and_classify(session, element, :click, pre_click_timeout),
          pre_page_id <- Protocol.get_page_id(session),
          {:ok, _} <- click(session, element) do
       case classification do
@@ -953,7 +957,7 @@ defmodule Wallabidi.CDPClient do
   # ----- Page introspection -----
   #
   # current_url/1, current_path/1, page_title/1, page_source/1 —
-  # provided by Wallabidi.OpsShared.
+  # provided by Wallabidi.Remote.OpsShared.
 
   # ----- Visit (navigate + await load) -----
 

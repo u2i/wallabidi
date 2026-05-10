@@ -23,8 +23,8 @@ defmodule Wallabidi.LightpandaDriver do
 
   alias Wallabidi.{Element, Session}
   alias Wallabidi.CDPClient
-  alias Wallabidi.Transport
-  alias Wallabidi.Transport.Protocol
+  alias Wallabidi.Remote.Transport
+  alias Wallabidi.Remote.Transport.Protocol
 
   # ----- Driver supervisor —
   #
@@ -365,7 +365,7 @@ defmodule Wallabidi.LightpandaDriver do
     case CDPClient.call_on_element(
            Element.root_session(element),
            element,
-           Wallabidi.OpsShared.dispatch_fn(),
+           Wallabidi.Remote.OpsShared.dispatch_fn(),
            ["is_selected", []]
          ) do
       {:ok, v} -> {:ok, v == true}

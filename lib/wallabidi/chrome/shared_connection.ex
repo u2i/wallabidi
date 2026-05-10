@@ -11,7 +11,7 @@ defmodule Wallabidi.Chrome.SharedConnection do
 
   use Agent
 
-  alias Wallabidi.WebSocket
+  alias Wallabidi.Remote.WebSocket
 
   def start_link(_opts) do
     Agent.start_link(fn -> nil end, name: __MODULE__)

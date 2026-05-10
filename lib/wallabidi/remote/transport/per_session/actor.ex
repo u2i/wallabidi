@@ -1,4 +1,4 @@
-defmodule Wallabidi.Transport.PerSession.Actor do
+defmodule Wallabidi.Remote.Transport.PerSession.Actor do
   @moduledoc false
 
   # Single GenServer per session. Owns:
@@ -15,7 +15,7 @@ defmodule Wallabidi.Transport.PerSession.Actor do
   # eliminates the inter-process hop on every cdp_send: caller →
   # actor.cdp_send is one GenServer.call instead of two.
   #
-  # Implements the Wallabidi.Transport.Protocol message contract
+  # Implements the Wallabidi.Remote.Transport.Protocol message contract
   # so V2.CDPClient can drive it the same way it drives V2.Session.
 
   use GenServer
@@ -149,7 +149,8 @@ defmodule Wallabidi.Transport.PerSession.Actor do
 
     case do_send(state, wire_id, method, params, opts) do
       {:ok, state} ->
-        pending = Map.put(state.pending_calls, wire_id, from)
+        t0 = Wallabidi.Bench.Timing.mark_now()
+        pending = Map.put(state.pending_calls, wire_id, {from, t0, method})
         {:noreply, %{state | pending_calls: pending}}
 
       {:error, state, reason} ->
@@ -449,7 +450,8 @@ defmodule Wallabidi.Transport.PerSession.Actor do
         # Fire-and-forget cast or stale id. Drop.
         state
 
-      {from, pending} ->
+      {{from, t0, method}, pending} ->
+        Wallabidi.Bench.Timing.record(t0, method)
         GenServer.reply(from, parse_response(response))
         %{state | pending_calls: pending}
     end
@@ -648,7 +650,7 @@ defmodule Wallabidi.Transport.PerSession.Actor do
             {nil, _} ->
               acc
 
-            {from, rest} ->
+            {{from, _t0, _method}, rest} ->
               GenServer.reply(from, {:error, reason})
               %{acc | pending_calls: rest}
           end
@@ -667,7 +669,7 @@ defmodule Wallabidi.Transport.PerSession.Actor do
   end
 
   defp notify_all_pending(state, reply) do
-    Enum.each(state.pending_calls, fn {_id, from} ->
+    Enum.each(state.pending_calls, fn {_id, {from, _t0, _method}} ->
       try do
         GenServer.reply(from, reply)
       catch

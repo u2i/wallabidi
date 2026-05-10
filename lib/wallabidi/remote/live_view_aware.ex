@@ -1,17 +1,17 @@
-defmodule Wallabidi.LiveViewAware do
+defmodule Wallabidi.Remote.LiveViewAware do
   @moduledoc false
 
   # LiveView-aware operations that work across all BiDi/CDP drivers.
   #
   # The JS payloads are identical regardless of protocol — the only thing
   # that differs is HOW the JS gets evaluated. This module uses
-  # `Wallabidi.Protocol` to dispatch to the appropriate adapter (BiDi or
+  # `Wallabidi.Remote.Protocol` to dispatch to the appropriate adapter (BiDi or
   # CDP), so the same LiveView integration works for all drivers.
   #
   # These operations were originally in `Wallabidi.BiDiClient`, tying them
   # to the BiDi protocol. Now they live here and are protocol-agnostic.
 
-  alias Wallabidi.Protocol
+  alias Wallabidi.Remote.Protocol
   alias Wallabidi.Session
 
   @prepare_patch_js """

@@ -14,7 +14,7 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
   alias Wallabidi.Integration.V2SessionHelper
   alias Wallabidi.Query
   alias Wallabidi.CDPClient
-  alias Wallabidi.Transport.Session, as: V2Session
+  alias Wallabidi.Remote.Transport.Session, as: V2Session
 
   setup do
     V2SessionHelper.start_session()

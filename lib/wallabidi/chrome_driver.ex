@@ -23,8 +23,8 @@ defmodule Wallabidi.ChromeDriver do
   alias Wallabidi.{DependencyError, Element, Metadata, Session}
   alias Wallabidi.Chrome.Server, as: ChromeServer
   alias Wallabidi.CDPClient
-  alias Wallabidi.{Transport, WebSocket}
-  alias Wallabidi.Transport.Protocol
+  alias Wallabidi.Remote.{Transport, WebSocket}
+  alias Wallabidi.Remote.Transport.Protocol
   alias Wallabidi.Chrome.SharedConnection
   import Wallabidi.Driver.LogChecker
 
@@ -150,7 +150,7 @@ defmodule Wallabidi.ChromeDriver do
   end
 
   # V2 equivalent of LiveViewAware.await_liveview_connected/2 that
-  # doesn't depend on Wallabidi.Protocol (V2 sessions have
+  # doesn't depend on Wallabidi.Remote.Protocol (V2 sessions have
   # protocol: nil). Returns quickly when no LiveView marker is in the
   # DOM; otherwise polls liveSocket.main.joinPending up to `timeout`.
   defp await_liveview_connected_v2(%Session{} = session) do
@@ -390,7 +390,7 @@ defmodule Wallabidi.ChromeDriver do
     case CDPClient.call_on_element(
            Element.root_session(element),
            element,
-           Wallabidi.OpsShared.dispatch_fn(),
+           Wallabidi.Remote.OpsShared.dispatch_fn(),
            ["is_selected", []]
          ) do
       {:ok, v} -> {:ok, v == true}
@@ -555,7 +555,7 @@ defmodule Wallabidi.ChromeDriver do
         # inline against the current document so subsequent finds
         # work without needing a reload.
         CDPClient.cdp_cast(new_session, "Runtime.evaluate", %{
-          expression: Wallabidi.Bootstrap.cdp_iife(),
+          expression: Wallabidi.Remote.Bootstrap.cdp_iife(),
           returnByValue: true
         })
 

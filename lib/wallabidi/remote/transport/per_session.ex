@@ -1,4 +1,4 @@
-defmodule Wallabidi.Transport.PerSession do
+defmodule Wallabidi.Remote.Transport.PerSession do
   @moduledoc false
 
   # Transport: ONE actor per session. The actor owns its own raw Mint
@@ -18,7 +18,7 @@ defmodule Wallabidi.Transport.PerSession do
 
   alias Wallabidi.Session
   alias Wallabidi.CDPClient
-  alias Wallabidi.Transport.PerSession.Actor
+  alias Wallabidi.Remote.Transport.PerSession.Actor
 
   @doc """
   Bring up a new session.
