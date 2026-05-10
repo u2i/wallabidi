@@ -91,7 +91,6 @@ defmodule Wallabidi.Integration.Browser.FillInTest do
   end
 
   @tag :polling
-
   test "provides guidance for labels with type mismatch", %{page: page} do
     assert_raise Wallabidi.QueryError,
                  ~r/but the label's 'for' attribute\smatches one element/,

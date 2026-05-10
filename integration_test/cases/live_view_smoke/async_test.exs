@@ -14,6 +14,9 @@ defmodule Wallabidi.Integration.LiveViewSmoke.AsyncTest do
     |> assert_has(Query.css("#result", text: "async result"))
   end
 
+  # Two-phase async: sync assign + later async overwrite. assert_has
+  # waits for the async phase, ~1-1.5s under contention.
+  @tag slow: 2_500
   test "two-phase event: synchronous assign then async overwrite", %{session: session} do
     # The handler assigns "First" synchronously and starts an async task
     # that later resolves to "Second". A driver that only awaits the

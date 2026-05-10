@@ -29,7 +29,6 @@ defmodule Wallabidi.Integration.Browser.AssertRefuteHasTest do
     end
 
     @tag :polling
-
     test "mentions the count of found vs. expected elements", %{session: session} do
       assert_raise ExpectationNotMetError, ~r/Expected.+ 5.*css.*\.user.*6/i, fn ->
         session

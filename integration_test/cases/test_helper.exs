@@ -105,8 +105,8 @@ excludes =
     # All Chrome-driven runs go through V2 implementations now (the
     # old :chrome / :chrome_cdp atoms route to V2 modules in
     # lib/wallabidi.ex). :cdp_only tests reference V1-internal modules
-    # (Wallabidi.ChromeCDP.SharedConnection, Wallabidi.Protocol.eval,
-    # Wallabidi.CDP.Ops.*) and are excluded everywhere V1 isn't running.
+    # (Wallabidi.ChromeCDP.SharedConnection, Wallabidi.Remote.Protocol.eval,
+    # Wallabidi.Remote.CDP.Ops.*) and are excluded everywhere V1 isn't running.
     driver in [:chrome_cdp_v2, :chrome_bidi_v2, :chrome, :chrome_cdp] ->
       excludes ++ [live_view_only: true, cdp_only: true]
 
@@ -130,13 +130,15 @@ ex_unit_opts =
 
 ExUnit.configure(ex_unit_opts)
 
-# SlowTestGuard flags tests that exceed a threshold without an
-# explicit @tag :polling. Tests intentionally relying on Wallabidi's
-# max_wait_time polling (refute_has, find/not-found, etc.) should
-# carry the tag so the guard ignores them — anything else over
-# 1500ms is suspicious.
+# SlowTestGuard fails the suite if any test exceeds its runtime
+# budget. Default budget is 1500ms — anything slower is either a
+# perf regression in the driver, an unwanted polling fallback, or a
+# legitimately-slow test that needs `@tag slow: N_ms` (or `@tag :slow`
+# for the 4s default). Override threshold/mode via env:
+#
+#   WALLABIDI_SLOW_TEST_MS=2000  WALLABIDI_SLOW_TEST_MODE=warn
 ExUnit.start(
-  formatters: [ExUnit.CLIFormatter, Wallabidi.Integration.SlowTestGuard]
+  formatters: [ExUnit.CLIFormatter, Wallabidi.Test.SlowTestGuard]
 )
 
 # --- Start LiveApp endpoint (LiveView integration tests) ---
