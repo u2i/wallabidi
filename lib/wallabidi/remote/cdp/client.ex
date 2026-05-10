@@ -634,10 +634,8 @@ defmodule Wallabidi.Remote.CDP.Client do
     # handlers legitimately take seconds.
     pre_click_timeout = Keyword.get(opts, :pre_click_timeout, 200)
 
-    with {:ok, classification} <-
-           await_lv_ready_and_classify(session, element, :click, pre_click_timeout),
-         pre_page_id <- Protocol.get_page_id(session),
-         {:ok, _} <- click(session, element) do
+    with {:ok, %{"classification" => classification, "prePageId" => pre_page_id}} <-
+           await_ready_classify_and_click(session, element, pre_click_timeout) do
       case classification do
         "none" ->
           {:ok, classification}
@@ -664,10 +662,8 @@ defmodule Wallabidi.Remote.CDP.Client do
     timeout = Keyword.get(opts, :timeout, 5_000)
     pre_click_timeout = Keyword.get(opts, :pre_click_timeout, 200)
 
-    with {:ok, classification} <-
-           await_lv_ready_and_classify(session, element, :click, pre_click_timeout),
-         pre_page_id <- Protocol.get_page_id(session),
-         {:ok, _} <- click(session, element) do
+    with {:ok, %{"classification" => classification, "prePageId" => pre_page_id}} <-
+           await_ready_classify_and_click(session, element, pre_click_timeout) do
       case classification do
         "none" ->
           {:ok, classification, :ready}
@@ -681,22 +677,17 @@ defmodule Wallabidi.Remote.CDP.Client do
     end
   end
 
-  # Block until liveSocket.main is finished joining (or there's no
-  # LiveView at all). Mirrors the pre-click readiness wait the legacy
-  # click_full op does — without it, clicks fired during the join
-  # window get dropped because the LV channel hasn't bound yet.
-  # Merged LV-ready wait + classify in one Runtime.callFunctionOn so
-  # the click path saves a round-trip per click. The function awaits
-  # joinPending → false (or no LV at all), then calls
-  # window.__w.classify(this, interaction) and resolves with the
-  # classification string.
-  defp await_lv_ready_and_classify(%Session{} = session, %Element{} = element, interaction, timeout_ms)
-       when interaction in [:click, :change] do
+  # Pipelined click: await LV ready + classify + click in one V8 call.
+  # Returns %{"classification" => str, "prePageId" => str | nil,
+  # "preRef" => integer | nil}. Saves one round-trip per click vs the
+  # classify-then-click two-step (CDP) and up to three for BiDi which
+  # also reads liveSocket.main.ref.
+  defp await_ready_classify_and_click(%Session{} = session, %Element{} = element, timeout_ms) do
     call_on_element(
       session,
       element,
       OpsShared.dispatch_fn(),
-      [[["await_lv_ready_and_classify", Atom.to_string(interaction), timeout_ms]]],
+      [[["await_ready_classify_and_click", timeout_ms]]],
       await_promise: true
     )
   end

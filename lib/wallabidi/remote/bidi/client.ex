@@ -758,45 +758,30 @@ defmodule Wallabidi.Remote.BiDi.Client do
     # mount check can't bake in a 5s stall on every click.
     pre_click_timeout = Keyword.get(opts, :pre_click_timeout, 200)
 
-    with {:ok, classification} <-
-           await_lv_ready_and_classify(session, element, :click, pre_click_timeout),
-         pre_page_id <- Protocol.get_page_id(session) do
-      # For LV-aware classifications, capture a pre-ref AND install
-      # the patch promise BEFORE the click — otherwise the event ref
-      # counter has already moved on and patch detection races the
-      # patch itself.
-      patch? = classification in ["patch", "navigate"]
-
-      pre_ref =
-        if patch? do
-          _ = Wallabidi.Remote.LiveViewAware.prepare_patch(session)
-
-          case evaluate(session, "(window.liveSocket && window.liveSocket.main) ? window.liveSocket.main.ref : null") do
-            {:ok, ref} when is_integer(ref) -> ref
-            _ -> nil
-          end
-        end
-
-      with {:ok, _} <- click(session, element) do
-        case await_after_click(session, classification, pre_page_id, pre_ref, timeout) do
-          {:ok, ^classification} -> {:ok, classification, :ready}
-          {:error, :timeout} -> {:ok, classification, :timeout}
-          err -> err
-        end
+    # Fused: await LV ready + classify + arm patch promise + capture
+    # pre-state + click — one round-trip instead of up to four. The JS
+    # side returns everything we need (classification, prePageId,
+    # preRef) to gate the post-click wait.
+    with {:ok,
+          %{
+            "classification" => classification,
+            "prePageId" => pre_page_id,
+            "preRef" => pre_ref
+          }} <- await_ready_classify_and_click(session, element, pre_click_timeout) do
+      case await_after_click(session, classification, pre_page_id, pre_ref, timeout) do
+        {:ok, ^classification} -> {:ok, classification, :ready}
+        {:error, :timeout} -> {:ok, classification, :timeout}
+        err -> err
       end
     end
   end
 
-  # Merged LV-ready wait + classify — one script.callFunction round-trip
-  # instead of two. The JS body lives in priv/wallabidi.js as
-  # W.awaitLvReadyAndClassify.
-  defp await_lv_ready_and_classify(%Session{} = session, %Element{} = element, interaction, timeout_ms)
-       when interaction in [:click, :change] do
+  defp await_ready_classify_and_click(%Session{} = session, %Element{} = element, timeout_ms) do
     call_on_element(
       session,
       element,
       OpsShared.dispatch_fn(),
-      [[["await_lv_ready_and_classify", Atom.to_string(interaction), timeout_ms]]],
+      [[["await_ready_classify_and_click", timeout_ms]]],
       await_promise: true
     )
   end

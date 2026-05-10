@@ -268,6 +268,30 @@ W.focus = function(el) {
 // interaction. Returns a Promise resolving to the classification string.
 // Times out after timeoutMs (defaults 5000) — on timeout, classifies
 // anyway so the caller still gets a routable answer.
+// Pipelined click: await LV ready, classify, optionally arm patch
+// detection, snapshot pre-state, click, return everything Elixir needs
+// to wait for the result. Saves up to 3 round-trips vs the two-step.
+//
+// When classification is "patch"/"navigate", calls preparePatch() so
+// the patch promise is armed BEFORE the click fires (otherwise
+// onPatchEnd may race the patch). Also captures liveSocket.main.ref
+// so callers (BiDi click_aware) can ack-wait on slow handle_event.
+W.awaitReadyClassifyAndClick = function(el, timeoutMs) {
+  return W.awaitLvReadyAndClassify(el, 'click', timeoutMs).then(function(classification) {
+    var prePageId = W.pageId;
+    var preRef = null;
+
+    if (classification === 'patch' || classification === 'navigate') {
+      W.preparePatch();
+      var ls = window.liveSocket;
+      if (ls && ls.main && typeof ls.main.ref === 'number') preRef = ls.main.ref;
+    }
+
+    W.clickEl(el);
+    return {classification: classification, prePageId: prePageId, preRef: preRef};
+  });
+};
+
 W.awaitLvReadyAndClassify = function(el, interaction, timeoutMs) {
   return new Promise(function(resolve) {
     // Classify synchronously first. Some classifications don't need
@@ -626,6 +650,8 @@ W.run = function(ops, target) {
         case 'classify':       value = W.classify(target, op[1]); break;
         case 'await_lv_ready_and_classify':
           value = W.awaitLvReadyAndClassify(target, op[1], op[2]); break;
+        case 'await_ready_classify_and_click':
+          value = W.awaitReadyClassifyAndClick(target, op[1]); break;
 
         // --- Document ops — global. ---
         case 'prepare_patch':       value = W.preparePatch(); break;

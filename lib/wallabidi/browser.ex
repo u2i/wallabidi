@@ -784,7 +784,11 @@ defmodule Wallabidi.Browser do
   #      page_ready notification on the new document (push-based, no
   #      polling)
   defp v2_click_with_await(parent, query) do
-    case find(parent, query) do
+    # Use find_lazy: click_aware does two element ops on the result and
+    # discards it. Lazy saves the ref-fetch round-trip at find time
+    # (the V8 ref isn't needed — each subsequent op re-resolves via the
+    # spliced query+target ops in W.run).
+    case find_lazy(parent, query) do
       %Wallabidi.Element{} = element ->
         case v2_click_module(element.parent).click_aware(element.parent, element) do
           {:ok, _classification} ->
@@ -798,7 +802,7 @@ defmodule Wallabidi.Browser do
 
           {:error, _} ->
             with_patch_await(parent, query, :click, fn ->
-              find(parent, query, &Element.click/1)
+              find_lazy(parent, query, &Element.click/1)
             end)
 
             parent
@@ -806,7 +810,7 @@ defmodule Wallabidi.Browser do
 
       _ ->
         with_patch_await(parent, query, :click, fn ->
-          parent |> find(query, &Element.click/1)
+          parent |> find_lazy(query, &Element.click/1)
         end)
     end
   end
