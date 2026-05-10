@@ -42,6 +42,14 @@ defmodule Wallabidi.Remote.OpsShared do
   @doc false
   def dispatch_fn, do: @dispatch_fn
 
+  @doc false
+  # Builds the JS expression for a trivia accessor: prefers W.run when
+  # the bootstrap is installed, falls back to a native expression
+  # otherwise (e.g. on about:blank before any page has loaded).
+  def trivia_js(op, native_fallback) when is_binary(op) and is_binary(native_fallback) do
+    "(window.__w && window.__w.run([['" <> op <> "']])) || " <> native_fallback
+  end
+
   defmacro __using__(_opts) do
     quote do
       @doc "Returns the element's visible text content."
@@ -241,30 +249,27 @@ defmodule Wallabidi.Remote.OpsShared do
 
       @doc "Page URL via `W.run([['url']])` (location.href)."
       @spec current_url(Session.t()) :: {:ok, String.t()} | {:error, term}
-      def current_url(%Session{} = session) do
-        evaluate(session, "(window.__w && window.__w.run([['url']])) || location.href")
-      end
+      def current_url(%Session{} = session),
+        do: evaluate(session, unquote(__MODULE__).trivia_js("url", "location.href"))
 
       @doc "Path component of the URL via `W.run([['path']])` (location.pathname)."
       @spec current_path(Session.t()) :: {:ok, String.t()} | {:error, term}
-      def current_path(%Session{} = session) do
-        evaluate(session, "(window.__w && window.__w.run([['path']])) || location.pathname")
-      end
+      def current_path(%Session{} = session),
+        do: evaluate(session, unquote(__MODULE__).trivia_js("path", "location.pathname"))
 
       @doc "Page title via `W.run([['title']])` (document.title)."
       @spec page_title(Session.t()) :: {:ok, String.t()} | {:error, term}
-      def page_title(%Session{} = session) do
-        evaluate(session, "(window.__w && window.__w.run([['title']])) || document.title")
-      end
+      def page_title(%Session{} = session),
+        do: evaluate(session, unquote(__MODULE__).trivia_js("title", "document.title"))
 
       @doc "Outer HTML via `W.run([['source']])`."
       @spec page_source(Session.t()) :: {:ok, String.t()} | {:error, term}
-      def page_source(%Session{} = session) do
-        evaluate(
-          session,
-          "(window.__w && window.__w.run([['source']])) || document.documentElement.outerHTML"
-        )
-      end
+      def page_source(%Session{} = session),
+        do:
+          evaluate(
+            session,
+            unquote(__MODULE__).trivia_js("source", "document.documentElement.outerHTML")
+          )
 
       defoverridable text: 2,
                      attribute: 3,

@@ -718,8 +718,6 @@ W.run = function(ops, target) {
         case 'focus':          value = W.focus(target); break;
         case 'click':          value = W.clickEl(target); break;
         case 'classify':       value = W.classify(target, op[1]); break;
-        case 'await_lv_ready_and_classify':
-          value = W.awaitLvReadyAndClassify(target, op[1], op[2]); break;
         case 'await_ready_classify_and_click':
           value = W.awaitReadyClassifyAndClick(target, op[1]); break;
         case 'fill_in':
