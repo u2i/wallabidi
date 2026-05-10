@@ -1,4 +1,4 @@
-defmodule Wallabidi.CDP.Commands do
+defmodule Wallabidi.Remote.CDP.Commands do
   @moduledoc false
 
   # Browser context management (incognito-like isolation)

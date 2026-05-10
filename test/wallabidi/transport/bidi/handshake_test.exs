@@ -3,7 +3,7 @@ defmodule Wallabidi.Remote.Transport.BiDi.HandshakeTest do
 
   alias Wallabidi.Remote.Transport.BiDi.Handshake
   alias Wallabidi.Chrome.BidiServer
-  alias Wallabidi.BiDi.WebSocketClient
+  alias Wallabidi.Remote.BiDi.WebSocketClient
 
   @moduletag :browser
 

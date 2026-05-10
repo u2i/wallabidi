@@ -1,4 +1,4 @@
-defmodule Wallabidi.CDPClient do
+defmodule Wallabidi.Remote.CDP.Client do
   @moduledoc false
 
   # Thin façade over `Wallabidi.Remote.Transport.Session` providing CDP-shaped
@@ -18,7 +18,7 @@ defmodule Wallabidi.CDPClient do
   # against a live Lightpanda server. See test/wallabidi/v2/.
 
   alias Wallabidi.{Element, Session}
-  alias Wallabidi.CDP.{Commands, Ops, ResponseParser}
+  alias Wallabidi.Remote.CDP.{Commands, Ops, ResponseParser}
   alias Wallabidi.Remote.{Bootstrap, OpsShared, WebSocket}
   alias Wallabidi.Remote.Transport.Protocol
 

@@ -1,4 +1,4 @@
-defmodule Wallabidi.BiDi.ResponseParser do
+defmodule Wallabidi.Remote.BiDi.ResponseParser do
   @moduledoc false
   # Translates BiDi response formats into the shapes Wallabidi expects.
 

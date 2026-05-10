@@ -36,8 +36,8 @@ defmodule Wallabidi.V2BiDiDriverTest do
       # Drive directly through the BiDiClient to avoid Browser.visit/2's
       # base_url joining (it prepends to about:/data: URLs because they
       # have host: nil — pre-existing Browser quirk, out of scope here).
-      :ok = Wallabidi.BiDiClient.visit(session, "about:blank")
-      assert {:ok, "about:blank"} = Wallabidi.BiDiClient.current_url(session)
+      :ok = Wallabidi.Remote.BiDi.Client.visit(session, "about:blank")
+      assert {:ok, "about:blank"} = Wallabidi.Remote.BiDi.Client.current_url(session)
     after
       Wallabidi.end_session(session)
     end
@@ -49,7 +49,7 @@ defmodule Wallabidi.V2BiDiDriverTest do
     try do
       html = "<div class='item'>a</div><div class='item'>b</div>"
       data_url = "data:text/html;charset=utf-8," <> URI.encode(html)
-      :ok = Wallabidi.BiDiClient.visit(session, data_url)
+      :ok = Wallabidi.Remote.BiDi.Client.visit(session, data_url)
 
       query = Wallabidi.Query.css(".item", count: 2)
       [e1, e2] = Browser.all(session, query)

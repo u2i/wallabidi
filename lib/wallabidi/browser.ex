@@ -815,9 +815,9 @@ defmodule Wallabidi.Browser do
   # CDP and BiDi expose the same `click_aware/2` shape, so callers
   # can invoke `mod.click_aware(...)` uniformly.
   defp v2_click_module(%Wallabidi.Session{driver: Wallabidi.BiDiDriver}),
-    do: Wallabidi.BiDiClient
+    do: Wallabidi.Remote.BiDi.Client
 
-  defp v2_click_module(_), do: Wallabidi.CDPClient
+  defp v2_click_module(_), do: Wallabidi.Remote.CDP.Client
 
 
   @doc """
@@ -1603,7 +1603,7 @@ defmodule Wallabidi.Browser do
   # CDP: Runtime.addBinding → Runtime.bindingCalled
   # BiDi: script.addPreloadScript channel → script.message
   defp execute_query_pipeline(parent, _driver, query) do
-    alias Wallabidi.CDP.Ops
+    alias Wallabidi.Remote.CDP.Ops
 
     session = get_session(parent)
 
@@ -1614,11 +1614,11 @@ defmodule Wallabidi.Browser do
         cond do
           session.driver == Wallabidi.BiDiDriver ->
             # V2 BiDi: push-based bootstrap pipeline speaking BiDi.
-            Wallabidi.BiDiClient.find_elements(parent, validated, timeout: timeout)
+            Wallabidi.Remote.BiDi.Client.find_elements(parent, validated, timeout: timeout)
 
           session.driver in [Wallabidi.LightpandaDriver, Wallabidi.ChromeDriver] ->
             # V2 CDP: same push pipeline routed through V2.Session.
-            Wallabidi.CDPClient.find_elements(parent, validated, timeout: timeout)
+            Wallabidi.Remote.CDP.Client.find_elements(parent, validated, timeout: timeout)
         end
 
       case result do

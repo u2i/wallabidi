@@ -1,4 +1,4 @@
-defmodule Wallabidi.CDP.PipelineClassifyTest do
+defmodule Wallabidi.Remote.CDP.PipelineClassifyTest do
   use ExUnit.Case, async: true
 
   # Tests the classify_fn JS produced by Pipeline.classify/2 by running it in
@@ -8,7 +8,7 @@ defmodule Wallabidi.CDP.PipelineClassifyTest do
   # classify_fn is private, so we extract the JS via Pipeline.to_js/1 after a
   # classify op. The generated JS sets els.__classify which we assert on.
 
-  alias Wallabidi.CDP.Pipeline
+  alias Wallabidi.Remote.CDP.Pipeline
 
   @moduletag :classifier
 

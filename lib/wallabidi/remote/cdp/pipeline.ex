@@ -1,4 +1,4 @@
-defmodule Wallabidi.CDP.Pipeline do
+defmodule Wallabidi.Remote.CDP.Pipeline do
   @moduledoc false
 
   # Builds a find + filter chain as data, compiles to one JS function that

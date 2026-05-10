@@ -8,7 +8,7 @@ defmodule Wallabidi.LightpandaDriver do
   # This is a stepping stone to migrating real drivers (Lightpanda,
   # ChromeCDP) over. Not yet integrated with `Wallabidi.Browser`'s
   # pipeline path — that path calls `Wallabidi.SessionProcess.*` and
-  # `Wallabidi.CDPClient.execute_ops` directly, bypassing the Driver
+  # `Wallabidi.Remote.CDP.Client.execute_ops` directly, bypassing the Driver
   # behaviour. Those couplings need their own surgery before any
   # driver flips fully.
   #
@@ -22,7 +22,7 @@ defmodule Wallabidi.LightpandaDriver do
   @behaviour Wallabidi.Driver
 
   alias Wallabidi.{Element, Session}
-  alias Wallabidi.CDPClient
+  alias Wallabidi.Remote.CDP.Client, as: CDPClient
   alias Wallabidi.Remote.Transport
   alias Wallabidi.Remote.Transport.Protocol
 
