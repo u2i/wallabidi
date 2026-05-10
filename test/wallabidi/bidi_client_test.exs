@@ -1,7 +1,7 @@
 defmodule Wallabidi.V2.BiDiClientTest do
   use ExUnit.Case, async: false
 
-  alias Wallabidi.Chrome.BidiServer
+  alias Wallabidi.Remote.ChromiumBiDi.Server, as: BidiServer
   alias Wallabidi.Session
   alias Wallabidi.Remote.BiDi.Client, as: BiDiClient
   alias Wallabidi.Remote.Transport.BiDi

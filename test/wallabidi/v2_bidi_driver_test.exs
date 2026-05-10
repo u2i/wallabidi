@@ -11,11 +11,11 @@ defmodule Wallabidi.V2BiDiDriverTest do
   alias Wallabidi.Browser
 
   setup do
-    {:ok, _} = Wallabidi.BiDiDriver.start_link(name: Wallabidi.BiDiDriver)
+    {:ok, _} = Wallabidi.Remote.Drivers.ChromeBiDi.start_link(name: Wallabidi.Remote.Drivers.ChromeBiDi)
 
     on_exit(fn ->
       try do
-        Supervisor.stop(Wallabidi.BiDiDriver, :normal, 5_000)
+        Supervisor.stop(Wallabidi.Remote.Drivers.ChromeBiDi, :normal, 5_000)
       catch
         :exit, _ -> :ok
       end
@@ -28,7 +28,7 @@ defmodule Wallabidi.V2BiDiDriverTest do
     {:ok, session} = Wallabidi.start_session(driver: :chrome_bidi_v2)
 
     try do
-      assert session.driver == Wallabidi.BiDiDriver
+      assert session.driver == Wallabidi.Remote.Drivers.ChromeBiDi
       assert is_pid(session.pid)
       assert is_pid(session.bidi_pid)
       assert is_binary(session.browsing_context)

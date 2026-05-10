@@ -1,4 +1,4 @@
-defmodule Wallabidi.BiDiDriver do
+defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
   @moduledoc false
 
   # V2 driver speaking WebDriver-BiDi against a chromium-bidi server.
@@ -6,7 +6,7 @@ defmodule Wallabidi.BiDiDriver do
   # ## Topology
   #
   # The supervisor starts a single chromium-bidi Node server
-  # (`Wallabidi.Chrome.BidiServer`) — same singleton model used by
+  # (`Wallabidi.Remote.ChromiumBiDi.Server`) — same singleton model used by
   # `V2Driver` for Lightpanda. Each test session does its own HTTP
   # `POST /session` against that server, then opens the per-session
   # WebSocket the server returns. chromium-bidi spawns a fresh
@@ -50,7 +50,7 @@ defmodule Wallabidi.BiDiDriver do
   @impl Supervisor
   def init(_) do
     children = [
-      {Wallabidi.Chrome.BidiServer, [name: @bidi_server_name]}
+      {Wallabidi.Remote.ChromiumBiDi.Server, [name: @bidi_server_name]}
     ]
 
     Supervisor.init(children, strategy: :one_for_one)
@@ -118,7 +118,7 @@ defmodule Wallabidi.BiDiDriver do
       _ ->
         # Convert the BidiServer's WS URL to its HTTP equivalent —
         # they share the host/port; chromium-bidi serves both.
-        ws_url = Wallabidi.Chrome.BidiServer.ws_url(@bidi_server_name)
+        ws_url = Wallabidi.Remote.ChromiumBiDi.Server.ws_url(@bidi_server_name)
 
         ws_url
         |> URI.parse()
@@ -347,10 +347,10 @@ defmodule Wallabidi.BiDiDriver do
   end
 
   # LogChecker calls driver.parse_log/1 on each drained log entry.
-  # Wallabidi.Chrome.Logger raises Wallabidi.JSError on SEVERE entries
+  # Wallabidi.Remote.Chrome.Logger raises Wallabidi.JSError on SEVERE entries
   # and prints console output — same shape both V2 BiDi and V2 Chrome
   # CDP need.
-  defdelegate parse_log(log), to: Wallabidi.Chrome.Logger
+  defdelegate parse_log(log), to: Wallabidi.Remote.Chrome.Logger
 
   # ----- Cookies / screenshot / window — not implemented yet -----
 

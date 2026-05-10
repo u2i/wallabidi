@@ -1,4 +1,4 @@
-defmodule Wallabidi.Chrome.SharedConnection do
+defmodule Wallabidi.Remote.Chrome.SharedConnection do
   @moduledoc false
 
   # Single shared `V2.WebSocket` connection to Chrome's browser-level
@@ -38,7 +38,7 @@ defmodule Wallabidi.Chrome.SharedConnection do
       case Wallabidi.BrowserPaths.chrome_url() || legacy_remote_url() do
         nil ->
           # Local Chrome — get ws_url from the server we launched.
-          Wallabidi.Chrome.Server.ws_url(Module.concat(driver_mod, Server))
+          Wallabidi.Remote.Chrome.Server.ws_url(Module.concat(driver_mod, Server))
 
         "ws://" <> _ = url ->
           url

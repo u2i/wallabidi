@@ -1,4 +1,4 @@
-defmodule Wallabidi.Chrome.Server do
+defmodule Wallabidi.Remote.Chrome.Server do
   @moduledoc false
 
   # Manages a Chrome process launched directly via CDP.

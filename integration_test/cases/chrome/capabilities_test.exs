@@ -26,7 +26,7 @@ defmodule Wallabidi.Integration.CapabilitiesTest do
     end
 
     test "reads capabilities from opts" do
-      capabilities = Wallabidi.BiDiDriver.default_capabilities()
+      capabilities = Wallabidi.Remote.Drivers.ChromeBiDi.default_capabilities()
 
       {:ok, session} = SessionCase.start_test_session(capabilities: capabilities)
 

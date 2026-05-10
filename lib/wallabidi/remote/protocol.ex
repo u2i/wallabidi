@@ -90,17 +90,17 @@ defmodule Wallabidi.Remote.Protocol do
 
   @spec eval(Session.t(), String.t()) :: result
   def eval(%Session{driver: driver} = session, js)
-      when driver in [Wallabidi.LightpandaDriver, Wallabidi.ChromeDriver],
+      when driver in [Wallabidi.Remote.Drivers.LightpandaCDP, Wallabidi.Remote.Drivers.ChromeCDP],
       do: Wallabidi.Remote.CDP.Client.evaluate(session, js)
 
-  def eval(%Session{driver: Wallabidi.BiDiDriver} = session, js),
+  def eval(%Session{driver: Wallabidi.Remote.Drivers.ChromeBiDi} = session, js),
     do: Wallabidi.Remote.BiDi.Client.evaluate(session, js)
 
   @spec eval_async(Session.t(), String.t(), timeout()) :: result
   def eval_async(session, js, timeout \\ 10_000)
 
   def eval_async(%Session{driver: driver} = session, js, _timeout)
-      when driver in [Wallabidi.LightpandaDriver, Wallabidi.ChromeDriver] do
+      when driver in [Wallabidi.Remote.Drivers.LightpandaCDP, Wallabidi.Remote.Drivers.ChromeCDP] do
     # V2.CDPClient.evaluate_async wraps the body so the caller's
     # final `arguments[N]` resolves the awaited promise. The legacy
     # eval_async expects the JS to itself be a Promise — unwrap.
@@ -115,15 +115,15 @@ defmodule Wallabidi.Remote.Protocol do
     end
   end
 
-  def eval_async(%Session{driver: Wallabidi.BiDiDriver} = session, js, _timeout),
+  def eval_async(%Session{driver: Wallabidi.Remote.Drivers.ChromeBiDi} = session, js, _timeout),
     do: Wallabidi.Remote.BiDi.Client.evaluate_async(session, js)
 
   @spec current_url(Session.t()) :: result
   def current_url(%Session{driver: driver} = session)
-      when driver in [Wallabidi.LightpandaDriver, Wallabidi.ChromeDriver],
+      when driver in [Wallabidi.Remote.Drivers.LightpandaCDP, Wallabidi.Remote.Drivers.ChromeCDP],
       do: Wallabidi.Remote.CDP.Client.current_url(session)
 
-  def current_url(%Session{driver: Wallabidi.BiDiDriver} = session),
+  def current_url(%Session{driver: Wallabidi.Remote.Drivers.ChromeBiDi} = session),
     do: Wallabidi.Remote.BiDi.Client.current_url(session)
 
   # subscribe/unsubscribe/wire_methods were V1-protocol-adapter hooks.

@@ -1,4 +1,4 @@
-defmodule Wallabidi.Chrome.BidiServer do
+defmodule Wallabidi.Remote.ChromiumBiDi.Server do
   @moduledoc false
 
   # Manages a chromium-bidi Node process that exposes a BiDi WebSocket
