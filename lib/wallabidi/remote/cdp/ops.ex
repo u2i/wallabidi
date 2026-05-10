@@ -1,4 +1,4 @@
-defmodule Wallabidi.CDP.Ops do
+defmodule Wallabidi.Remote.CDP.Ops do
   @moduledoc false
 
   # Builds a list of opcodes for the browser-side interpreter.

@@ -1,7 +1,7 @@
 defmodule Wallabidi.Remote.Transport.BiDi.SessionActor do
   @moduledoc false
 
-  # One actor per BiDi session. Owns a Wallabidi.BiDi.WebSocketClient
+  # One actor per BiDi session. Owns a Wallabidi.Remote.BiDi.WebSocketClient
   # (which in turn owns the Mint WebSocket) and translates V2
   # Transport.Protocol calls into BiDi commands & event waits.
   #
@@ -21,7 +21,7 @@ defmodule Wallabidi.Remote.Transport.BiDi.SessionActor do
 
   require Logger
 
-  alias Wallabidi.BiDi.WebSocketClient
+  alias Wallabidi.Remote.BiDi.WebSocketClient
 
   defstruct [
     :ws_pid,

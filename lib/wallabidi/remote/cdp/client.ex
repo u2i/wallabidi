@@ -1,4 +1,4 @@
-defmodule Wallabidi.CDPClient do
+defmodule Wallabidi.Remote.CDP.Client do
   @moduledoc false
 
   # Thin façade over `Wallabidi.Remote.Transport.Session` providing CDP-shaped
@@ -19,7 +19,7 @@ defmodule Wallabidi.CDPClient do
 
   alias Wallabidi.{Element, Session}
   alias Wallabidi.Remote.{Bootstrap, OpsShared}
-  alias Wallabidi.CDP.{Commands, Ops, ResponseParser}
+  alias Wallabidi.Remote.CDP.{Commands, Ops, ResponseParser}
   alias Wallabidi.Remote.Transport.Protocol
   alias Wallabidi.Remote.WebSocket
 

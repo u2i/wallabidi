@@ -123,7 +123,7 @@ defmodule Wallabidi.NavigationTimeoutError do
       * The destination route's connected mount is slower than the deadline.
       * LiveView's click handler never intercepted the synthetic click — try
         verifying that the click actually dispatched on the anchor element.
-      * The click was classified wrong (see Wallabidi.CDP.Pipeline.classify/2).
+      * The click was classified wrong (see Wallabidi.Remote.CDP.Pipeline.classify/2).
     #{state_section}
     """
 

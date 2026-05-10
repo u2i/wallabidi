@@ -1,7 +1,7 @@
-defmodule Wallabidi.BiDi.ResponseParserTest do
+defmodule Wallabidi.Remote.BiDi.ResponseParserTest do
   use ExUnit.Case, async: true
 
-  alias Wallabidi.BiDi.ResponseParser
+  alias Wallabidi.Remote.BiDi.ResponseParser
 
   describe "extract_value/1" do
     test "extracts string" do

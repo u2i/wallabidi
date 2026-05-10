@@ -3,7 +3,7 @@ defmodule Wallabidi.V2.BiDiClientTest do
 
   alias Wallabidi.Chrome.BidiServer
   alias Wallabidi.Session
-  alias Wallabidi.BiDiClient
+  alias Wallabidi.Remote.BiDi.Client, as: BiDiClient
   alias Wallabidi.Remote.Transport.BiDi
 
   @moduletag :browser

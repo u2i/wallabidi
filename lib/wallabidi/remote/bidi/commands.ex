@@ -1,4 +1,4 @@
-defmodule Wallabidi.BiDi.Commands do
+defmodule Wallabidi.Remote.BiDi.Commands do
   @moduledoc false
   # Pure functions building BiDi command payloads (method + params maps).
 

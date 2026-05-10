@@ -2,7 +2,7 @@ defmodule Wallabidi.Remote.WebSocket do
   @moduledoc false
 
   # New transport layer (the "plexer/demuxer") for CDP and BiDi
-  # WebSocket protocols. Replaces `Wallabidi.BiDi.WebSocketClient`
+  # WebSocket protocols. Replaces `Wallabidi.Remote.BiDi.WebSocketClient`
   # by being deliberately dumber:
   #
   #   * outbound = encode JSON, write bytes, register correlation

@@ -8,7 +8,7 @@ defmodule Wallabidi.Remote.LiveViewAware do
   # `Wallabidi.Remote.Protocol` to dispatch to the appropriate adapter (BiDi or
   # CDP), so the same LiveView integration works for all drivers.
   #
-  # These operations were originally in `Wallabidi.BiDiClient`, tying them
+  # These operations were originally in `Wallabidi.Remote.BiDi.Client`, tying them
   # to the BiDi protocol. Now they live here and are protocol-agnostic.
 
   alias Wallabidi.Remote.Protocol

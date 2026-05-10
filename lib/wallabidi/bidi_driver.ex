@@ -25,9 +25,9 @@ defmodule Wallabidi.BiDiDriver do
 
   import Wallabidi.Driver.LogChecker
 
-  alias Wallabidi.BiDi.WebSocketClient
+  alias Wallabidi.Remote.BiDi.WebSocketClient
   alias Wallabidi.{Element, Session}
-  alias Wallabidi.BiDiClient
+  alias Wallabidi.Remote.BiDi.Client, as: BiDiClient
   alias Wallabidi.Remote.Transport.BiDi
   alias Wallabidi.Remote.Transport.Protocol
 
@@ -170,7 +170,7 @@ defmodule Wallabidi.BiDiDriver do
     })
     """
 
-    _ = Wallabidi.BiDiClient.evaluate_async(session, js)
+    _ = Wallabidi.Remote.BiDi.Client.evaluate_async(session, js)
     :ok
   rescue
     _ -> :ok

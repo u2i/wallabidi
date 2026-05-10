@@ -91,10 +91,10 @@ defmodule Wallabidi.Remote.Protocol do
   @spec eval(Session.t(), String.t()) :: result
   def eval(%Session{driver: driver} = session, js)
       when driver in [Wallabidi.LightpandaDriver, Wallabidi.ChromeDriver],
-      do: Wallabidi.CDPClient.evaluate(session, js)
+      do: Wallabidi.Remote.CDP.Client.evaluate(session, js)
 
   def eval(%Session{driver: Wallabidi.BiDiDriver} = session, js),
-    do: Wallabidi.BiDiClient.evaluate(session, js)
+    do: Wallabidi.Remote.BiDi.Client.evaluate(session, js)
 
   @spec eval_async(Session.t(), String.t(), timeout()) :: result
   def eval_async(session, js, timeout \\ 10_000)
@@ -104,7 +104,7 @@ defmodule Wallabidi.Remote.Protocol do
     # V2.CDPClient.evaluate_async wraps the body so the caller's
     # final `arguments[N]` resolves the awaited promise. The legacy
     # eval_async expects the JS to itself be a Promise — unwrap.
-    case Wallabidi.CDPClient.cdp_send(session, "Runtime.evaluate", %{
+    case Wallabidi.Remote.CDP.Client.cdp_send(session, "Runtime.evaluate", %{
            expression: js,
            awaitPromise: true,
            returnByValue: true
@@ -116,15 +116,15 @@ defmodule Wallabidi.Remote.Protocol do
   end
 
   def eval_async(%Session{driver: Wallabidi.BiDiDriver} = session, js, _timeout),
-    do: Wallabidi.BiDiClient.evaluate_async(session, js)
+    do: Wallabidi.Remote.BiDi.Client.evaluate_async(session, js)
 
   @spec current_url(Session.t()) :: result
   def current_url(%Session{driver: driver} = session)
       when driver in [Wallabidi.LightpandaDriver, Wallabidi.ChromeDriver],
-      do: Wallabidi.CDPClient.current_url(session)
+      do: Wallabidi.Remote.CDP.Client.current_url(session)
 
   def current_url(%Session{driver: Wallabidi.BiDiDriver} = session),
-    do: Wallabidi.BiDiClient.current_url(session)
+    do: Wallabidi.Remote.BiDi.Client.current_url(session)
 
   # subscribe/unsubscribe/wire_methods were V1-protocol-adapter hooks.
   # V2 transport has direct subscriptions baked in — these are no-ops

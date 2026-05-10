@@ -1,4 +1,4 @@
-defmodule Wallabidi.CDP.ResponseParser do
+defmodule Wallabidi.Remote.CDP.ResponseParser do
   @moduledoc false
 
   def check_error({:ok, result}), do: {:ok, result}

@@ -1,4 +1,4 @@
-defmodule Wallabidi.BiDiClient do
+defmodule Wallabidi.Remote.BiDi.Client do
   @moduledoc false
 
   # BiDi-flavored counterpart to V2.CDPClient.
@@ -18,9 +18,9 @@ defmodule Wallabidi.BiDiClient do
   # bootstrap channel) are reused from V2.Transport.Protocol — they
   # were verified end-to-end in V2.Transport.BiDi phases A/B/C.
 
-  alias Wallabidi.BiDi.{Commands, ResponseParser, WebSocketClient}
+  alias Wallabidi.Remote.BiDi.{Commands, ResponseParser, WebSocketClient}
   alias Wallabidi.Remote.Bootstrap
-  alias Wallabidi.CDP.Ops
+  alias Wallabidi.Remote.CDP.Ops
   alias Wallabidi.Element
   alias Wallabidi.Remote.OpsShared
   alias Wallabidi.Session
