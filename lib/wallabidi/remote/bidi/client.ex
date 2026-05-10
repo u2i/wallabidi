@@ -654,20 +654,7 @@ defmodule Wallabidi.Remote.BiDi.Client do
 
   # ----- Interactions -----
 
-  @doc """
-  Run the bootstrap's classifier on the element. Returns one of
-  `"none" | "patch" | "navigate" | "full_page"` for `:click`, or
-  the equivalent for `:change`. Caller uses this to decide whether
-  to await a page_ready signal after the interaction.
-  """
-  @spec classify(Session.t(), Element.t(), :click | :change) ::
-          {:ok, String.t()} | {:error, term}
-  def classify(%Session{} = session, %Element{} = element, interaction)
-      when interaction in [:click, :change] do
-    call_on_element(session, element, OpsShared.dispatch_fn(), [
-      [["classify", Atom.to_string(interaction)]]
-    ])
-  end
+  # classify/3 — provided by Wallabidi.Remote.OpsShared.
 
   @doc """
   LV-aware click. Captures `pre_page_id` BEFORE the click, classifies
@@ -816,28 +803,7 @@ defmodule Wallabidi.Remote.BiDi.Client do
     end
   end
 
-  @doc """
-  Fused fill_in (text-only). See V2.CDPClient.fill_in/4.
-  """
-  @spec fill_in(Session.t(), Element.t(), String.t() | number, non_neg_integer) ::
-          {:ok, nil} | {:error, term}
-  def fill_in(%Session{} = session, %Element{} = element, value, drain_idle_ms \\ 0)
-      when is_integer(drain_idle_ms) do
-    str = if is_number(value), do: to_string(value), else: value
-
-    opts = if drain_idle_ms > 0, do: [await_promise: true], else: []
-
-    case call_on_element(
-           session,
-           element,
-           OpsShared.dispatch_fn(),
-           [[["fill_in", str, drain_idle_ms]]],
-           opts
-         ) do
-      {:ok, _} -> {:ok, nil}
-      err -> err
-    end
-  end
+  # fill_in/4 — provided by Wallabidi.Remote.OpsShared.
 
   @doc false
   @spec materialize(Session.t(), Element.t()) :: {:ok, Element.t()} | {:error, term}

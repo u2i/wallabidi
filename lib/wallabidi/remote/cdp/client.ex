@@ -325,36 +325,9 @@ defmodule Wallabidi.Remote.CDP.Client do
     end
   end
 
-  @doc """
-  Fused fill_in: silent clear + set_value + (optionally) drainPatches in
-  one V8 call. Saves up to two round-trips per fill_in.
-
-  `drain_idle_ms` controls the drainPatches phase:
-    * 0 — skip drainPatches (non-LV pages)
-    * >0 — wait until no LV patch arrives for that many ms
-
-  Text-only path. File inputs go through `set_value/3` which materializes
-  a V8 ref for `DOM.setFileInputFiles`.
-  """
-  @spec fill_in(Session.t(), Element.t(), String.t() | number, non_neg_integer) ::
-          {:ok, nil} | {:error, term}
-  def fill_in(%Session{} = session, %Element{} = element, value, drain_idle_ms \\ 0)
-      when is_integer(drain_idle_ms) do
-    str = if is_number(value), do: to_string(value), else: value
-
-    opts = if drain_idle_ms > 0, do: [await_promise: true], else: []
-
-    case call_on_element(
-           session,
-           element,
-           OpsShared.dispatch_fn(),
-           [[["fill_in", str, drain_idle_ms]]],
-           opts
-         ) do
-      {:ok, _} -> {:ok, nil}
-      err -> err
-    end
-  end
+  # fill_in/4 — provided by Wallabidi.Remote.OpsShared. Text-only path.
+  # File inputs go through `set_value/3` which materializes a V8 ref
+  # for `DOM.setFileInputFiles`.
 
   @doc false
   # Convert a lazy element to one carrying a real V8 objectId. Re-runs
@@ -609,29 +582,9 @@ defmodule Wallabidi.Remote.CDP.Client do
   defp key_code("Space"), do: 32
   defp key_code(_), do: 0
 
-  @doc """
-  Classifies what kind of LV interaction `element` represents for an
-  upcoming `interaction` (currently `:click` or `:change`).
-
-  Reads `window.__w.classify(this, interaction)` (installed by the
-  bootstrap), which inspects `phx-click` / `data-phx-link` /
-  `phx-trigger-action` / form `action` / `<a href>` to decide:
-
-    * `"patch"` — phx-click or live_redirect=patch; expect a DOM patch
-    * `"navigate"` — data-phx-link=redirect or JS.navigate; new LV mount
-    * `"full_page"` — submit button in a non-LV form, plain anchor
-    * `"none"` — JS-only interaction (hash href, target=_blank, …)
-
-  The string from JS is returned as-is.
-  """
-  @spec classify(Session.t(), Element.t(), :click | :change) ::
-          {:ok, String.t()} | {:error, term}
-  def classify(%Session{} = session, %Element{} = element, interaction)
-      when interaction in [:click, :change] do
-    call_on_element(session, element, OpsShared.dispatch_fn(), [
-      [["classify", Atom.to_string(interaction)]]
-    ])
-  end
+  # classify/3 — provided by Wallabidi.Remote.OpsShared. Returns
+  # "patch" / "navigate" / "full_page" / "none" based on phx-* attrs
+  # and form/anchor context. See W.classify in priv/wallabidi.js.
 
   # click/2 — provided by Wallabidi.Remote.OpsShared. Routes through
   # window.__w.clickEl when the bootstrap is installed (handles

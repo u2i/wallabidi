@@ -152,6 +152,49 @@ defmodule Wallabidi.Remote.OpsShared do
       end
 
       @doc """
+      Classify what kind of LiveView interaction this element represents
+      for an upcoming `:click` or `:change`. See `W.classify` in
+      priv/wallabidi.js — returns one of `"patch"`, `"navigate"`,
+      `"full_page"`, or `"none"`.
+      """
+      @spec classify(Session.t(), Element.t(), :click | :change) ::
+              {:ok, String.t()} | {:error, term}
+      def classify(%Session{} = session, %Element{} = element, interaction)
+          when interaction in [:click, :change] do
+        call_on_element(session, element, unquote(@dispatch_fn), [
+          [["classify", Atom.to_string(interaction)]]
+        ])
+      end
+
+      @doc """
+      Fused fill_in: silent clear + set_value + (optionally) drainPatches
+      in one V8 call. `drain_idle_ms > 0` triggers a post-fill wait for
+      LiveView patches to settle. Saves up to two round-trips vs the
+      legacy element-op-per-step.
+
+      File inputs are NOT handled here — concrete clients override
+      `set_value/3` to detect file inputs and route differently.
+      """
+      @spec fill_in(Session.t(), Element.t(), String.t() | number, non_neg_integer) ::
+              {:ok, nil} | {:error, term}
+      def fill_in(%Session{} = session, %Element{} = element, value, drain_idle_ms \\ 0)
+          when is_integer(drain_idle_ms) do
+        str = if is_number(value), do: to_string(value), else: value
+        opts = if drain_idle_ms > 0, do: [await_promise: true], else: []
+
+        case call_on_element(
+               session,
+               element,
+               unquote(@dispatch_fn),
+               [[["fill_in", str, drain_idle_ms]]],
+               opts
+             ) do
+          {:ok, _} -> {:ok, nil}
+          err -> err
+        end
+      end
+
+      @doc """
       Wait until the element's `value` (for inputs) equals the given
       target, or `timeout_ms` elapses. Returns `{:ok, true}` on match,
       `{:ok, false}` on timeout. Uses MutationObserver + onPatchEnd —
@@ -232,6 +275,9 @@ defmodule Wallabidi.Remote.OpsShared do
                      clear: 3,
                      send_keys_text: 3,
                      set_checked: 3,
+                     classify: 3,
+                     fill_in: 3,
+                     fill_in: 4,
                      await_value: 3,
                      await_value: 4,
                      await_text: 3,
