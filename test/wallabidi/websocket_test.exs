@@ -1,7 +1,7 @@
 defmodule Wallabidi.V2.WebSocketTest do
   use ExUnit.Case, async: true
 
-  alias Wallabidi.WebSocket
+  alias Wallabidi.Remote.WebSocket
 
   # Smoke tests for the public API surface. The end-to-end flow
   # (connect, encode JSON, route responses, fan out events) is

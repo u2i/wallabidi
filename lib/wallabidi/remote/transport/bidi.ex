@@ -1,4 +1,4 @@
-defmodule Wallabidi.Transport.BiDi do
+defmodule Wallabidi.Remote.Transport.BiDi do
   @moduledoc false
 
   # V2 transport for chromium-bidi: one POST → one WS → one Chrome.
@@ -20,8 +20,8 @@ defmodule Wallabidi.Transport.BiDi do
   # bootstrap preload script + script.message routing.
 
   alias Wallabidi.Session
-  alias Wallabidi.Transport.BiDi.{Handshake, SessionActor}
-  alias Wallabidi.Transport.Protocol
+  alias Wallabidi.Remote.Transport.BiDi.{Handshake, SessionActor}
+  alias Wallabidi.Remote.Transport.Protocol
 
   @doc """
   Bring up a new BiDi session.
@@ -88,12 +88,12 @@ defmodule Wallabidi.Transport.BiDi do
     end
   end
 
-  # Install the shared Wallabidi.Bootstrap as a BiDi preload script.
+  # Install the shared Wallabidi.Remote.Bootstrap as a BiDi preload script.
   # The script receives `__wallabidi` as a channel callback parameter;
   # any payload it sends comes back as a `script.message` event that
   # the SessionActor decodes into find / page_ready dispatches.
   defp install_bootstrap(session) do
-    fn_decl = Wallabidi.Bootstrap.bidi_preload()
+    fn_decl = Wallabidi.Remote.Bootstrap.bidi_preload()
     channel_arg = [%{"type" => "channel", "value" => %{"channel" => "__wallabidi"}}]
 
     case Protocol.cdp_send(

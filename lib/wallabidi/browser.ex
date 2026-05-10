@@ -190,7 +190,7 @@ defmodule Wallabidi.Browser do
         parent
         |> find(query, &Element.fill_in(&1, with: value))
 
-      Wallabidi.LiveViewAware.drain_patches(parent)
+      Wallabidi.Remote.LiveViewAware.drain_patches(parent)
       result
     else
       parent
@@ -1668,7 +1668,7 @@ defmodule Wallabidi.Browser do
         {:css, selector} ->
           text = Query.inner_text(validated)
           opts = if text, do: [text: text], else: []
-          Wallabidi.LiveViewAware.await_selector(session, selector, opts)
+          Wallabidi.Remote.LiveViewAware.await_selector(session, selector, opts)
 
         {:xpath, _} ->
           # XPath can't be used with querySelector. For text-based queries
@@ -1677,7 +1677,7 @@ defmodule Wallabidi.Browser do
           text = extract_await_text(validated)
 
           if text do
-            Wallabidi.LiveViewAware.await_selector(session, "body", text: text)
+            Wallabidi.Remote.LiveViewAware.await_selector(session, "body", text: text)
           end
       end
     else
@@ -1824,8 +1824,8 @@ defmodule Wallabidi.Browser do
     if live_view_aware?(session) do
       timeout = Keyword.get(opts, :timeout, 5_000)
 
-      case Wallabidi.LiveViewAware.prepare_patch(session) do
-        :prepared -> Wallabidi.LiveViewAware.await_patch(session, timeout)
+      case Wallabidi.Remote.LiveViewAware.prepare_patch(session) do
+        :prepared -> Wallabidi.Remote.LiveViewAware.await_patch(session, timeout)
         :no_liveview -> :ok
       end
     end
@@ -1913,7 +1913,7 @@ defmodule Wallabidi.Browser do
           # Wait for lifecycle event via SessionProcess.
           result = fun.()
           Wallabidi.SessionProcess.await_next_page_load(session)
-          Wallabidi.LiveViewAware.await_liveview_connected(session)
+          Wallabidi.Remote.LiveViewAware.await_liveview_connected(session)
           result
 
         :none ->
@@ -1928,11 +1928,11 @@ defmodule Wallabidi.Browser do
 
   # Classify the interaction: :patch, :navigate, :full_page, or :none.
   defp do_patch_await(session, fun) do
-    case Wallabidi.LiveViewAware.prepare_patch(session) do
+    case Wallabidi.Remote.LiveViewAware.prepare_patch(session) do
       :prepared ->
         result = fun.()
 
-        case Wallabidi.LiveViewAware.await_patch(session) do
+        case Wallabidi.Remote.LiveViewAware.await_patch(session) do
           :ok ->
             result
 
@@ -1941,7 +1941,7 @@ defmodule Wallabidi.Browser do
 
           :page_navigated ->
             Wallabidi.SessionProcess.await_next_page_load(session)
-            Wallabidi.LiveViewAware.await_liveview_connected(session)
+            Wallabidi.Remote.LiveViewAware.await_liveview_connected(session)
             result
         end
 
@@ -1956,9 +1956,9 @@ defmodule Wallabidi.Browser do
     # slow navigation completes under load, adding pure dead time. Instead
     # go straight to waiting for the new LiveView to connect (which waits
     # for the URL to change first via the pre_url check).
-    {:ok, pre_url} = Wallabidi.Protocol.current_url(session)
+    {:ok, pre_url} = Wallabidi.Remote.Protocol.current_url(session)
     result = fun.()
-    Wallabidi.LiveViewAware.await_liveview_connected(session, pre_url: pre_url)
+    Wallabidi.Remote.LiveViewAware.await_liveview_connected(session, pre_url: pre_url)
     result
   end
 
@@ -2034,7 +2034,7 @@ defmodule Wallabidi.Browser do
         "return classifyEl(document.querySelector(#{Jason.encode!(selector)}), #{Jason.encode!(to_string(interaction))});" <>
         "})()"
 
-    case Wallabidi.Protocol.eval(session, js) do
+    case Wallabidi.Remote.Protocol.eval(session, js) do
       {:ok, result} ->
         parse_classification(result)
 
@@ -2055,7 +2055,7 @@ defmodule Wallabidi.Browser do
         })()
         """
 
-    case Wallabidi.Protocol.eval(session, js) do
+    case Wallabidi.Remote.Protocol.eval(session, js) do
       {:ok, result} -> parse_classification(result)
       _ -> :none
     end

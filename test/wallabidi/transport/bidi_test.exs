@@ -1,10 +1,10 @@
-defmodule Wallabidi.Transport.BiDiTest do
+defmodule Wallabidi.Remote.Transport.BiDiTest do
   use ExUnit.Case, async: false
 
   alias Wallabidi.Chrome.BidiServer
   alias Wallabidi.Session
-  alias Wallabidi.Transport.BiDi
-  alias Wallabidi.Transport.Protocol
+  alias Wallabidi.Remote.Transport.BiDi
+  alias Wallabidi.Remote.Transport.Protocol
 
   @moduletag :browser
 
@@ -112,7 +112,7 @@ defmodule Wallabidi.Transport.BiDiTest do
 
     query_id = "q1"
     ops_json = ~s'[["query", "css", ".item"]]'
-    register_snippet = Wallabidi.Bootstrap.register_js(query_id, ops_json, "null", "null")
+    register_snippet = Wallabidi.Remote.Bootstrap.register_js(query_id, ops_json, "null", "null")
 
     fn_decl = "() => { #{register_snippet} }"
 

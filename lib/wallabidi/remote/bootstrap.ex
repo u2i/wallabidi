@@ -1,4 +1,4 @@
-defmodule Wallabidi.Bootstrap do
+defmodule Wallabidi.Remote.Bootstrap do
   @moduledoc false
   # Shared browser-side bootstrap JS for push-based element finding.
   #
@@ -17,8 +17,8 @@ defmodule Wallabidi.Bootstrap do
   # edits to wallabidi.js take effect without a rebuild step. Both
   # paths are listed as @external_resource so Mix recompiles on
   # either change.
-  @bootstrap_min_path Path.join([__DIR__, "..", "..", "priv", "wallabidi.min.js"])
-  @bootstrap_src_path Path.join([__DIR__, "..", "..", "priv", "wallabidi.js"])
+  @bootstrap_min_path Path.join([__DIR__, "..", "..", "..", "priv", "wallabidi.min.js"])
+  @bootstrap_src_path Path.join([__DIR__, "..", "..", "..", "priv", "wallabidi.js"])
   @external_resource @bootstrap_min_path
   @external_resource @bootstrap_src_path
   @body (case File.read(@bootstrap_min_path) do

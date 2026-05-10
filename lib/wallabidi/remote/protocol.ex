@@ -1,4 +1,4 @@
-defmodule Wallabidi.Protocol do
+defmodule Wallabidi.Remote.Protocol do
   @moduledoc false
 
   # Protocol abstraction for the low-level operations that drivers share.

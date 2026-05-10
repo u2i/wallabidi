@@ -1,4 +1,4 @@
-defmodule Wallabidi.Transport do
+defmodule Wallabidi.Remote.Transport do
   @moduledoc false
 
   # Strategy for the "where does a session get its WebSocket" question.
@@ -28,8 +28,8 @@ defmodule Wallabidi.Transport do
   # Each impl returns the same shape so the surrounding driver code
   # (install_bootstrap, await_page_load, click_aware, …) is unchanged.
 
-  alias Wallabidi.Transport.Session, as: V2Session
-  alias Wallabidi.WebSocket
+  alias Wallabidi.Remote.Transport.Session, as: V2Session
+  alias Wallabidi.Remote.WebSocket
 
   @typedoc """
   What `acquire/1` returns. The driver builds a `Wallabidi.Session`

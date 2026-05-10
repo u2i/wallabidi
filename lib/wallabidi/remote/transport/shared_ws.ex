@@ -1,4 +1,4 @@
-defmodule Wallabidi.Transport.SharedWS do
+defmodule Wallabidi.Remote.Transport.SharedWS do
   @moduledoc false
 
   # Transport: ONE V2.WebSocket per BEAM, shared across all sessions
@@ -14,10 +14,10 @@ defmodule Wallabidi.Transport.SharedWS do
   # Teardown disposes the BrowserContext (which kills its targets)
   # but leaves the shared WS alone.
 
-  @behaviour Wallabidi.Transport
+  @behaviour Wallabidi.Remote.Transport
 
-  alias Wallabidi.Transport
-  alias Wallabidi.WebSocket
+  alias Wallabidi.Remote.Transport
+  alias Wallabidi.Remote.WebSocket
 
   @impl true
   def acquire(opts) do

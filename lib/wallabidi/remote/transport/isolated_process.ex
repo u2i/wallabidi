@@ -1,4 +1,4 @@
-defmodule Wallabidi.Transport.IsolatedProcess do
+defmodule Wallabidi.Remote.Transport.IsolatedProcess do
   @moduledoc false
 
   # Transport: a fresh browser process AND a fresh V2.WebSocket per
@@ -10,10 +10,10 @@ defmodule Wallabidi.Transport.IsolatedProcess do
   # one connection (or has bugs that surface under concurrent load).
   # Currently the default Lightpanda V2 transport.
 
-  @behaviour Wallabidi.Transport
+  @behaviour Wallabidi.Remote.Transport
 
-  alias Wallabidi.Transport
-  alias Wallabidi.WebSocket
+  alias Wallabidi.Remote.Transport
+  alias Wallabidi.Remote.WebSocket
 
   @impl true
   def acquire(opts) do

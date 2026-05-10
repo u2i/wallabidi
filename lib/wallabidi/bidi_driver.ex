@@ -28,8 +28,8 @@ defmodule Wallabidi.BiDiDriver do
   alias Wallabidi.BiDi.WebSocketClient
   alias Wallabidi.{Element, Session}
   alias Wallabidi.BiDiClient
-  alias Wallabidi.Transport.BiDi
-  alias Wallabidi.Transport.Protocol
+  alias Wallabidi.Remote.Transport.BiDi
+  alias Wallabidi.Remote.Transport.Protocol
 
   # ----- Driver supervisor -----
 
@@ -296,7 +296,7 @@ defmodule Wallabidi.BiDiDriver do
     BiDiClient.call_on_element(
       Element.root_session(element),
       element,
-      Wallabidi.OpsShared.dispatch_fn(),
+      Wallabidi.Remote.OpsShared.dispatch_fn(),
       ["is_selected", []]
     )
   end

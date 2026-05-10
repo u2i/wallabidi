@@ -19,18 +19,18 @@ defmodule Wallabidi.BiDiClient do
   # were verified end-to-end in V2.Transport.BiDi phases A/B/C.
 
   alias Wallabidi.BiDi.{Commands, ResponseParser, WebSocketClient}
-  alias Wallabidi.Bootstrap
+  alias Wallabidi.Remote.Bootstrap
   alias Wallabidi.CDP.Ops
   alias Wallabidi.Element
-  alias Wallabidi.OpsShared
+  alias Wallabidi.Remote.OpsShared
   alias Wallabidi.Session
-  alias Wallabidi.Transport.Protocol
+  alias Wallabidi.Remote.Transport.Protocol
 
   # Pulls in shared op bodies (text/2, attribute/3, displayed/2,
   # click/2, set_value_dom/3, clear/2, send_keys_text/3, page-info
   # ops). They call this module's call_on_element/4 + evaluate/2,3
   # for the wire layer.
-  use Wallabidi.OpsShared
+  use Wallabidi.Remote.OpsShared
 
   # Frame focus stores an override in the test process dictionary
   # (BiDi V2BiDiDriver.focus_frame writes it). When set, subsequent
@@ -274,7 +274,7 @@ defmodule Wallabidi.BiDiClient do
   defp decode_remote_value(other), do: other
 
   # current_url/1, current_path/1, page_title/1, page_source/1 —
-  # provided by Wallabidi.OpsShared.
+  # provided by Wallabidi.Remote.OpsShared.
 
   # ----- Screenshot + viewport -----
 
@@ -586,7 +586,7 @@ defmodule Wallabidi.BiDiClient do
 
   defp stale_marker?(_), do: false
 
-  # text/2, attribute/3, displayed/2 — provided by Wallabidi.OpsShared.
+  # text/2, attribute/3, displayed/2 — provided by Wallabidi.Remote.OpsShared.
 
   # ----- Interactions -----
 
@@ -635,7 +635,7 @@ defmodule Wallabidi.BiDiClient do
     do: {:ok, "none"}
 
   defp await_after_click(session, "patch", pre_page_id, pre_ref, _timeout) do
-    case Wallabidi.LiveViewAware.await_patch(session, 1_000) do
+    case Wallabidi.Remote.LiveViewAware.await_patch(session, 1_000) do
       :ok ->
         {:ok, "patch"}
 
@@ -653,7 +653,7 @@ defmodule Wallabidi.BiDiClient do
         # for any resulting navigation; silently fall through if
         # neither happens.
         if is_integer(pre_ref) do
-          _ = Wallabidi.LiveViewAware.await_ack(session, pre_ref, 5_000)
+          _ = Wallabidi.Remote.LiveViewAware.await_ack(session, pre_ref, 5_000)
         end
 
         _ = Protocol.await_page_ready_after(session, pre_page_id, 5_000)
@@ -706,7 +706,7 @@ defmodule Wallabidi.BiDiClient do
 
       pre_ref =
         if patch? do
-          _ = Wallabidi.LiveViewAware.prepare_patch(session)
+          _ = Wallabidi.Remote.LiveViewAware.prepare_patch(session)
 
           case evaluate(session, "(window.liveSocket && window.liveSocket.main) ? window.liveSocket.main.ref : null") do
             {:ok, ref} when is_integer(ref) -> ref
@@ -738,7 +738,7 @@ defmodule Wallabidi.BiDiClient do
     )
   end
 
-  # click/2 — provided by Wallabidi.OpsShared.
+  # click/2 — provided by Wallabidi.Remote.OpsShared.
 
   @doc """
   DOM-based set_value. Handles checkboxes, radios, options, text
@@ -791,7 +791,7 @@ defmodule Wallabidi.BiDiClient do
   end
 
   # set_value_dom/3 (the DOM-based path) and clear/3 — provided by
-  # Wallabidi.OpsShared. set_value/3 above dispatches between the
+  # Wallabidi.Remote.OpsShared. set_value/3 above dispatches between the
   # file-input branch (DataTransfer trick) and the shared DOM path.
 
   @doc """
