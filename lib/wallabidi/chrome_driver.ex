@@ -37,50 +37,16 @@ defmodule Wallabidi.ChromeDriver do
     Supervisor.start_link(__MODULE__, :ok, opts)
   end
 
-  @chrome_server_pool_name __MODULE__.ServerPool
-
   @impl Supervisor
   def init(_) do
-    cond do
-      remote_url() ->
-        # Remote URL — no local Chrome processes; SharedConnection
-        # connects to the URL directly.
-        Supervisor.init([SharedConnection], strategy: :one_for_one)
+    children =
+      if remote_url() do
+        [SharedConnection]
+      else
+        [{ChromeServer, [name: __MODULE__.Server]}, SharedConnection]
+      end
 
-      pool_size() > 1 ->
-        # Multiple Chrome processes via ServerPool. SharedConnection
-        # round-robins across them on every get/1.
-        :persistent_term.put(
-          {SharedConnection, :pool_name, __MODULE__},
-          @chrome_server_pool_name
-        )
-
-        children = [
-          {Wallabidi.Chrome.ServerPool, [name: @chrome_server_pool_name]},
-          SharedConnection
-        ]
-
-        Supervisor.init(children, strategy: :one_for_one)
-
-      true ->
-        # Single Chrome process — original behavior (count=1 default).
-        children = [
-          {ChromeServer, [name: __MODULE__.Server]},
-          SharedConnection
-        ]
-
-        Supervisor.init(children, strategy: :one_for_one)
-    end
-  end
-
-  defp pool_size do
-    case System.get_env("CHROME_SERVER_COUNT") do
-      nil ->
-        Application.get_env(:wallabidi, :chrome_server_count, 1)
-
-      str ->
-        String.to_integer(str)
-    end
+    Supervisor.init(children, strategy: :one_for_one)
   end
 
   @doc false
