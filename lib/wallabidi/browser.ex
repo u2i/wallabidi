@@ -183,20 +183,25 @@ defmodule Wallabidi.Browser do
   """
   @spec fill_in(parent, Query.t(), with: String.t()) :: parent
   def fill_in(%Session{} = parent, query, with: value) do
-    if live_view_aware?(parent) and classify_interaction(parent, query, :change) != :none do
-      # Type the value (silent clear + keystrokes), then drain all pending
-      # phx-change patches so the server has processed the final value.
-      result =
-        parent
-        |> find_lazy(query, &Element.fill_in(&1, with: value))
+    # Fused: one round-trip does silent clear + set_value + (when LV-
+    # aware) drain_patches. Saves two round-trips vs the legacy
+    # element-op-per-step.
+    drain_idle_ms =
+      if live_view_aware?(parent) and classify_interaction(parent, query, :change) != :none,
+        do: 300,
+        else: 0
 
-      Wallabidi.Remote.LiveViewAware.drain_patches(parent)
-      result
-    else
-      parent
-      |> find_lazy(query, &Element.fill_in(&1, with: value))
-    end
+    find_lazy(parent, query, fn element ->
+      session = Wallabidi.Element.root_session(element)
+      mod = fill_in_module(session)
+      mod.fill_in(session, element, value, drain_idle_ms)
+    end)
   end
+
+  defp fill_in_module(%Session{driver: Wallabidi.Remote.Drivers.ChromeBiDi}),
+    do: Wallabidi.Remote.BiDi.Client
+
+  defp fill_in_module(_), do: Wallabidi.Remote.CDP.Client
 
   # @doc """
   # Clears an input field. Input elements are looked up by id, label text, or name.

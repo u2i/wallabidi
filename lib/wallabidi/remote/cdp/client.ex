@@ -325,6 +325,37 @@ defmodule Wallabidi.Remote.CDP.Client do
     end
   end
 
+  @doc """
+  Fused fill_in: silent clear + set_value + (optionally) drainPatches in
+  one V8 call. Saves up to two round-trips per fill_in.
+
+  `drain_idle_ms` controls the drainPatches phase:
+    * 0 — skip drainPatches (non-LV pages)
+    * >0 — wait until no LV patch arrives for that many ms
+
+  Text-only path. File inputs go through `set_value/3` which materializes
+  a V8 ref for `DOM.setFileInputFiles`.
+  """
+  @spec fill_in(Session.t(), Element.t(), String.t() | number, non_neg_integer) ::
+          {:ok, nil} | {:error, term}
+  def fill_in(%Session{} = session, %Element{} = element, value, drain_idle_ms \\ 0)
+      when is_integer(drain_idle_ms) do
+    str = if is_number(value), do: to_string(value), else: value
+
+    opts = if drain_idle_ms > 0, do: [await_promise: true], else: []
+
+    case call_on_element(
+           session,
+           element,
+           OpsShared.dispatch_fn(),
+           [[["fill_in", str, drain_idle_ms]]],
+           opts
+         ) do
+      {:ok, _} -> {:ok, nil}
+      err -> err
+    end
+  end
+
   @doc false
   # Convert a lazy element to one carrying a real V8 objectId. Re-runs
   # the find pipeline eagerly. Eager elements pass through unchanged.

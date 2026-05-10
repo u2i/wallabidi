@@ -268,6 +268,20 @@ W.focus = function(el) {
 // interaction. Returns a Promise resolving to the classification string.
 // Times out after timeoutMs (defaults 5000) — on timeout, classifies
 // anyway so the caller still gets a routable answer.
+// Pipelined fill_in: silent clear, set_value, optionally drain patches
+// — all in one Promise. Saves up to 3 round-trips per fill_in.
+//
+// `drainIdleMs` of 0 (or undefined) skips drainPatches entirely (used
+// for non-LV pages).
+W.fillIn = function(el, value, drainIdleMs) {
+  W.clear(el, true);
+  W.setValue(el, value);
+
+  if (!drainIdleMs) return null;
+
+  return W.drainPatches(drainIdleMs);
+};
+
 // Pipelined click: await LV ready, classify, optionally arm patch
 // detection, snapshot pre-state, click, return everything Elixir needs
 // to wait for the result. Saves up to 3 round-trips vs the two-step.
@@ -652,6 +666,8 @@ W.run = function(ops, target) {
           value = W.awaitLvReadyAndClassify(target, op[1], op[2]); break;
         case 'await_ready_classify_and_click':
           value = W.awaitReadyClassifyAndClick(target, op[1]); break;
+        case 'fill_in':
+          value = W.fillIn(target, op[1], op[2]); break;
 
         // --- Document ops — global. ---
         case 'prepare_patch':       value = W.preparePatch(); break;
