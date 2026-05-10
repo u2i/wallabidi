@@ -1055,33 +1055,8 @@ defmodule Wallabidi.Browser do
     end
   end
 
-  defp do_find_lazy(parent, query, start_time) do
-    case execute_query(parent, query, lazy: true) do
-      {:ok, query} ->
-        Query.result(query)
-
-      {:error, :stale_reference} ->
-        if max_time_exceeded?(start_time) do
-          raise Wallabidi.QueryError, ErrorMessage.message(query, :not_found)
-        else
-          do_find_lazy(parent, query, start_time)
-        end
-
-      {:error, {:not_found, result}} ->
-        query = %{query | result: result}
-
-        case validate_html(parent, query) do
-          {:ok, _} ->
-            raise Wallabidi.QueryError, ErrorMessage.message(query, :not_found)
-
-          {:error, html_error} ->
-            raise Wallabidi.QueryError, ErrorMessage.message(query, html_error)
-        end
-
-      {:error, e} ->
-        raise Wallabidi.QueryError, ErrorMessage.message(query, e)
-    end
-  end
+  defp do_find_lazy(parent, query, start_time),
+    do: do_find_with(parent, query, start_time, lazy: true)
 
   # The find path can return :stale_reference when a concurrent
   # navigation cleared `window.__w.queries` between the count
@@ -1089,8 +1064,14 @@ defmodule Wallabidi.Browser do
   # out but the elements actually exist (sync recheck found > 0). In
   # both cases the right move is to re-run the whole query against the
   # current page — the query budget bounds the total wait.
-  defp do_find(parent, query, start_time) do
-    case execute_query(parent, query) do
+  defp do_find(parent, query, start_time),
+    do: do_find_with(parent, query, start_time, [])
+
+  # Single retry loop shared by do_find and do_find_lazy. Differs only
+  # in the `opts` passed to execute_query (lazy: true for the lazy
+  # path).
+  defp do_find_with(parent, query, start_time, opts) do
+    case execute_query(parent, query, opts) do
       {:ok, query} ->
         Query.result(query)
 
@@ -1098,7 +1079,7 @@ defmodule Wallabidi.Browser do
         if max_time_exceeded?(start_time) do
           raise Wallabidi.QueryError, ErrorMessage.message(query, :not_found)
         else
-          do_find(parent, query, start_time)
+          do_find_with(parent, query, start_time, opts)
         end
 
       {:error, {:not_found, result}} ->
