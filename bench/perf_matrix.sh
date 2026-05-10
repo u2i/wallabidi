@@ -8,8 +8,8 @@
 #   bench/perf_matrix.sh           # run all cells
 #   bench/perf_matrix.sh -f        # force re-run (truncate TSV first)
 #
-# Note: 35 cells (7 drivers × 5 mc levels). Total ~75 min. Some cells
-# may legitimately fail (e.g. legacy BiDi at mc16 — chromium-bidi
+# 20 cells (4 drivers × 5 mc levels). Total ~40 min. Some cells
+# may legitimately fail (e.g. BiDi at mc16 — chromium-bidi
 # pool is too small). We log the failure and move on.
 
 set -u
@@ -26,12 +26,9 @@ fi
 # Driver atoms (mix alias suffix → friendly label).
 DRIVERS=(
   "live_view:LiveView"
-  "lightpanda:Lightpanda V1"
-  "lightpanda_v2:Lightpanda V2"
-  "chrome:Chrome CDP V1"
-  "chrome_v2:Chrome CDP V2"
-  "chrome.bidi:Chrome BiDi V1"
-  "chrome.bidi_v2:Chrome BiDi V2"
+  "lightpanda_v2:Lightpanda"
+  "chrome_v2:Chrome CDP"
+  "chrome.bidi_v2:Chrome BiDi"
 )
 
 MC_LEVELS=(1 2 4 8 16)
