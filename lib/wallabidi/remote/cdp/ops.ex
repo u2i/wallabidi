@@ -6,15 +6,20 @@ defmodule Wallabidi.Remote.CDP.Ops do
   # register call. The interpreter lives in the bootstrap script
   # installed via Page.addScriptToEvaluateOnNewDocument.
   #
-  # ## Opcodes
+  # ## Opcodes (the W.run vocabulary — see priv/wallabidi.js)
   #
   #   ["query", "css"|"xpath", selector]
   #   ["visible", true|false]
-  #   ["text", string]
+  #   ["text_includes", string]
   #   ["selected", true|false]
-  #   ["classify", "click"|"change"|"submit"]
-  #   ["prepare_patch"]
-  #   ["click"]
+  #   ["classify_first", "click"|"change"|"submit"]
+  #   ["prepare_patch_filter"]
+  #   ["click_first"]
+  #
+  # The pipeline-state ops (classify_first / click_first / *_filter)
+  # are named distinctly from the per-element ops in W.run because the
+  # interpreter needs to disambiguate "classify a single target" from
+  # "classify els[0] and stash on meta".
   #
   # ## Example
   #
@@ -23,7 +28,7 @@ defmodule Wallabidi.Remote.CDP.Ops do
   #   |> Ops.visible(true)
   #   |> Ops.click()
   #   |> Ops.to_query(count: 1, timeout: 5000)
-  #   #=> %{ops: [["query","css",".btn"],["visible",true],["click"]], count: 1, timeout: 5000}
+  #   #=> %{ops: [["query","css",".btn"],["visible",true],["click_first"]], count: 1, timeout: 5000}
 
   defstruct ops: [], parent_id: nil
 
@@ -44,7 +49,7 @@ defmodule Wallabidi.Remote.CDP.Ops do
   end
 
   def text(%__MODULE__{} = o, text) when is_binary(text) do
-    %{o | ops: o.ops ++ [["text", text]]}
+    %{o | ops: o.ops ++ [["text_includes", text]]}
   end
 
   def selected(%__MODULE__{} = o, val) when is_boolean(val) do
@@ -52,15 +57,15 @@ defmodule Wallabidi.Remote.CDP.Ops do
   end
 
   def classify(%__MODULE__{} = o, interaction) do
-    %{o | ops: o.ops ++ [["classify", to_string(interaction)]]}
+    %{o | ops: o.ops ++ [["classify_first", to_string(interaction)]]}
   end
 
   def prepare_patch(%__MODULE__{} = o) do
-    %{o | ops: o.ops ++ [["prepare_patch"]]}
+    %{o | ops: o.ops ++ [["prepare_patch_filter"]]}
   end
 
   def click(%__MODULE__{} = o) do
-    %{o | ops: o.ops ++ [["click"]]}
+    %{o | ops: o.ops ++ [["click_first"]]}
   end
 
   @doc """
@@ -70,8 +75,8 @@ defmodule Wallabidi.Remote.CDP.Ops do
   """
   def has_side_effects?(%__MODULE__{ops: ops}) do
     Enum.any?(ops, fn
-      ["click"] -> true
-      ["prepare_patch"] -> true
+      ["click_first"] -> true
+      ["prepare_patch_filter"] -> true
       _ -> false
     end)
   end

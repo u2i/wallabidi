@@ -254,7 +254,7 @@ defmodule Wallabidi.Remote.CDP.Client do
   end
 
   defp file_input?(%Session{} = session, %Element{} = element) do
-    call_on_element(session, element, OpsShared.dispatch_fn(), ["is_file_input", []])
+    call_on_element(session, element, OpsShared.dispatch_fn(), [[["is_file_input"]]])
   end
 
   defp set_file_input(%Session{} = session, %Element{bidi_shared_id: object_id} = element, value) do
@@ -360,7 +360,7 @@ defmodule Wallabidi.Remote.CDP.Client do
       # Mixed string + atom — focus the element and dispatch real key
       # events so :tab, :enter etc. fire. Requires a CDP browser that
       # implements Input.dispatchKeyEvent (Chrome does; Lightpanda doesn't).
-      _ = call_on_element(session, element, OpsShared.dispatch_fn(), ["focus", []])
+      _ = call_on_element(session, element, OpsShared.dispatch_fn(), [[["focus"]]])
       send_keys_to_session(session, keys)
     end
   end
@@ -475,8 +475,7 @@ defmodule Wallabidi.Remote.CDP.Client do
   def classify(%Session{} = session, %Element{} = element, interaction)
       when interaction in [:click, :change] do
     call_on_element(session, element, OpsShared.dispatch_fn(), [
-      "classify",
-      [Atom.to_string(interaction)]
+      [["classify", Atom.to_string(interaction)]]
     ])
   end
 
@@ -574,7 +573,7 @@ defmodule Wallabidi.Remote.CDP.Client do
       session,
       element,
       OpsShared.dispatch_fn(),
-      ["await_lv_ready_and_classify", [Atom.to_string(interaction), timeout_ms]],
+      [[["await_lv_ready_and_classify", Atom.to_string(interaction), timeout_ms]]],
       await_promise: true
     )
   end
@@ -727,7 +726,7 @@ defmodule Wallabidi.Remote.CDP.Client do
     # is a no-op on engines without a real layout pass (Lightpanda),
     # so the JS override is the only source of truth there.
     js =
-      "(window.__w && window.__w.getWindowSize()) || " <>
+      "(window.__w && window.__w.run([['get_window_size']])) || " <>
         "JSON.stringify(window.__wallabidi_window_size || " <>
         "{width: window.innerWidth, height: window.innerHeight})"
 
@@ -769,7 +768,7 @@ defmodule Wallabidi.Remote.CDP.Client do
     # the raw global write — handles the case where this is called on a
     # page that booted before W was installed.
     set_js =
-      "if (window.__w) window.__w.setWindowSize(#{width}, #{height}); " <>
+      "if (window.__w) window.__w.run([['set_window_size', #{width}, #{height}]]); " <>
         "else window.__wallabidi_window_size = {width: #{width}, height: #{height}};"
 
     _ = cdp_send(session, "Runtime.evaluate", %{expression: set_js, returnByValue: true})
@@ -877,12 +876,12 @@ defmodule Wallabidi.Remote.CDP.Client do
         cdp_send(session, "Runtime.callFunctionOn", %{
           objectId: parent_id,
           functionDeclaration:
-            "function() { return window.__w ? window.__w.exec(#{ops_json}, this).els : []; }",
+            "function() { return window.__w ? window.__w.run(#{ops_json}, this).els : []; }",
           returnByValue: false
         })
       else
         base = %{
-          expression: "(window.__w ? window.__w.exec(#{ops_json}, null).els : [])",
+          expression: "(window.__w ? window.__w.run(#{ops_json}, null).els : [])",
           returnByValue: false
         }
 
@@ -1200,8 +1199,7 @@ defmodule Wallabidi.Remote.CDP.Client do
   @spec element_size(Element.t()) :: {:ok, {number, number}} | {:error, term}
   def element_size(%Element{} = element) do
     case call_on_element(Element.root_session(element), element, OpsShared.dispatch_fn(), [
-           "rect",
-           ["size"]
+           [["rect", "size"]]
          ]) do
       {:ok, [w, h]} -> {:ok, {w, h}}
       err -> err
@@ -1212,8 +1210,7 @@ defmodule Wallabidi.Remote.CDP.Client do
   @spec element_location(Element.t()) :: {:ok, {number, number}} | {:error, term}
   def element_location(%Element{} = element) do
     case call_on_element(Element.root_session(element), element, OpsShared.dispatch_fn(), [
-           "rect",
-           ["position"]
+           [["rect", "position"]]
          ]) do
       {:ok, [x, y]} -> {:ok, {x, y}}
       err -> err
@@ -1222,8 +1219,7 @@ defmodule Wallabidi.Remote.CDP.Client do
 
   defp element_center(%Element{} = element) do
     case call_on_element(Element.root_session(element), element, OpsShared.dispatch_fn(), [
-           "rect",
-           ["center"]
+           [["rect", "center"]]
          ]) do
       {:ok, %{"x" => x, "y" => y}} -> {:ok, {x, y}}
       err -> err
@@ -1232,8 +1228,7 @@ defmodule Wallabidi.Remote.CDP.Client do
 
   defp element_topleft(%Element{} = element) do
     case call_on_element(Element.root_session(element), element, OpsShared.dispatch_fn(), [
-           "rect",
-           ["origin"]
+           [["rect", "origin"]]
          ]) do
       {:ok, %{"x" => x, "y" => y}} -> {:ok, {x, y}}
       err -> err

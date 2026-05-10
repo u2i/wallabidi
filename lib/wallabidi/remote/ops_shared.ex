@@ -31,9 +31,13 @@ defmodule Wallabidi.Remote.OpsShared do
   alias Wallabidi.{Element, Session}
 
   # Single dispatch function — the Elixir side never ships per-op JS
-  # bodies; just an opcode + args. Implementations live in
-  # priv/wallabidi.js as W.dispatch / W.text / W.attribute / etc.
-  @dispatch_fn "function(op,args){return window.__w.dispatch(this,op,args);}"
+  # bodies; just an opcode-list. Implementations live in
+  # priv/wallabidi.js as the W.run interpreter (W.text, W.attribute,
+  # etc. are the underlying primitives that W.run dispatches to).
+  #
+  # Wire shape: `[[op_name, arg1, arg2, ...]]` — a list of ops, each
+  # encoded as `[name | args]`. Element-scoped: `this` is the element.
+  @dispatch_fn "function(ops){return window.__w.run(ops,this);}"
 
   @doc false
   def dispatch_fn, do: @dispatch_fn
@@ -43,7 +47,7 @@ defmodule Wallabidi.Remote.OpsShared do
       @doc "Returns the element's visible text content."
       @spec text(Session.t(), Element.t()) :: {:ok, String.t()} | {:error, term}
       def text(%Session{} = session, %Element{} = element) do
-        call_on_element(session, element, unquote(@dispatch_fn), ["text", []])
+        call_on_element(session, element, unquote(@dispatch_fn), [[["text"]]])
       end
 
       @doc """
@@ -55,7 +59,7 @@ defmodule Wallabidi.Remote.OpsShared do
       @spec attribute(Session.t(), Element.t(), String.t()) ::
               {:ok, String.t() | nil} | {:error, term}
       def attribute(%Session{} = session, %Element{} = element, name) when is_binary(name) do
-        call_on_element(session, element, unquote(@dispatch_fn), ["attribute", [name]])
+        call_on_element(session, element, unquote(@dispatch_fn), [[["attribute", name]]])
       end
 
       @doc """
@@ -69,7 +73,7 @@ defmodule Wallabidi.Remote.OpsShared do
       """
       @spec displayed(Session.t(), Element.t()) :: {:ok, boolean} | {:error, term}
       def displayed(%Session{} = session, %Element{} = element) do
-        call_on_element(session, element, unquote(@dispatch_fn), ["displayed", []])
+        call_on_element(session, element, unquote(@dispatch_fn), [[["displayed"]]])
       end
 
       @doc """
@@ -79,7 +83,7 @@ defmodule Wallabidi.Remote.OpsShared do
       """
       @spec click(Session.t(), Element.t()) :: {:ok, nil} | {:error, term}
       def click(%Session{} = session, %Element{} = element) do
-        case call_on_element(session, element, unquote(@dispatch_fn), ["click", []]) do
+        case call_on_element(session, element, unquote(@dispatch_fn), [[["click"]]]) do
           {:ok, _} -> {:ok, nil}
           err -> err
         end
@@ -95,7 +99,7 @@ defmodule Wallabidi.Remote.OpsShared do
       """
       @spec set_value_dom(Session.t(), Element.t(), term) :: {:ok, nil} | {:error, term}
       def set_value_dom(%Session{} = session, %Element{} = element, value) do
-        case call_on_element(session, element, unquote(@dispatch_fn), ["set_value_dom", [value]]) do
+        case call_on_element(session, element, unquote(@dispatch_fn), [[["set_value_dom", value]]]) do
           {:ok, _} -> {:ok, nil}
           err -> err
         end
@@ -110,7 +114,7 @@ defmodule Wallabidi.Remote.OpsShared do
       def clear(%Session{} = session, %Element{} = element, opts \\ []) do
         silent? = Keyword.get(opts, :silent, true)
 
-        case call_on_element(session, element, unquote(@dispatch_fn), ["clear", [silent?]]) do
+        case call_on_element(session, element, unquote(@dispatch_fn), [[["clear", silent?]]]) do
           {:ok, _} -> {:ok, nil}
           err -> err
         end
@@ -128,7 +132,7 @@ defmodule Wallabidi.Remote.OpsShared do
       @spec send_keys_text(Session.t(), Element.t(), String.t()) ::
               {:ok, nil} | {:error, term}
       def send_keys_text(%Session{} = session, %Element{} = element, text) when is_binary(text) do
-        case call_on_element(session, element, unquote(@dispatch_fn), ["send_keys_text", [text]]) do
+        case call_on_element(session, element, unquote(@dispatch_fn), [[["send_keys_text", text]]]) do
           {:ok, _} -> {:ok, nil}
           err -> err
         end
@@ -142,30 +146,30 @@ defmodule Wallabidi.Remote.OpsShared do
       # keeps centralization-aware callers happy without breaking the
       # blank-page case.
 
-      @doc "Page URL via `W.url()` (location.href)."
+      @doc "Page URL via `W.run([['url']])` (location.href)."
       @spec current_url(Session.t()) :: {:ok, String.t()} | {:error, term}
       def current_url(%Session{} = session) do
-        evaluate(session, "(window.__w && window.__w.url()) || location.href")
+        evaluate(session, "(window.__w && window.__w.run([['url']])) || location.href")
       end
 
-      @doc "Path component of the URL via `W.path()` (location.pathname)."
+      @doc "Path component of the URL via `W.run([['path']])` (location.pathname)."
       @spec current_path(Session.t()) :: {:ok, String.t()} | {:error, term}
       def current_path(%Session{} = session) do
-        evaluate(session, "(window.__w && window.__w.path()) || location.pathname")
+        evaluate(session, "(window.__w && window.__w.run([['path']])) || location.pathname")
       end
 
-      @doc "Page title via `W.title()` (document.title)."
+      @doc "Page title via `W.run([['title']])` (document.title)."
       @spec page_title(Session.t()) :: {:ok, String.t()} | {:error, term}
       def page_title(%Session{} = session) do
-        evaluate(session, "(window.__w && window.__w.title()) || document.title")
+        evaluate(session, "(window.__w && window.__w.run([['title']])) || document.title")
       end
 
-      @doc "Outer HTML via `W.source()`."
+      @doc "Outer HTML via `W.run([['source']])`."
       @spec page_source(Session.t()) :: {:ok, String.t()} | {:error, term}
       def page_source(%Session{} = session) do
         evaluate(
           session,
-          "(window.__w && window.__w.source()) || document.documentElement.outerHTML"
+          "(window.__w && window.__w.run([['source']])) || document.documentElement.outerHTML"
         )
       end
 

@@ -366,7 +366,7 @@ defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
            Element.root_session(element),
            element,
            Wallabidi.Remote.OpsShared.dispatch_fn(),
-           ["is_selected", []]
+           [[["is_selected"]]]
          ) do
       {:ok, v} -> {:ok, v == true}
       err -> err

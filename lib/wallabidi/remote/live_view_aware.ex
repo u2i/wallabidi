@@ -24,7 +24,7 @@ defmodule Wallabidi.Remote.LiveViewAware do
   """
   @spec prepare_patch(Session.t()) :: :prepared | :no_liveview
   def prepare_patch(%Session{} = session) do
-    case Protocol.eval(session, "window.__w.preparePatch()") do
+    case Protocol.eval(session, "window.__w.run([['prepare_patch']])") do
       {:ok, true} -> :prepared
       _ -> :no_liveview
     end
@@ -47,7 +47,7 @@ defmodule Wallabidi.Remote.LiveViewAware do
   @spec await_ack(Session.t(), non_neg_integer(), timeout()) ::
           {:ok, :acked | :no_liveview | :page_navigated} | {:error, :timeout}
   def await_ack(%Session{} = session, pre_ref_next, timeout \\ 5_000) do
-    js = "window.__w.awaitAck(#{pre_ref_next}, #{timeout})"
+    js = "window.__w.run([['await_ack', #{pre_ref_next}, #{timeout}]])"
 
     case Protocol.eval_async(session, js, timeout + 1_000) do
       {:ok, "acked"} -> {:ok, :acked}
@@ -75,7 +75,7 @@ defmodule Wallabidi.Remote.LiveViewAware do
   """
   @spec await_patch(Session.t(), timeout()) :: :ok | :page_navigated | :timeout
   def await_patch(%Session{} = session, timeout \\ 5_000) do
-    js = "window.__w.awaitPatch(#{timeout})"
+    js = "window.__w.run([['await_patch', #{timeout}]])"
 
     case Protocol.eval_async(session, js, timeout) do
       {:ok, "navigated"} ->
@@ -113,7 +113,7 @@ defmodule Wallabidi.Remote.LiveViewAware do
   """
   @spec drain_patches(Session.t(), timeout()) :: :ok
   def drain_patches(%Session{} = session, timeout \\ 5_000) do
-    _ = Protocol.eval_async(session, "window.__w.drainPatches()", timeout)
+    _ = Protocol.eval_async(session, "window.__w.run([['drain_patches']])", timeout)
     :ok
   end
 
@@ -152,7 +152,8 @@ defmodule Wallabidi.Remote.LiveViewAware do
         "text" => text
       })
 
-    js = "window.__w.awaitSelector(#{Jason.encode!(css_selector)}, #{js_opts})"
+    js =
+      "window.__w.run([['await_selector', #{Jason.encode!(css_selector)}, #{js_opts}]])"
 
     result =
       case Protocol.eval_async(session, js, timeout + 1_000) do
@@ -183,7 +184,7 @@ defmodule Wallabidi.Remote.LiveViewAware do
   """
   @spec live_view_connected?(Session.t()) :: boolean
   def live_view_connected?(%Session{} = session) do
-    case Protocol.eval(session, "window.__w.liveViewConnected()") do
+    case Protocol.eval(session, "window.__w.run([['live_view_connected']])") do
       {:ok, true} -> true
       _ -> false
     end
@@ -214,7 +215,7 @@ defmodule Wallabidi.Remote.LiveViewAware do
     pre_url = Keyword.get(opts, :pre_url)
     pre_url_js = if pre_url, do: Jason.encode!(pre_url), else: "null"
 
-    js = "window.__w.awaitLiveViewConnected(#{pre_url_js}, #{timeout})"
+    js = "window.__w.run([['await_lv_connected', #{pre_url_js}, #{timeout}]])"
 
     case Protocol.eval_async(session, js, timeout + 1_000) do
       {:ok, true} -> {:ok, :connected}

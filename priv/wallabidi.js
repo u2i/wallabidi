@@ -37,6 +37,20 @@ function newPageId() {
   return Date.now() + '-' + Math.random().toString(36).slice(2, 8);
 }
 
+// Wraps liveSocket.domCallbacks.onPatchEnd so `cb(container)` is invoked
+// after the original handler. Returns a `restore` function that puts the
+// previous handler back. No-ops when there's no LiveSocket.
+function wrapPatchEnd(cb) {
+  var ls = window.liveSocket;
+  if (!ls || !ls.domCallbacks) return function() {};
+  var orig = ls.domCallbacks.onPatchEnd;
+  ls.domCallbacks.onPatchEnd = function(container) {
+    if (orig) orig(container);
+    cb(container);
+  };
+  return function() { ls.domCallbacks.onPatchEnd = orig; };
+}
+
 // --- Visibility check ---
 W.isVisible = function(el) {
   if (!el.isConnected) return false;
@@ -134,10 +148,11 @@ W.classify = function(el, type) {
 };
 
 // --- Element operations ---
-// These are the JS bodies behind Wallabidi's per-element API. The
+// These are the JS primitives behind Wallabidi's per-element API. The
 // Elixir side calls Runtime.callFunctionOn (CDP) / script.callFunction
-// (BiDi) with `function(op, args) { return W.dispatch(this, op, args); }`
-// — the only thing on the wire is the opcode + args, not the JS body.
+// (BiDi) with `function(ops) { return W.run(ops, this); }` — the wire
+// payload is just an opcode list, dispatched through the W.run
+// interpreter to the helpers below.
 
 // Stale-element sentinel: returned when the element is detached. The
 // Elixir client translates this to {:error, :stale_reference}.
@@ -299,20 +314,17 @@ W.awaitLvReadyAndClassify = function(el, interaction, timeoutMs) {
 
 // Install a one-shot promise on window.__wallabidi_patch_promise that
 // resolves after the next LiveView onPatchEnd fires (or to "navigated"
-// if a beforeunload happens first). Idempotently installs the hook.
+// if a beforeunload happens first). Idempotent.
 W.preparePatch = function() {
-  var ls = window.liveSocket;
-  if (!ls || !ls.main) return false;
+  if (!window.liveSocket || !window.liveSocket.main) return false;
   if (!window.__wallabidi_patch_hooked) {
-    var orig = ls.domCallbacks.onPatchEnd;
-    ls.domCallbacks.onPatchEnd = function(container) {
-      orig(container);
+    wrapPatchEnd(function() {
       if (window.__wallabidi_patch_resolve) {
         var r = window.__wallabidi_patch_resolve;
         window.__wallabidi_patch_resolve = null;
         r(true);
       }
-    };
+    });
     window.__wallabidi_patch_hooked = true;
   }
   window.__wallabidi_patch_promise = new Promise(function(resolve) {
@@ -344,18 +356,17 @@ W.awaitPatch = function(timeoutMs) {
 // event interactions (fill_in fires phx-change for each char) where we
 // want the post-quiet state, not the first patch.
 W.drainPatches = function(idleMs) {
-  var ls = window.liveSocket;
-  if (!ls || !ls.domCallbacks) return Promise.resolve(true);
+  if (!window.liveSocket || !window.liveSocket.domCallbacks) return Promise.resolve(true);
   return new Promise(function(resolve) {
     var timer = null;
     var idle = idleMs || 300;
-    var orig = ls.domCallbacks.onPatchEnd;
-    function done() { ls.domCallbacks.onPatchEnd = orig; resolve(true); }
+    var restore;
+    function done() { restore(); resolve(true); }
     function reset() {
       if (timer) clearTimeout(timer);
       timer = setTimeout(done, idle);
     }
-    ls.domCallbacks.onPatchEnd = function(c) { orig(c); reset(); };
+    restore = wrapPatchEnd(reset);
     reset();
   });
 };
@@ -402,15 +413,9 @@ W.awaitSelector = function(selector, opts) {
 
   return new Promise(function(resolve) {
     var timer = setTimeout(function() { cleanup(); resolve(false); }, timeoutMs);
-    var origOnPatchEnd;
-    var ls = window.liveSocket;
-    if (ls && ls.domCallbacks) {
-      origOnPatchEnd = ls.domCallbacks.onPatchEnd;
-      ls.domCallbacks.onPatchEnd = function(container) {
-        if (origOnPatchEnd) origOnPatchEnd(container);
-        if (matches()) { cleanup(); resolve(true); }
-      };
-    }
+    var restorePatchEnd = wrapPatchEnd(function() {
+      if (matches()) { cleanup(); resolve(true); }
+    });
     var observer = new MutationObserver(function() {
       requestAnimationFrame(function() {
         if (matches()) { cleanup(); resolve(true); }
@@ -437,9 +442,7 @@ W.awaitSelector = function(selector, opts) {
       clearInterval(navCheck);
       observer.disconnect();
       window.removeEventListener('beforeunload', onNav);
-      if (origOnPatchEnd && ls && ls.domCallbacks) {
-        ls.domCallbacks.onPatchEnd = origOnPatchEnd;
-      }
+      restorePatchEnd();
     }
   });
 };
@@ -509,92 +512,137 @@ W.cleanupQuery = function(id) {
   if (W.queries) delete W.queries[id];
 };
 
-// --- Element-op dispatcher ---
-// Single entry point invoked from the Elixir side as
-//   `function(op, args) { return window.__w.dispatch(this, op, args); }`
-// The op name selects the helper; args is a positional array.
+// --- Unified opcode runner ---
 //
-// Stale handling: if `el` is disconnected we return W.STALE for
-// every op except no-op-on-stale ones. Helpers may also return STALE
-// themselves (W.attribute does an early check).
-W.dispatch = function(el, op, args) {
-  args = args || [];
-  if (op === 'attribute')      return W.attribute(el, args[0]);
-  if (op === 'text')           return W.text(el);
-  if (op === 'displayed')      return W.isVisible(el);
-  if (op === 'rect')           return W.rect(el, args[0]);
-  if (op === 'set_value_dom')  return W.setValue(el, args[0]);
-  if (op === 'clear')          return W.clear(el, args[0]);
-  if (op === 'send_keys_text') return W.sendKeysText(el, args[0]);
-  if (op === 'is_file_input')  return W.isFileInput(el);
-  if (op === 'is_selected')    return W.isSelected(el);
-  if (op === 'focus')          return W.focus(el);
-  if (op === 'click')          return W.clickEl(el);
-  if (op === 'classify')       return W.classify(el, args[0]);
-  if (op === 'await_lv_ready_and_classify')
-    return W.awaitLvReadyAndClassify(el, args[0], args[1]);
-  return null;
-};
+// Single page-side entry point invoked from the Elixir side. Takes an
+// array of opcodes, runs them in order, returns the pipeline result.
+//
+// Three call shapes (same wire form, different meaning):
+//
+//   1. Element-scoped single op:
+//      callFunctionOn `function(ops){return W.run(ops,this);}` with
+//      ops = `[["text"]]`. Returns the element's text.
+//
+//   2. Element-scoped find pipeline:
+//      same shape, ops = `[["query","css",".foo"], ["visible",true]]`.
+//      Returns `{els, meta, error}` since the ops mutated els[].
+//
+//   3. Document-scope op:
+//      Runtime.evaluate `window.__w.run([["url"]])` (no target).
+//      Returns the last op's primary value.
+//
+// Op categories:
+//
+//   * Element ops — read `target`, return a value.
+//   * Find/filter ops — mutate els[]; force runner to return
+//     `{els, meta, error}` shape.
+//   * Document ops — global; ignore target. Some return Promises (the
+//     BEAM uses awaitPromise: true for those, see Op.async?/1).
+//
+// The runner returns the last op's value, except when find/filter ops
+// were used — then it returns the {els, meta, error} accumulator.
+W.run = function(ops, target) {
+  var els = [], meta = {}, error = null, value;
+  var stateful = false;
 
-// --- Opcode interpreter ---
-// Executes an array of opcodes against a root element.
-// Returns {els, meta, error} where meta has classification/prepared.
-W.exec = function(ops, root) {
-  var els = [], meta = {}, error = null;
   for (var i = 0; i < ops.length; i++) {
-    var op = ops[i], cmd = op[0];
+    var op = ops[i] || [], cmd = op[0];
     try {
-      switch(cmd) {
-        case 'query':
-          var t = op[1], sel = op[2], ctx = root || document;
-          if (t === 'css') {
-            els = Array.from(ctx.querySelectorAll(sel));
+      switch (cmd) {
+        // --- Find / filter / pipeline ops (mutate els[]) ---
+        case 'query': {
+          var ctx = target || document;
+          if (op[1] === 'css') {
+            els = Array.from(ctx.querySelectorAll(op[2]));
           } else {
             if (!ctx.nodeType) ctx = document;
-            var xr = document.evaluate(sel, ctx, null, 7, null);
+            var xr = document.evaluate(op[2], ctx, null, 7, null);
             els = [];
             for (var j = 0; j < xr.snapshotLength; j++) els.push(xr.snapshotItem(j));
           }
+          stateful = true;
           break;
+        }
         case 'visible':
-          var wantVis = op[1];
-          els = wantVis ? els.filter(W.isVisible) : els.filter(function(e) { return !W.isVisible(e); });
+          els = op[1]
+            ? els.filter(W.isVisible)
+            : els.filter(function(e) { return !W.isVisible(e); });
+          stateful = true;
           break;
-        case 'text':
+        case 'text_includes': {
           var txt = op[1];
           els = els.filter(function(e) {
-            var t = (e.innerText || e.textContent || '').replace(/[\s\u00a0]+/g, ' ').trim();
+            var t = (e.innerText || e.textContent || '').replace(/[\s ]+/g, ' ').trim();
             return t.indexOf(txt) !== -1;
           });
+          stateful = true;
           break;
+        }
         case 'selected':
-          var wantSel = op[1];
-          els = els.filter(wantSel
-            ? W.isSelected
-            : function(e) { return !W.isSelected(e); });
+          els = op[1]
+            ? els.filter(W.isSelected)
+            : els.filter(function(e) { return !W.isSelected(e); });
+          stateful = true;
           break;
-        case 'classify':
-          if (els.length > 0) meta.classification = W.classify(els[0], op[1]);
-          else meta.classification = 'none';
+        case 'classify_first':
+          meta.classification = els.length > 0 ? W.classify(els[0], op[1]) : 'none';
+          stateful = true;
           break;
-        case 'prepare_patch':
-          // Delegates to W.preparePatch — single source of truth for
-          // patch-promise installation.
-          if (W.preparePatch()) meta.prepared = true;
-          break;
-        case 'click':
-          // Capture result BEFORE clicking (click may navigate)
+        case 'click_first':
           meta.count = els.length;
           W.clickEl(els[0]);
+          stateful = true;
+          break;
+        case 'prepare_patch_filter':
+          if (W.preparePatch()) meta.prepared = true;
+          stateful = true;
+          break;
+
+        // --- Element ops — read target. ---
+        case 'text':           value = W.text(target); break;
+        case 'attribute':      value = W.attribute(target, op[1]); break;
+        case 'displayed':      value = W.isVisible(target); break;
+        case 'rect':           value = W.rect(target, op[1]); break;
+        case 'set_value_dom':  value = W.setValue(target, op[1]); break;
+        case 'clear':          value = W.clear(target, op[1]); break;
+        case 'send_keys_text': value = W.sendKeysText(target, op[1]); break;
+        case 'is_file_input':  value = W.isFileInput(target); break;
+        case 'is_selected':    value = W.isSelected(target); break;
+        case 'focus':          value = W.focus(target); break;
+        case 'click':          value = W.clickEl(target); break;
+        case 'classify':       value = W.classify(target, op[1]); break;
+        case 'await_lv_ready_and_classify':
+          value = W.awaitLvReadyAndClassify(target, op[1], op[2]); break;
+
+        // --- Document ops — global. ---
+        case 'prepare_patch':       value = W.preparePatch(); break;
+        case 'await_patch':         value = W.awaitPatch(op[1]); break;
+        case 'drain_patches':       value = W.drainPatches(op[1]); break;
+        case 'await_ack':           value = W.awaitAck(op[1], op[2]); break;
+        case 'await_selector':      value = W.awaitSelector(op[1], op[2]); break;
+        case 'live_view_connected': value = W.liveViewConnected(); break;
+        case 'await_lv_connected':  value = W.awaitLiveViewConnected(op[1], op[2]); break;
+        case 'url':                 value = W.url(); break;
+        case 'path':                value = W.path(); break;
+        case 'title':               value = W.title(); break;
+        case 'source':              value = W.source(); break;
+        case 'get_window_size':     value = W.getWindowSize(); break;
+        case 'set_window_size':     value = W.setWindowSize(op[1], op[2]); break;
+
+        default:
+          error = 'unknown op: ' + cmd;
           break;
       }
-    } catch(e) {
+      if (error) break;
+    } catch (e) {
       error = e.message || String(e);
       els = [];
       break;
     }
   }
-  return {els: els, meta: meta, error: error};
+
+  if (stateful) return {els: els, meta: meta, error: error};
+  return value;
 };
 
 // --- Query checker ---
@@ -602,7 +650,7 @@ W.check = function() {
   for (var id in W.queries) {
     var q = W.queries[id];
     if (q.resolved) continue;
-    var result = W.exec(q.ops, q.root);
+    var result = W.run(q.ops, q.root);
     if (result.error) {
       q.resolved = true;
       send({id: id, count: 0, error: result.error});

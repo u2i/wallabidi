@@ -601,8 +601,7 @@ defmodule Wallabidi.Remote.BiDi.Client do
   def classify(%Session{} = session, %Element{} = element, interaction)
       when interaction in [:click, :change] do
     call_on_element(session, element, OpsShared.dispatch_fn(), [
-      "classify",
-      [Atom.to_string(interaction)]
+      [["classify", Atom.to_string(interaction)]]
     ])
   end
 
@@ -733,7 +732,7 @@ defmodule Wallabidi.Remote.BiDi.Client do
       session,
       element,
       OpsShared.dispatch_fn(),
-      ["await_lv_ready_and_classify", [Atom.to_string(interaction), timeout_ms]],
+      [[["await_lv_ready_and_classify", Atom.to_string(interaction), timeout_ms]]],
       await_promise: true
     )
   end
@@ -760,7 +759,7 @@ defmodule Wallabidi.Remote.BiDi.Client do
   end
 
   defp file_input?(session, element) do
-    call_on_element(session, element, OpsShared.dispatch_fn(), ["is_file_input", []])
+    call_on_element(session, element, OpsShared.dispatch_fn(), [[["is_file_input"]]])
   end
 
   defp set_file_value(session, element, path) do
@@ -812,7 +811,7 @@ defmodule Wallabidi.Remote.BiDi.Client do
       # Mixed string + special-key atoms — focus the element, then
       # dispatch a key-source action sequence via input.performActions.
       with {:ok, _} <-
-             call_on_element(session, element, OpsShared.dispatch_fn(), ["focus", []]) do
+             call_on_element(session, element, OpsShared.dispatch_fn(), [[["focus"]]]) do
         send_keys_to_session(session, keys)
       end
     end
@@ -934,8 +933,7 @@ defmodule Wallabidi.Remote.BiDi.Client do
   @spec element_size(Element.t()) :: {:ok, {number, number}} | {:error, term}
   def element_size(%Element{} = element) do
     case call_on_element(Element.root_session(element), element, OpsShared.dispatch_fn(), [
-           "rect",
-           ["size"]
+           [["rect", "size"]]
          ]) do
       {:ok, [w, h]} -> {:ok, {w, h}}
       {:ok, other} -> {:error, {:unexpected_size, other}}
@@ -947,8 +945,7 @@ defmodule Wallabidi.Remote.BiDi.Client do
   @spec element_location(Element.t()) :: {:ok, {number, number}} | {:error, term}
   def element_location(%Element{} = element) do
     case call_on_element(Element.root_session(element), element, OpsShared.dispatch_fn(), [
-           "rect",
-           ["position"]
+           [["rect", "position"]]
          ]) do
       {:ok, [x, y]} -> {:ok, {x, y}}
       {:ok, other} -> {:error, {:unexpected_location, other}}
@@ -995,7 +992,7 @@ defmodule Wallabidi.Remote.BiDi.Client do
 
         {:timeout, _} ->
           # Push didn't fire (count-shape mismatch — query asked for
-          # exactly 1 but page has 2, etc). Run W.exec synchronously
+          # exactly 1 but page has 2, etc). Run W.run synchronously
           # so callers see the *actual* element count for error
           # messaging ("but found 2"). Mirrors CDPClient.final_sync_exec.
           final_sync_exec(session, ops_json, ops.parent_id)
@@ -1026,9 +1023,9 @@ defmodule Wallabidi.Remote.BiDi.Client do
 
     fn_decl =
       if parent_shared_id do
-        ~s'function() { if (window.__w) { var r = window.__w.exec(#{ops_json}, this); return {els: r.els, error: r.error}; } #{fallback_body} return {els: r.els, error: r.error}; }'
+        ~s'function() { if (window.__w) { var r = window.__w.run(#{ops_json}, this); return {els: r.els, error: r.error}; } #{fallback_body} return {els: r.els, error: r.error}; }'
       else
-        ~s'() => { if (window.__w) { var r = window.__w.exec(#{ops_json}, null); return {els: r.els, error: r.error}; } #{fallback_body} return {els: r.els, error: r.error}; }'
+        ~s'() => { if (window.__w) { var r = window.__w.run(#{ops_json}, null); return {els: r.els, error: r.error}; } #{fallback_body} return {els: r.els, error: r.error}; }'
       end
 
     base_params = %{
