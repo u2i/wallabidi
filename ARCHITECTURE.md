@@ -1,13 +1,118 @@
 # Architecture
 
-How wallabidi's drivers, transports, and session pool fit together.
+How wallabidi's drivers, transports, and the page-side opcode
+interpreter fit together.
+
+## Two halves
+
+Wallabidi is BEAM-side Elixir on one half, page-side JavaScript
+(`priv/wallabidi.js`) on the other. They communicate over a single
+WebSocket per Chrome process or per Lightpanda binary, speaking CDP
+or BiDi.
+
+**Elixir side** keeps no per-element state beyond `%Element{}` structs.
+Each element op turns into an opcode list shipped over the wire.
+
+**Page side** holds the live DOM, runs the `W.run` interpreter, owns
+the LiveView patch hook (`onPatchEnd`) and the `MutationObserver`
+that re-checks pending queries, and publishes query-resolved events
+back to Elixir via `Runtime.addBinding` (CDP) or
+`script.addPreloadScript` channels (BiDi).
+
+## The `W.run` opcode interpreter
+
+The page-side bootstrap (installed via `Page.addScriptToEvaluateOnNewDocument`
+on every new document) defines a single function:
+
+```js
+window.__w.run(ops, target)
+```
+
+Every Elixir → browser call dispatches through it. The wire payload
+is an opcode list:
+
+```
+[["query","css",".btn"],["visible",true],["classify_first","click"],
+ ["click_first"]]
+```
+
+The interpreter has three categories of opcodes:
+
+- **Find / filter / pipeline ops** (`query`, `visible`, `text_includes`,
+  `selected`, `classify_first`, `click_first`, …) — mutate the
+  pipeline's `els[]` and `meta` accumulator. Used by Browser.find,
+  Browser.click(query), etc.
+- **Element ops** (`text`, `attribute`, `set_value_dom`, `clear`,
+  `click`, `focus`, …) — read the bound `target` and return a value.
+- **Document ops** (`url`, `path`, `title`, `await_selector`,
+  `await_patch`, `await_lv_connected`, …) — operate at document
+  scope; the target is ignored.
+
+Plus a `target N` bridge that rebinds the function-argument `target`
+to `els[N]` mid-pipeline — used by the lazy-element path below.
+
+The interpreter handles a Promise-tail: if the last op produced a
+thenable, `W.run` returns `result.then(v => …)` so the caller's
+`awaitPromise: true` sees the resolved value. Compound async ops
+(click_aware, fill_in, has_text) compose into single Promises this
+way.
+
+## Fused operations
+
+Several Browser-level operations that were historically multi-step
+fuse into one Promise on the page side:
+
+- `await_ready_classify_and_click` — awaits LV-ready, classifies,
+  optionally arms `preparePatch`, captures `pageId` and `ref`,
+  clicks. Returns `{classification, prePageId, preRef}` after the
+  click. **One round-trip** for what was 4 in the legacy click path.
+- `fillIn(el, value, drainIdleMs)` — silent clear + set value +
+  (when LV-aware) drain patches. **One round-trip** vs three.
+- `setChecked(el, target)` — reads state, clicks only if it differs.
+  **One round-trip** vs two.
+- `awaitElementMatch(el, kind, target, timeoutMs)` —
+  MutationObserver + onPatchEnd-driven match for `el.value === target`
+  (used by `has_value?`) or `el.textContent.includes(target)` (used
+  by `has_text?` / `assert_text`). **One round-trip** vs an
+  Elixir-side polling loop.
+
+Each fused op exists because the Elixir side has no decisions to make
+between the steps. The fusion happens in `priv/wallabidi.js`; the
+Elixir entry points (in `Wallabidi.Remote.OpsShared`) just ship the
+opcode and `await_promise: true`.
+
+## Lazy elements
+
+Elements have a `handle` field. Three shapes:
+
+- A string (CDP `objectId` or BiDi `sharedId`) — eager V8 reference.
+- `{:lazy, ops, index, parent_id}` — lazy: the element op pipeline
+  hasn't been ref-fetched, just the count was returned. Element ops
+  on a lazy element re-resolve the query inline by splicing
+  `[query_ops, ["target", index], <caller's ops>]` into a single
+  `W.run` dispatch. Saves the ref-fetch round-trip that Wallaby pays
+  on every find.
+- `{:lv_element, sel, idx, html}` — pseudo-ref used by the LV driver
+  (no V8, just a re-resolvable identity).
+
+Browser APIs that find-then-op-then-discard (the majority: `text/2`,
+`attr/3`, `has_value?/3`, `selected?/2`, `fill_in/3`, `clear/2`,
+`set_value/3`, `send_keys/3`, `has_text?/2,3`, `assert_text/3`,
+`click/2`'s primary path) use the lazy path. The user-facing
+`find/2` still materializes refs because callers expect to hold
+elements across arbitrary subsequent ops.
+
+The lazy element struct still carries `parent_id` so scoped finds
+(`select |> selected?(option("X"))`) re-resolve under the same parent
+scope — the dispatch uses `callFunctionOn`/`script.callFunction`
+with `this` bound to the parent's V8 ref.
 
 ## Driver-by-driver process model
 
 Each driver chooses its own transport shape based on what its target
 browser supports.
 
-### Chrome CDP V2 — shared WebSocket
+### Chrome CDP — shared WebSocket
 
 ```
                     ┌──────────────────────┐
@@ -22,12 +127,12 @@ browser supports.
                Context A)   Context B)   Context C)
 ```
 
-One `Wallabidi.WebSocket` GenServer per BEAM holds the WS to Chrome
-(via `Wallabidi.Chrome.SharedConnection`). Sessions multiplex over
-that one socket using CDP's flat-session protocol — each session has
-its own `BrowserContext` + `Target`, and CDP frames carry a
-`sessionId` field that routes responses/events to the right Session
-GenServer.
+One `Wallabidi.Remote.WebSocket` GenServer per BEAM holds the WS to
+Chrome (via `Wallabidi.Remote.Chrome.SharedConnection`). Sessions
+multiplex over that one socket using CDP's flat-session protocol —
+each session has its own `BrowserContext` + `Target`, and CDP frames
+carry a `sessionId` field that routes responses/events to the right
+Session GenServer.
 
 This is the cheap-isolation model Playwright uses: the browser
 process is shared across the BEAM lifetime, but each test gets a
@@ -35,9 +140,9 @@ fresh `BrowserContext` with isolated cookies/storage/cache.
 
 **Trade-off**: every CDP frame from every session goes through the
 shared WebSocket's GenServer mailbox. Under high concurrency, frames
-serialize there — see "When pooling helps" below.
+serialize there.
 
-### Chrome BiDi V2 — per-session WebSocket via chromium-bidi
+### Chrome BiDi — per-session WebSocket via chromium-bidi
 
 ```
   Test process ──→ Session A ──→ WS_A ──┐
@@ -55,7 +160,7 @@ don't share state at all.
 capacity (typically 8–10). At high test concurrency this becomes the
 real bottleneck, not anything on the wallabidi side.
 
-### Lightpanda V2 — per-session WebSocket to a shared LP server
+### Lightpanda — per-session WebSocket to a shared LP server
 
 ```
   Test process ──→ Session A ──→ WS_A ──┐
@@ -93,7 +198,7 @@ one (driver-specific build steps), the test uses it,
 the test process — if the test crashes, the session is torn down
 automatically.
 
-For Chrome CDP V2 specifically, that build sequence is:
+For Chrome CDP specifically, that build sequence is:
 
 1. `Target.createBrowserContext` — fresh isolated context
 2. `Target.createTarget(url: "about:blank", browserContextId: ...)`
@@ -110,14 +215,14 @@ stays alive across sessions.
 ## Concurrency model
 
 One Chrome process per BEAM. Sessions multiplex over a single
-`Wallabidi.WebSocket` via CDP's flat-session-id, with each session
-isolated by its own BrowserContext. This is the Playwright-default
-shape: amortize browser startup across the BEAM lifetime, throw
-away contexts cheaply per test.
+`Wallabidi.Remote.WebSocket` via CDP's flat-session-id, with each
+session isolated by its own BrowserContext. This is the
+Playwright-default shape: amortize browser startup across the BEAM
+lifetime, throw away contexts cheaply per test.
 
-For Chrome BiDi the same applies with one chromium-bidi Node
-process per BEAM. Lightpanda runs its own one-process-many-WS
-model. LiveView uses no browser at all.
+For Chrome BiDi the same applies with one chromium-bidi Node process
+per BEAM. Lightpanda runs its own one-process-many-WS model.
+LiveView uses no browser at all.
 
 ### Reliability and concurrency under load
 
@@ -132,10 +237,10 @@ Measured on perf_bench (136 LV scenarios), 3-run averages:
 
 Reliability picture at mc=16 across 3 runs:
 
-- **Chrome CDP V2**: 0 flakes
-- **Lightpanda V2**: 0 flakes
+- **Chrome CDP**: 0 flakes
+- **Lightpanda**: 0 flakes
 - **LiveView**: 0 flakes
-- **Chrome BiDi V2**: 10 flakes — chromium-bidi's session.subscribe
+- **Chrome BiDi**: 10 flakes — chromium-bidi's session.subscribe
   serializes under concurrency. Structural; not solvable from the
   wallabidi side.
 - **Wallaby (chromedriver)**: 7 flakes — chromedriver's
@@ -143,7 +248,7 @@ Reliability picture at mc=16 across 3 runs:
   timeouts cascade.
 
 For typical test workloads (especially CI runs that share a
-machine with non-functional tests), Chrome CDP V2 and Lightpanda
+machine with non-functional tests), Chrome CDP and Lightpanda
 both run flake-free at mc=16 with the default supervised single
 browser process. No tuning required.
 
@@ -151,14 +256,13 @@ browser process. No tuning required.
 
 - **LiveView** — 10-50× faster than any browser driver. Use where
   the test doesn't need a real DOM (most LiveView assertions).
-- **Lightpanda V2** — fastest browser driver. 5–7× ahead of
-  Chrome CDP at mc≥4, within 2× of in-process LiveView at mc=8.
-  Reliable.
-- **Chrome CDP V2** — solid default for tests that need real Chrome
+- **Lightpanda** — fastest browser driver. 5–7× ahead of Chrome CDP
+  at mc≥4, within 2× of in-process LiveView at mc=8. Reliable.
+- **Chrome CDP** — solid default for tests that need real Chrome
   semantics.
-- **Chrome BiDi V2** — slowest browser driver and the only one
-  with structural reliability issues. Available for tests that
-  specifically exercise the WebDriver BiDi protocol.
+- **Chrome BiDi** — slowest browser driver and the only one with
+  structural reliability issues. Available for tests that specifically
+  exercise the WebDriver BiDi protocol.
 
 ### Why no server pool
 
@@ -180,11 +284,32 @@ process count.
 
 ## Useful entry points
 
-- `Wallabidi.start_session/1`, `Wallabidi.end_session/1` — public
-  entry points; both delegate straight to the active driver
-- `Wallabidi.Chrome.SharedConnection` — caches the
-  `Wallabidi.WebSocket` pid for the supervised Chrome process
-- `Wallabidi.Chrome.Server` / `Wallabidi.Chrome.BidiServer` —
-  the supervised browser server processes
-- `Wallabidi.Transport.SharedWS`, `Wallabidi.Transport.PerSession`,
-  `Wallabidi.Transport.BiDi` — driver-specific transport shapes
+**Public API**
+
+- `Wallabidi.start_session/1`, `Wallabidi.end_session/1`
+- `Wallabidi.Browser.*` — high-level test API
+- `Wallabidi.Query`, `Wallabidi.Element`
+
+**Internals (in order of how deep you go)**
+
+- `Wallabidi.Remote.OpsShared` — the using-module macro that gives
+  CDP and BiDi clients identical W.run dispatch wrappers for element
+  ops (text, attribute, click, fill_in, classify, set_checked,
+  await_value, await_text, …).
+- `Wallabidi.Remote.CDP.Client` / `Wallabidi.Remote.BiDi.Client` —
+  protocol-specific clients. Hold `call_on_element/5` (which
+  recognizes lazy refs), `find_elements/3` / `find_elements_lazy/3`,
+  `click_aware`, frame-switching, geometry, cookies, screenshots.
+- `Wallabidi.Remote.LiveViewAware` — thin BEAM-side adapter for the
+  LV-aware document-scope ops (prepare_patch, await_patch, await_ack,
+  await_selector, live_view_connected).
+- `Wallabidi.Remote.Bootstrap` — bakes `priv/wallabidi.js` into the
+  BEAM and produces the CDP/BiDi install forms.
+- `priv/wallabidi.js` — the page-side bootstrap. Defines `W.run`, the
+  fused ops, the find-pipeline result push, and the `onPatchEnd` +
+  `MutationObserver` hooks.
+- `Wallabidi.Remote.Transport.Session` — per-session GenServer that
+  owns the wire layer for one session (whichever transport shape
+  the driver picked).
+- `Wallabidi.Remote.WebSocket` — the Mint WebSocket actor. Shared
+  across sessions on Chrome CDP; per-session on BiDi and Lightpanda.

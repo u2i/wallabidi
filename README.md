@@ -87,24 +87,26 @@ If you're starting a new project or are willing to do a find-and-replace, Wallab
 
 ## What's different from Wallaby?
 
-**Protocol**: All browser communication uses WebDriver BiDi over WebSocket instead of HTTP polling. This means event-driven log capture, lower latency, and access to features impossible with request-response HTTP.
+**Protocol**: Browser communication goes over WebSocket — Chrome via CDP or BiDi, Lightpanda via CDP — never HTTP polling. This means event-driven log capture, lower latency, and access to features impossible with request-response HTTP.
 
 **LiveView-aware by default**: Every interaction automatically waits for the right thing — no manual sleeps or retry loops needed:
 
 - `visit/2` waits for the LiveSocket to connect before returning.
-- `click/2` inspects the target element's bindings (`phx-click`, `data-phx-link`, plain `href`) and classifies the interaction as patch, navigate, or full-page. It then awaits the corresponding DOM patch, page load, or LiveView reconnection automatically.
-- `fill_in/3` on `phx-change` inputs drains all pending patches (one per keystroke) before returning.
-- `assert_has/2` uses an event-driven `await_selector` that hooks into LiveView's `onPatchEnd` callback — it waits for the next DOM patch before polling, avoiding both false negatives and busy-waiting.
+- `click/2` inspects the target element's bindings (`phx-click`, `data-phx-link`, plain `href`) and classifies the interaction as patch, navigate, or full-page in the *same round-trip* as the click itself. It then awaits the corresponding DOM patch, page load, or LiveView reconnection automatically.
+- `fill_in/3` on `phx-change` inputs fuses silent-clear + set-value + drain-patches into one round-trip — the call returns only once the server has finished processing the final phx-change.
+- `assert_has/2` uses an event-driven `await_selector` that hooks into LiveView's `onPatchEnd` callback and a `MutationObserver` — it fires the next-match check exactly when the DOM changes, never polls.
+- `has_text?/2`, `has_value?/2` route through the same event-driven pattern: a single Promise inside the browser resolves the moment the predicate matches, replacing Elixir-side polling loops.
 
 All of this is installed via injected JavaScript — no changes to your `app.js` or LiveSocket config are needed.
 
-**New features**:
-- `settle/2` — Wait for the page to become idle (no pending HTTP requests, no `phx-*-loading` classes). Useful after PubSub broadcasts, timers, or other non-interaction updates.
-- `await_patch/2` — Wait for the next LiveView DOM patch. Useful for server-pushed updates that aren't triggered by a browser interaction.
-- `on_console/2` — Register a callback for real-time browser console output.
-- `intercept_request/3` — Mock HTTP responses directly in the browser without Bypass or a test server.
+**Architecture**: A single opcode interpreter (`W.run`) on the page side handles every Elixir → browser call. The Elixir side ships opcode lists like `[["query","css",".btn"],["classify_first","click"],["click_first"]]`, never raw JS function bodies. Compound operations (click_aware, fill_in, has_text) fuse multiple steps into a single Promise so each logical operation is one network round-trip.
 
-**Three drivers**: LiveView (in-process, no browser), Lightpanda (headless CDP), Chrome (full BiDi). Tests declare their minimum requirement with `@tag :headless` or `@tag :browser`.
+**Lazy elements**: Most Browser APIs that find then immediately operate (`Browser.text`, `attr`, `fill_in`, `click`, `has_text?`...) skip the V8-object-id ref-fetch that Wallaby would do — the element op re-resolves the query inline on the page. Saves one round-trip per element op without changing semantics.
+
+**New features**:
+- `await_patch/2` — Wait for the next LiveView DOM patch. Useful for server-pushed updates that aren't triggered by a browser interaction.
+
+**Four drivers**: LiveView (in-process, no browser), Lightpanda (headless CDP), Chrome CDP (full browser, direct DevTools Protocol), Chrome BiDi (full browser, W3C WebDriver BiDi via chromium-bidi). Tests declare their minimum requirement with `@tag :headless` or `@tag :browser`.
 
 **Removed**:
 - Selenium driver — replaced with native BiDi + CDP
