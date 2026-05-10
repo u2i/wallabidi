@@ -10,17 +10,18 @@ defmodule Wallabidi.Transport do
   #
   # Three concrete shapes today:
   #
-  #   * `SharedWS`        — Chrome CDP. One V2.WebSocket per BEAM, held
+  #   * `SharedWS`        — Chrome CDP. One WebSocket per BEAM, held
   #                         in an Agent. Each session gets a fresh
   #                         BrowserContext + Target + sessionId on the
   #                         shared WS.
   #
-  #   * `PerSessionWS`    — Lightpanda V1-style. One shared browser
-  #                         process per BEAM, but one V2.WebSocket per
-  #                         session (Lightpanda accepts many WS to one
-  #                         binary).
+  #   * `PerSession`      — Lightpanda. One shared browser process per
+  #                         BEAM, but one WebSocket per session
+  #                         (Lightpanda accepts many WS to one binary).
+  #                         Each WS lives inside a `PerSession.Actor`
+  #                         GenServer.
   #
-  #   * `IsolatedProcess` — One browser process AND one V2.WebSocket
+  #   * `IsolatedProcess` — One browser process AND one WebSocket
   #                         per session. Slower but isolated. Used as
   #                         a fallback / for browsers we can't share.
   #
@@ -65,8 +66,8 @@ defmodule Wallabidi.Transport do
   # Drivers can use these directly or build their own.
 
   @doc """
-  Teardown that closes the V2.WebSocket. Use when the session OWNS
-  its WS (PerSessionWS, IsolatedProcess).
+  Teardown that closes the WebSocket. Use when the session OWNS
+  its WS (PerSession, IsolatedProcess).
   """
   @spec close_ws(pid) :: :ok
   def close_ws(ws_pid) when is_pid(ws_pid) do
@@ -100,7 +101,7 @@ defmodule Wallabidi.Transport do
   @doc """
   Convenience that calls `attachToTarget(targetId, flatten: true)` on
   `ws_pid` and returns `{:ok, sessionId}`. Used by SharedWS and
-  PerSessionWS impls.
+  PerSession impls.
   """
   @spec attach_to_target(pid, String.t()) :: {:ok, String.t()} | {:error, term}
   def attach_to_target(ws_pid, target_id) do
