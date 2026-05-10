@@ -504,11 +504,15 @@ defmodule Wallabidi.CDPClient do
           {:ok, String.t()} | {:error, term}
   def click_aware(%Session{} = session, %Element{} = element, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, 5_000)
+    # Pre-click "is LV mounted enough to receive this click?" — short.
+    # Empirically, if the channel hasn't joined within ~200ms it almost
+    # certainly won't from this point either. Post-click "did the patch
+    # land?" still uses :timeout (5s default) because slow handle_event
+    # handlers legitimately take seconds.
+    pre_click_timeout = Keyword.get(opts, :pre_click_timeout, 200)
 
-    # Merge the LV-ready wait + classify into one Runtime.callFunctionOn:
-    # the JS Promise awaits joinPending → false then returns the
-    # classification. Saves one round-trip per click.
-    with {:ok, classification} <- await_lv_ready_and_classify(session, element, :click, timeout),
+    with {:ok, classification} <-
+           await_lv_ready_and_classify(session, element, :click, pre_click_timeout),
          pre_page_id <- Protocol.get_page_id(session),
          {:ok, _} <- click(session, element) do
       case classification do
@@ -535,10 +539,10 @@ defmodule Wallabidi.CDPClient do
           {:ok, String.t(), :ready | :timeout} | {:error, term}
   def click_aware_with_classification(%Session{} = session, %Element{} = element, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, 5_000)
+    pre_click_timeout = Keyword.get(opts, :pre_click_timeout, 200)
 
-    # Merge LV-ready wait + classify into one Runtime.callFunctionOn —
-    # saves a round-trip on every click.
-    with {:ok, classification} <- await_lv_ready_and_classify(session, element, :click, timeout),
+    with {:ok, classification} <-
+           await_lv_ready_and_classify(session, element, :click, pre_click_timeout),
          pre_page_id <- Protocol.get_page_id(session),
          {:ok, _} <- click(session, element) do
       case classification do

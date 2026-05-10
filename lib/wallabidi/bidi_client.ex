@@ -688,10 +688,15 @@ defmodule Wallabidi.BiDiClient do
           {:ok, String.t(), :ready | :timeout} | {:error, term}
   def click_aware_with_classification(%Session{} = session, %Element{} = element, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, 5_000)
+    # Pre-click "is LV mounted enough to receive this click?" is a
+    # different question from post-click "did the patch land?". The
+    # former saturates fast; the latter legitimately waits seconds for
+    # slow handle_event handlers. Split timeouts so a stuck initial-
+    # mount check can't bake in a 5s stall on every click.
+    pre_click_timeout = Keyword.get(opts, :pre_click_timeout, 200)
 
-    # Merge LV-ready wait + classify into one script.callFunction —
-    # saves a round-trip on every click. Mirrors CDPClient.click_aware.
-    with {:ok, classification} <- await_lv_ready_and_classify(session, element, :click, timeout),
+    with {:ok, classification} <-
+           await_lv_ready_and_classify(session, element, :click, pre_click_timeout),
          pre_page_id <- Protocol.get_page_id(session) do
       # For LV-aware classifications, capture a pre-ref AND install
       # the patch promise BEFORE the click — otherwise the event ref

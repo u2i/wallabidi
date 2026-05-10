@@ -24,11 +24,10 @@ defmodule Wallabidi.Integration.LiveApp.PlainFormController do
 
   # Plain HTML page that emulates a LiveView page mid-join: it presents
   # a window.liveSocket object whose main.joinPending starts `true` and
-  # flips to `false` 800ms later. Clicking the button sets #click-time
-  # to the timestamp when the click actually landed, so the test can
-  # verify that wallabidi's click waited for joinPending → false
-  # before dispatching (rather than clicking immediately and racing
-  # the LV handler binding).
+  # flips to `false` 100ms after install. Clicking the button records
+  # whether the click landed before/after the flip — wallabidi should
+  # give the channel its 200ms-default pre-click window to finish join
+  # rather than firing immediately into a stale handler-binding window.
   def join_pending(conn, _params) do
     # No <script> at initial parse: window.liveSocket is absent when
     # visit()'s await_liveview_connected runs, so visit() returns
@@ -42,23 +41,24 @@ defmodule Wallabidi.Integration.LiveApp.PlainFormController do
     html(conn, """
     <html>
       <body>
-        <button id="jp-button" onclick="document.getElementById('jp-output').textContent = (window.__joinFlipAt === 0 ? 'clicked-while-pending' : 'clicked-after-flip');">
+        <button id="jp-button" phx-click="ignored" onclick="document.getElementById('jp-output').textContent = (window.__joinFlipAt === 0 ? 'clicked-while-pending' : 'clicked-after-flip');">
           Click me
         </button>
         <span id="jp-output">unclicked</span>
         <script>
+          // Install immediately so wallabidi sees joinPending=true at
+          // click time. Flip 100ms later — well within wallabidi's
+          // 200ms pre-click window, so the click should land after.
           window.__joinFlipAt = 0;
+          document.body.setAttribute('data-phx-session', 'fake');
+          window.liveSocket = {
+            main: { joinPending: true },
+            domCallbacks: { onPatchEnd: function(){} }
+          };
           setTimeout(function() {
-            document.body.setAttribute('data-phx-session', 'fake');
-            window.liveSocket = {
-              main: { joinPending: true },
-              domCallbacks: { onPatchEnd: function(){} }
-            };
-            setTimeout(function() {
-              window.__joinFlipAt = Date.now();
-              window.liveSocket.main.joinPending = false;
-            }, 800);
-          }, 50);
+            window.__joinFlipAt = Date.now();
+            window.liveSocket.main.joinPending = false;
+          }, 100);
         </script>
       </body>
     </html>
