@@ -1184,21 +1184,12 @@ defmodule Wallabidi.Browser do
   end
 
   def has_value?(%Element{} = element, value) do
-    result =
-      retry(fn ->
-        if Element.value(element) == value do
-          {:ok, true}
-        else
-          {:error, false}
-        end
-      end)
+    session = Wallabidi.Element.root_session(element)
+    mod = fill_in_module(session)
 
-    case result do
-      {:ok, true} ->
-        true
-
-      {:error, false} ->
-        false
+    case mod.await_value(session, element, value, max_wait_time()) do
+      {:ok, true} -> true
+      _ -> false
     end
   end
 
@@ -1237,22 +1228,16 @@ defmodule Wallabidi.Browser do
     |> has_text?(text)
   end
 
-  def has_text?(parent, text) when is_binary(text) do
-    result =
-      retry(fn ->
-        if Element.text(parent) =~ text do
-          {:ok, true}
-        else
-          {:error, false}
-        end
-      end)
+  def has_text?(%Element{} = element, text) when is_binary(text) do
+    # Single-RT await: V8 polls textContent with MutationObserver +
+    # onPatchEnd until match or timeout. Replaces an Elixir-side retry
+    # loop that polled Element.text every 25ms.
+    session = Wallabidi.Element.root_session(element)
+    mod = fill_in_module(session)
 
-    case result do
-      {:ok, true} ->
-        true
-
-      {:error, false} ->
-        false
+    case mod.await_text(session, element, text, max_wait_time()) do
+      {:ok, true} -> true
+      _ -> false
     end
   end
 

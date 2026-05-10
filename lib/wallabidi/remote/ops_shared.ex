@@ -151,6 +151,43 @@ defmodule Wallabidi.Remote.OpsShared do
         end
       end
 
+      @doc """
+      Wait until the element's `value` (for inputs) equals the given
+      target, or `timeout_ms` elapses. Returns `{:ok, true}` on match,
+      `{:ok, false}` on timeout. Uses MutationObserver + onPatchEnd —
+      one round-trip vs Elixir-side polling of Element.value.
+      """
+      @spec await_value(Session.t(), Element.t(), term, non_neg_integer) ::
+              {:ok, boolean} | {:error, term}
+      def await_value(%Session{} = session, %Element{} = element, target, timeout_ms \\ 5_000) do
+        call_on_element(
+          session,
+          element,
+          unquote(@dispatch_fn),
+          [[["await_element_match", "value", target, timeout_ms]]],
+          await_promise: true
+        )
+      end
+
+      @doc """
+      Wait until the element's textContent contains `text`, or
+      `timeout_ms` elapses. Returns `{:ok, true}` on match,
+      `{:ok, false}` on timeout. One round-trip vs Elixir-side polling
+      of Element.text.
+      """
+      @spec await_text(Session.t(), Element.t(), String.t(), non_neg_integer) ::
+              {:ok, boolean} | {:error, term}
+      def await_text(%Session{} = session, %Element{} = element, text, timeout_ms \\ 5_000)
+          when is_binary(text) do
+        call_on_element(
+          session,
+          element,
+          unquote(@dispatch_fn),
+          [[["await_element_match", "text_contains", text, timeout_ms]]],
+          await_promise: true
+        )
+      end
+
       # ----- Page introspection (shared) -----
 
       # Trivia accessors fall back to native expressions when window.__w
@@ -195,6 +232,10 @@ defmodule Wallabidi.Remote.OpsShared do
                      clear: 3,
                      send_keys_text: 3,
                      set_checked: 3,
+                     await_value: 3,
+                     await_value: 4,
+                     await_text: 3,
+                     await_text: 4,
                      current_url: 1,
                      current_path: 1,
                      page_title: 1,

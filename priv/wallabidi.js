@@ -268,6 +268,53 @@ W.focus = function(el) {
 // interaction. Returns a Promise resolving to the classification string.
 // Times out after timeoutMs (defaults 5000) — on timeout, classifies
 // anyway so the caller still gets a routable answer.
+// Wait for an element-scoped predicate to become true: el's value
+// (for inputs) or textContent matches the target. Resolves true on
+// match, false on timeout. Uses onPatchEnd + MutationObserver for
+// event-driven re-check — no polling.
+//
+// `kind` is 'value' (compares el.value strictly) or 'text_contains'
+// (compares el.textContent.indexOf(target) !== -1).
+W.awaitElementMatch = function(el, kind, target, timeoutMs) {
+  function matches() {
+    if (!el || !el.isConnected) return false;
+    if (kind === 'value') return el.value === target;
+    if (kind === 'text_contains') {
+      var t = el.innerText || el.textContent || '';
+      return t.indexOf(target) !== -1;
+    }
+    return false;
+  }
+
+  if (matches()) return Promise.resolve(true);
+
+  return new Promise(function(resolve) {
+    var done = false;
+    function cleanup() {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      observer.disconnect();
+      restorePatchEnd();
+    }
+    function maybeResolve(v) { cleanup(); resolve(v); }
+
+    var timer = setTimeout(function() { maybeResolve(false); }, timeoutMs || 5000);
+    var restorePatchEnd = wrapPatchEnd(function() {
+      if (matches()) maybeResolve(true);
+    });
+    var observer = new MutationObserver(function() {
+      requestAnimationFrame(function() {
+        if (matches()) maybeResolve(true);
+      });
+    });
+    observer.observe(document.body, {
+      childList: true, subtree: true,
+      attributes: true, characterData: true
+    });
+  });
+};
+
 // Pipelined set_checked: read current selected state, click only if it
 // differs from the target value. Saves one round-trip vs the
 // selected? + click two-step. Returns null on no-op, true on click.
@@ -679,6 +726,8 @@ W.run = function(ops, target) {
           value = W.fillIn(target, op[1], op[2]); break;
         case 'set_checked':
           value = W.setChecked(target, op[1]); break;
+        case 'await_element_match':
+          value = W.awaitElementMatch(target, op[1], op[2], op[3]); break;
 
         // --- Document ops — global. ---
         case 'prepare_patch':       value = W.preparePatch(); break;
@@ -705,6 +754,18 @@ W.run = function(ops, target) {
       els = [];
       break;
     }
+  }
+
+  // If the final op produced a Promise (e.g. await_element_match,
+  // await_ready_classify_and_click), unwrap it so the caller's
+  // awaitPromise:true sees the resolved value rather than the Promise
+  // wrapper. Only the LAST op may be async; W.run doesn't sequence
+  // async ops mid-pipeline.
+  if (value && typeof value.then === 'function') {
+    return value.then(function(v) {
+      if (stateful) return {els: els, meta: meta, error: error, value: v};
+      return v;
+    });
   }
 
   if (stateful) return {els: els, meta: meta, error: error, value: value};
