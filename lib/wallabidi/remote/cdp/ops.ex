@@ -34,7 +34,7 @@ defmodule Wallabidi.Remote.CDP.Ops do
 
   def new, do: %__MODULE__{}
 
-  def new(%{bidi_shared_id: parent_id}) when not is_nil(parent_id) do
+  def new(%{handle: parent_id}) when not is_nil(parent_id) do
     %__MODULE__{parent_id: parent_id}
   end
 

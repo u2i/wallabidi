@@ -564,7 +564,7 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
   @impl true
   def set_window_position(_, _, _), do: {:ok, nil}
   @impl true
-  def focus_frame(%Session{} = session, %Element{bidi_shared_id: object_id})
+  def focus_frame(%Session{} = session, %Element{handle: object_id})
       when is_binary(object_id) do
     # Resolve the iframe element's frameId via DOM.describeNode, then
     # ask V2.Session to push the frame's executionContextId so all

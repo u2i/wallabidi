@@ -2,7 +2,7 @@ defmodule Wallabidi.Integration.Element.LazyElementTest do
   # Phase 1 of the lazy-ref refactor: prove the opcode-only dispatch
   # path works end-to-end before flipping find/2 over.
   #
-  # Constructs an Element by hand whose bidi_shared_id is `{:lazy,
+  # Constructs an Element by hand whose handle is `{:lazy,
   # query_ops, index}` rather than a V8 objectId. The CDP/BiDi clients
   # detect this shape and dispatch via Runtime.evaluate /
   # script.evaluate, splicing [query_ops, ["target", index]] in front of
@@ -54,7 +54,7 @@ defmodule Wallabidi.Integration.Element.LazyElementTest do
 
   defp lazy_el(%{driver: driver, session_url: url} = parent, query_ops, index) do
     %Element{
-      bidi_shared_id: {:lazy, query_ops, index, nil},
+      handle: {:lazy, query_ops, index, nil},
       parent: parent,
       driver: driver,
       url: url,

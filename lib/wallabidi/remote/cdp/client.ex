@@ -175,7 +175,7 @@ defmodule Wallabidi.Remote.CDP.Client do
 
   def call_on_element(
         %Session{} = session,
-        %Element{bidi_shared_id: {:lazy, query_ops, index, parent_id}},
+        %Element{handle: {:lazy, query_ops, index, parent_id}},
         fn_decl,
         args,
         opts
@@ -240,7 +240,7 @@ defmodule Wallabidi.Remote.CDP.Client do
 
   def call_on_element(
         %Session{} = session,
-        %Element{bidi_shared_id: object_id},
+        %Element{handle: object_id},
         fn_decl,
         args,
         opts
@@ -333,12 +333,12 @@ defmodule Wallabidi.Remote.CDP.Client do
   # Convert a lazy element to one carrying a real V8 objectId. Re-runs
   # the find pipeline eagerly. Eager elements pass through unchanged.
   @spec materialize(Session.t(), Element.t()) :: {:ok, Element.t()} | {:error, term}
-  def materialize(_session, %Element{bidi_shared_id: id} = element) when is_binary(id),
+  def materialize(_session, %Element{handle: id} = element) when is_binary(id),
     do: {:ok, element}
 
-  def materialize(session, %Element{bidi_shared_id: {:lazy, ops, index, parent_id}} = element) do
+  def materialize(session, %Element{handle: {:lazy, ops, index, parent_id}} = element) do
     case fetch_lazy_ref(session, ops, index, parent_id) do
-      {:ok, object_id} -> {:ok, %{element | bidi_shared_id: object_id}}
+      {:ok, object_id} -> {:ok, %{element | handle: object_id}}
       {:error, _} = err -> err
     end
   end
@@ -384,7 +384,7 @@ defmodule Wallabidi.Remote.CDP.Client do
     call_on_element(session, element, OpsShared.dispatch_fn(), [[["is_file_input"]]])
   end
 
-  defp set_file_input(%Session{} = session, %Element{bidi_shared_id: object_id} = element, value) do
+  defp set_file_input(%Session{} = session, %Element{handle: object_id} = element, value) do
     raw_paths =
       case value do
         list when is_list(list) -> list
@@ -898,7 +898,7 @@ defmodule Wallabidi.Remote.CDP.Client do
   for the matched elements via `Runtime.getProperties` against the
   stored `window.__w.queries[id].elements` array.
 
-  Returns `{:ok, [%Wallabidi.Element{}]}` with real `bidi_shared_id`
+  Returns `{:ok, [%Wallabidi.Element{}]}` with real `handle`
   fields populated.
   """
   @spec find_elements(Session.t() | Element.t(), Wallabidi.Query.t(), keyword) ::
@@ -909,7 +909,7 @@ defmodule Wallabidi.Remote.CDP.Client do
 
   @doc """
   Like `find_elements/3` but skips the ref-fetch round-trip: each
-  returned `Element` carries `bidi_shared_id: {:lazy, ops, index}`
+  returned `Element` carries `handle: {:lazy, ops, index}`
   instead of a V8 objectId. The element op's interpreter
   (`call_on_element/5`) recognizes the lazy form and re-runs the
   query inside `W.run` to reach the element on each call.
@@ -998,7 +998,7 @@ defmodule Wallabidi.Remote.CDP.Client do
 
     Enum.map(0..(count - 1), fn idx ->
       %Element{
-        bidi_shared_id: {:lazy, ops, idx, parent_id},
+        handle: {:lazy, ops, idx, parent_id},
         parent: session,
         driver: session.driver,
         url: session.session_url,
@@ -1007,7 +1007,7 @@ defmodule Wallabidi.Remote.CDP.Client do
     end)
   end
 
-  defp parent_object_id(%Element{bidi_shared_id: id}) when is_binary(id), do: id
+  defp parent_object_id(%Element{handle: id}) when is_binary(id), do: id
   defp parent_object_id(_), do: nil
 
   defp final_sync_exec(%Session{} = session, ops_json, parent_id) do
@@ -1052,7 +1052,7 @@ defmodule Wallabidi.Remote.CDP.Client do
         Enum.map(ids, fn object_id ->
           %Element{
             id: object_id,
-            bidi_shared_id: object_id,
+            handle: object_id,
             parent: session,
             driver: session.driver,
             url: session.session_url
@@ -1091,7 +1091,7 @@ defmodule Wallabidi.Remote.CDP.Client do
         Enum.map(ids, fn object_id ->
           %Element{
             id: object_id,
-            bidi_shared_id: object_id,
+            handle: object_id,
             parent: session,
             driver: session.driver,
             url: session.session_url

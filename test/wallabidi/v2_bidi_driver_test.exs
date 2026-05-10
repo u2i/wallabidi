@@ -53,8 +53,8 @@ defmodule Wallabidi.V2BiDiDriverTest do
 
       query = Wallabidi.Query.css(".item", count: 2)
       [e1, e2] = Browser.all(session, query)
-      assert is_binary(e1.bidi_shared_id)
-      assert is_binary(e2.bidi_shared_id)
+      assert is_binary(e1.handle)
+      assert is_binary(e2.handle)
     after
       Wallabidi.end_session(session)
     end

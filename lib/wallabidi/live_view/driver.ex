@@ -173,7 +173,7 @@ defmodule Wallabidi.LiveView.Driver do
           driver: __MODULE__,
           url: "",
           session_url: "",
-          bidi_shared_id: {:lv_element, sel, idx, el_html}
+          handle: {:lv_element, sel, idx, el_html}
         }
       end)
 
@@ -776,7 +776,7 @@ defmodule Wallabidi.LiveView.Driver do
   def displayed(%Element{} = _element), do: {:ok, true}
 
   @impl true
-  def selected(%Element{bidi_shared_id: {:lv_element, _, _, _}} = element) do
+  def selected(%Element{handle: {:lv_element, _, _, _}} = element) do
     # Re-read from current page state to get updated checked/selected
     el_html = element_html(element)
     el_doc = parse_html(el_html)
@@ -939,9 +939,9 @@ defmodule Wallabidi.LiveView.Driver do
   defp root_session(%Session{} = s), do: s
   defp root_session(%Element{parent: p}), do: root_session(p)
 
-  defp element_selector(%Element{bidi_shared_id: {:lv_element, sel, _, _}}), do: sel
+  defp element_selector(%Element{handle: {:lv_element, sel, _, _}}), do: sel
 
-  defp element_html(%Element{bidi_shared_id: {:lv_element, _, _, html}}), do: html
+  defp element_html(%Element{handle: {:lv_element, _, _, html}}), do: html
 
   defp inner_html(html) do
     # Strip the outermost tag to get innerHTML

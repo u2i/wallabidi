@@ -75,9 +75,9 @@ defmodule Wallabidi.V2.BiDiClientTest do
 
       query = Wallabidi.Query.css(".x", count: 2)
       assert {:ok, [e1, e2]} = BiDiClient.find_elements(session, query)
-      assert is_binary(e1.bidi_shared_id)
-      assert is_binary(e2.bidi_shared_id)
-      assert e1.bidi_shared_id != e2.bidi_shared_id
+      assert is_binary(e1.handle)
+      assert is_binary(e2.handle)
+      assert e1.handle != e2.handle
     end
 
     test "no matches returns ok+empty after timeout", %{base_url: base_url} do

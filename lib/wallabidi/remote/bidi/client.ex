@@ -349,7 +349,7 @@ defmodule Wallabidi.Remote.BiDi.Client do
 
   defp find_matching_child(_session, _element, []), do: {:error, :no_iframe_context}
 
-  defp find_matching_child(session, %Element{bidi_shared_id: sid} = element, [child | rest]) do
+  defp find_matching_child(session, %Element{handle: sid} = element, [child | rest]) do
     child_ctx = child["context"]
 
     # Run a tiny script in the child context that returns its own
@@ -396,7 +396,7 @@ defmodule Wallabidi.Remote.BiDi.Client do
   end
 
   defp iframe_src(%Session{} = session, shared_id) do
-    parent = %Element{bidi_shared_id: shared_id}
+    parent = %Element{handle: shared_id}
 
     call_on_element(
       session,
@@ -548,7 +548,7 @@ defmodule Wallabidi.Remote.BiDi.Client do
 
   def call_on_element(
         %Session{} = session,
-        %Element{bidi_shared_id: {:lazy, query_ops, index, parent_id}},
+        %Element{handle: {:lazy, query_ops, index, parent_id}},
         fn_decl,
         args,
         opts
@@ -610,7 +610,7 @@ defmodule Wallabidi.Remote.BiDi.Client do
 
   def call_on_element(
         %Session{} = session,
-        %Element{bidi_shared_id: shared_id},
+        %Element{handle: shared_id},
         fn_decl,
         args,
         opts
@@ -807,10 +807,10 @@ defmodule Wallabidi.Remote.BiDi.Client do
 
   @doc false
   @spec materialize(Session.t(), Element.t()) :: {:ok, Element.t()} | {:error, term}
-  def materialize(_session, %Element{bidi_shared_id: id} = element) when is_binary(id),
+  def materialize(_session, %Element{handle: id} = element) when is_binary(id),
     do: {:ok, element}
 
-  def materialize(session, %Element{bidi_shared_id: {:lazy, ops, index, parent_id}} = element) do
+  def materialize(session, %Element{handle: {:lazy, ops, index, parent_id}} = element) do
     ops_json = Jason.encode!(ops)
 
     fn_decl =
@@ -835,7 +835,7 @@ defmodule Wallabidi.Remote.BiDi.Client do
 
     case Protocol.cdp_send(session, "script.callFunction", params, []) do
       {:ok, %{"type" => "success", "result" => %{"sharedId" => sid}}} when is_binary(sid) ->
-        {:ok, %{element | bidi_shared_id: sid}}
+        {:ok, %{element | handle: sid}}
 
       _ ->
         {:error, :stale_reference}
@@ -921,19 +921,19 @@ defmodule Wallabidi.Remote.BiDi.Client do
 
   @doc "Hover the mouse over an element (pointer move to its center)."
   @spec hover(Element.t()) :: {:ok, nil} | {:error, term}
-  def hover(%Element{bidi_shared_id: sid} = element) when is_binary(sid) do
+  def hover(%Element{handle: sid} = element) when is_binary(sid) do
     perform(element, Commands.pointer_move_actions(sid))
   end
 
-  def hover(%Element{}), do: {:error, :no_bidi_shared_id}
+  def hover(%Element{}), do: {:error, :no_handle}
 
   @doc "Synthesize a tap at the element's center via touch input source."
   @spec tap(Element.t()) :: {:ok, nil} | {:error, term}
-  def tap(%Element{bidi_shared_id: sid} = element) when is_binary(sid) do
+  def tap(%Element{handle: sid} = element) when is_binary(sid) do
     perform(element, Commands.touch_tap_element_actions(sid))
   end
 
-  def tap(%Element{}), do: {:error, :no_bidi_shared_id}
+  def tap(%Element{}), do: {:error, :no_handle}
 
   @doc """
   Press a touch point. With an element, lands at the element's
@@ -946,7 +946,7 @@ defmodule Wallabidi.Remote.BiDi.Client do
     perform(session, Commands.touch_down_actions(round(x), round(y)))
   end
 
-  def touch_down(%Session{}, %Element{bidi_shared_id: sid} = element, x_offset, y_offset)
+  def touch_down(%Session{}, %Element{handle: sid} = element, x_offset, y_offset)
       when is_binary(sid) do
     case element_location(element) do
       {:ok, {ex, ey}} ->
@@ -957,7 +957,7 @@ defmodule Wallabidi.Remote.BiDi.Client do
     end
   end
 
-  def touch_down(%Session{}, %Element{}, _, _), do: {:error, :no_bidi_shared_id}
+  def touch_down(%Session{}, %Element{}, _, _), do: {:error, :no_handle}
 
   @doc "Release any active touch points."
   @spec touch_up(Session.t() | Element.t()) :: {:ok, nil} | {:error, term}
@@ -1052,7 +1052,7 @@ defmodule Wallabidi.Remote.BiDi.Client do
 
   @doc """
   BiDi twin of CDPClient.find_elements_lazy/3 — returns Elements with
-  `bidi_shared_id: {:lazy, ops, index}` instead of fetching sharedIds.
+  `handle: {:lazy, ops, index}` instead of fetching sharedIds.
   """
   @spec find_elements_lazy(Session.t() | Element.t(), Wallabidi.Query.t(), keyword) ::
           {:ok, [Element.t()]} | {:error, term}
@@ -1102,12 +1102,12 @@ defmodule Wallabidi.Remote.BiDi.Client do
   end
 
   defp lazy_elements(parent, ops, count) do
-    parent_id = parent_shared_id(parent)
+    parent_id = parent_object_id(parent)
     session = Element.root_session(parent)
 
     Enum.map(0..(count - 1), fn idx ->
       %Element{
-        bidi_shared_id: {:lazy, ops, idx, parent_id},
+        handle: {:lazy, ops, idx, parent_id},
         parent: session,
         driver: session.driver,
         url: session.session_url,
@@ -1116,10 +1116,10 @@ defmodule Wallabidi.Remote.BiDi.Client do
     end)
   end
 
-  defp parent_shared_id(%Element{bidi_shared_id: id}) when is_binary(id), do: id
-  defp parent_shared_id(_), do: nil
+  defp parent_object_id(%Element{handle: id}) when is_binary(id), do: id
+  defp parent_object_id(_), do: nil
 
-  defp final_sync_exec(%Session{} = session, ops_json, parent_shared_id) do
+  defp final_sync_exec(%Session{} = session, ops_json, parent_object_id) do
     ctx = ctx(session)
     # Return BOTH elements and the error string. When window.__w is
     # available we use its full opcode interpreter (handles visibility,
@@ -1141,7 +1141,7 @@ defmodule Wallabidi.Remote.BiDi.Client do
     """
 
     fn_decl =
-      if parent_shared_id do
+      if parent_object_id do
         ~s'function() { if (window.__w) { var r = window.__w.run(#{ops_json}, this); return {els: r.els, error: r.error}; } #{fallback_body} return {els: r.els, error: r.error}; }'
       else
         ~s'() => { if (window.__w) { var r = window.__w.run(#{ops_json}, null); return {els: r.els, error: r.error}; } #{fallback_body} return {els: r.els, error: r.error}; }'
@@ -1155,8 +1155,8 @@ defmodule Wallabidi.Remote.BiDi.Client do
     }
 
     params =
-      if parent_shared_id do
-        Map.put(base_params, "this", %{"sharedId" => parent_shared_id})
+      if parent_object_id do
+        Map.put(base_params, "this", %{"sharedId" => parent_object_id})
       else
         base_params
       end
@@ -1194,7 +1194,7 @@ defmodule Wallabidi.Remote.BiDi.Client do
             %{"sharedId" => sid} when is_binary(sid) ->
               %Element{
                 id: sid,
-                bidi_shared_id: sid,
+                handle: sid,
                 parent: session,
                 driver: session.driver,
                 url: session.session_url
@@ -1232,14 +1232,14 @@ defmodule Wallabidi.Remote.BiDi.Client do
     )
   end
 
-  defp cast_register(%Session{} = session, parent_shared_id, register_js)
-       when is_binary(parent_shared_id) do
+  defp cast_register(%Session{} = session, parent_object_id, register_js)
+       when is_binary(parent_object_id) do
     Protocol.cdp_cast(
       session,
       "script.callFunction",
       %{
         "functionDeclaration" => "function() { #{register_js} }",
-        "this" => %{"sharedId" => parent_shared_id},
+        "this" => %{"sharedId" => parent_object_id},
         "awaitPromise" => false,
         "target" => %{"context" => ctx(session)}
       },
@@ -1277,7 +1277,7 @@ defmodule Wallabidi.Remote.BiDi.Client do
             %{"sharedId" => sid} when is_binary(sid) ->
               %Element{
                 id: sid,
-                bidi_shared_id: sid,
+                handle: sid,
                 parent: session,
                 driver: session.driver,
                 url: session.session_url

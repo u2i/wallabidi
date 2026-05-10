@@ -127,7 +127,7 @@ defmodule Wallabidi.Remote.BiDi.ResponseParser do
         url: parent.session_url <> "/element/#{backend_node_id}",
         parent: parent,
         driver: parent.driver,
-        bidi_shared_id: shared_id
+        handle: shared_id
       }
     end)
   end

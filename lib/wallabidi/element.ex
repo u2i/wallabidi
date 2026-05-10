@@ -27,7 +27,7 @@ defmodule Wallabidi.Element do
 
   alias Wallabidi.{Session, StaleReferenceError}
 
-  defstruct [:url, :session_url, :parent, :id, :driver, :bidi_shared_id, screenshots: []]
+  defstruct [:url, :session_url, :parent, :id, :driver, :handle, screenshots: []]
 
   @type value ::
           String.t()
@@ -42,7 +42,7 @@ defmodule Wallabidi.Element do
           id: String.t(),
           screenshots: list,
           driver: module,
-          bidi_shared_id: String.t() | nil
+          handle: String.t() | nil
         }
 
   @doc """

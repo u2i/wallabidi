@@ -147,10 +147,10 @@ defmodule Wallabidi.Remote.BiDi.ResponseParserTest do
       assert length(elements) == 2
 
       [el1, el2] = elements
-      assert el1.bidi_shared_id == "shared-1"
+      assert el1.handle == "shared-1"
       assert el1.id == "42"
       assert el1.driver == Wallabidi.Remote.Drivers.ChromeBiDi
-      assert el2.bidi_shared_id == "shared-2"
+      assert el2.handle == "shared-2"
     end
   end
 
