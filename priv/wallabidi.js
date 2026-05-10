@@ -598,6 +598,19 @@ W.run = function(ops, target) {
           stateful = true;
           break;
 
+        // --- Pipeline-to-element bridge ---
+        // Rebinds `target` to els[index]. Used by the lazy-element path:
+        // a [query, ..filters, target N, <element op>] pipeline runs the
+        // whole thing in V8 without the Elixir side ever holding a ref.
+        // Returns target's STALE sentinel if index is out of range.
+        case 'target':
+          if (els.length > op[1]) {
+            target = els[op[1]];
+          } else {
+            error = 'stale_reference';
+          }
+          break;
+
         // --- Element ops — read target. ---
         case 'text':           value = W.text(target); break;
         case 'attribute':      value = W.attribute(target, op[1]); break;
@@ -641,7 +654,7 @@ W.run = function(ops, target) {
     }
   }
 
-  if (stateful) return {els: els, meta: meta, error: error};
+  if (stateful) return {els: els, meta: meta, error: error, value: value};
   return value;
 };
 

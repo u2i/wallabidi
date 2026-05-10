@@ -171,12 +171,62 @@ defmodule Wallabidi.Remote.CDP.Client do
   """
   @spec call_on_element(Session.t(), Element.t(), String.t(), [term], keyword) ::
           {:ok, term} | {:error, term}
+  def call_on_element(session, element, fn_decl, args \\ [], opts \\ [])
+
+  def call_on_element(
+        %Session{} = session,
+        %Element{bidi_shared_id: {:lazy, query_ops, index}},
+        fn_decl,
+        args,
+        opts
+      )
+      when is_list(query_ops) and is_integer(index) and is_binary(fn_decl) and is_list(args) do
+    # Lazy element: no V8 ref to bind. Splice [query_ops, ["target", index]]
+    # in front of the caller's ops, run the whole pipeline at document
+    # scope, and read the resolved value out of the {els, meta, value}
+    # blob. The element op runs in V8 the same as it would under
+    # callFunctionOn — only the dispatch shape differs.
+    [caller_ops] = args
+    full_ops = query_ops ++ [["target", index] | caller_ops]
+    ops_json = Jason.encode!(full_ops)
+
+    base_params = %{
+      expression: "window.__w.run(#{ops_json}, null)",
+      returnByValue: true
+    }
+
+    params =
+      if Keyword.get(opts, :await_promise, false),
+        do: Map.put(base_params, :awaitPromise, true),
+        else: base_params
+
+    case cdp_send(session, "Runtime.evaluate", params) do
+      {:ok, %{"result" => %{"value" => %{"error" => "stale_reference"}}}} ->
+        {:error, :stale_reference}
+
+      {:ok, %{"result" => %{"value" => %{"value" => %{"__wallabidi_stale" => true}}}}} ->
+        {:error, :stale_reference}
+
+      {:ok, %{"result" => %{"value" => %{"value" => v}}}} ->
+        {:ok, v}
+
+      {:ok, %{"result" => %{"value" => v}}} when not is_map(v) ->
+        {:ok, v}
+
+      {:ok, %{"exceptionDetails" => details}} ->
+        {:error, {:js_exception, details}}
+
+      other ->
+        other
+    end
+  end
+
   def call_on_element(
         %Session{} = session,
         %Element{bidi_shared_id: object_id},
         fn_decl,
-        args \\ [],
-        opts \\ []
+        args,
+        opts
       )
       when is_binary(object_id) and is_binary(fn_decl) and is_list(args) do
     encoded_args = Enum.map(args, &%{value: &1})

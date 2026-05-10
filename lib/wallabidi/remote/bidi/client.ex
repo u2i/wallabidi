@@ -544,12 +544,62 @@ defmodule Wallabidi.Remote.BiDi.Client do
   """
   @spec call_on_element(Session.t(), Element.t(), String.t(), [term], keyword) ::
           {:ok, term} | {:error, term}
+  def call_on_element(session, element, fn_decl, args \\ [], opts \\ [])
+
+  def call_on_element(
+        %Session{} = session,
+        %Element{bidi_shared_id: {:lazy, query_ops, index}},
+        fn_decl,
+        args,
+        opts
+      )
+      when is_list(query_ops) and is_integer(index) and is_binary(fn_decl) do
+    # Lazy element on BiDi: see V2.CDPClient.call_on_element/5 lazy clause.
+    [caller_ops] = args
+    full_ops = query_ops ++ [["target", index] | caller_ops]
+    ops_json = Jason.encode!(full_ops)
+
+    params = %{
+      "expression" => "window.__w.run(#{ops_json}, null)",
+      "awaitPromise" => Keyword.get(opts, :await_promise, false),
+      "target" => %{"context" => ctx(session)}
+    }
+
+    case Protocol.cdp_send(session, "script.evaluate", params, []) do
+      {:ok, %{"type" => "exception", "exceptionDetails" => details}} ->
+        if stale_marker?(details),
+          do: {:error, :stale_reference},
+          else: {:error, {:js_exception, details}}
+
+      {:ok, result} ->
+        case decode_eval_result(result) do
+          {:ok, %{"error" => "stale_reference"}} ->
+            {:error, :stale_reference}
+
+          {:ok, %{"value" => %{"__wallabidi_stale" => true}}} ->
+            {:error, :stale_reference}
+
+          {:ok, %{"value" => v}} ->
+            {:ok, v}
+
+          {:ok, v} when not is_map(v) ->
+            {:ok, v}
+
+          other ->
+            other
+        end
+
+      error ->
+        error
+    end
+  end
+
   def call_on_element(
         %Session{} = session,
         %Element{bidi_shared_id: shared_id},
         fn_decl,
-        args \\ [],
-        opts \\ []
+        args,
+        opts
       )
       when is_binary(shared_id) and is_binary(fn_decl) do
     params = %{
