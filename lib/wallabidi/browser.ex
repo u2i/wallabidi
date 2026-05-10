@@ -755,7 +755,7 @@ defmodule Wallabidi.Browser do
     session = get_session(parent)
 
     cond do
-      session && session.driver == Wallabidi.LightpandaDriver &&
+      session && session.driver == Wallabidi.Remote.Drivers.LightpandaCDP &&
           not in_frame?(session) && not in_switched_window?(session) ->
         # V2Driver (Lightpanda): route through V2.CDPClient.click_aware
         # which captures pre_page_id, classifies, clicks, awaits
@@ -814,7 +814,7 @@ defmodule Wallabidi.Browser do
   # Pick the V2 client module that owns a given session's transport.
   # CDP and BiDi expose the same `click_aware/2` shape, so callers
   # can invoke `mod.click_aware(...)` uniformly.
-  defp v2_click_module(%Wallabidi.Session{driver: Wallabidi.BiDiDriver}),
+  defp v2_click_module(%Wallabidi.Session{driver: Wallabidi.Remote.Drivers.ChromeBiDi}),
     do: Wallabidi.Remote.BiDi.Client
 
   defp v2_click_module(_), do: Wallabidi.Remote.CDP.Client
@@ -1580,7 +1580,7 @@ defmodule Wallabidi.Browser do
 
     cond do
       session &&
-        session.driver in [Wallabidi.LightpandaDriver, Wallabidi.ChromeDriver, Wallabidi.BiDiDriver] &&
+        session.driver in [Wallabidi.Remote.Drivers.LightpandaCDP, Wallabidi.Remote.Drivers.ChromeCDP, Wallabidi.Remote.Drivers.ChromeBiDi] &&
           not in_frame?(session) && not in_switched_window?(session) ->
         # V2 transport uses the same ops pipeline shape (push-based finds
         # via Runtime.addBinding). Routes through V2.CDPClient.
@@ -1612,11 +1612,11 @@ defmodule Wallabidi.Browser do
 
       result =
         cond do
-          session.driver == Wallabidi.BiDiDriver ->
+          session.driver == Wallabidi.Remote.Drivers.ChromeBiDi ->
             # V2 BiDi: push-based bootstrap pipeline speaking BiDi.
             Wallabidi.Remote.BiDi.Client.find_elements(parent, validated, timeout: timeout)
 
-          session.driver in [Wallabidi.LightpandaDriver, Wallabidi.ChromeDriver] ->
+          session.driver in [Wallabidi.Remote.Drivers.LightpandaCDP, Wallabidi.Remote.Drivers.ChromeCDP] ->
             # V2 CDP: same push pipeline routed through V2.Session.
             Wallabidi.Remote.CDP.Client.find_elements(parent, validated, timeout: timeout)
         end

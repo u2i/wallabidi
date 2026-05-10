@@ -135,7 +135,7 @@ defmodule Wallabidi.Remote.BiDi.ResponseParserTest do
     test "creates Element structs from node tuples" do
       parent = %Wallabidi.Session{
         session_url: "http://localhost:9515/session/123",
-        driver: Wallabidi.BiDiDriver
+        driver: Wallabidi.Remote.Drivers.ChromeBiDi
       }
 
       nodes = [
@@ -149,7 +149,7 @@ defmodule Wallabidi.Remote.BiDi.ResponseParserTest do
       [el1, el2] = elements
       assert el1.bidi_shared_id == "shared-1"
       assert el1.id == "42"
-      assert el1.driver == Wallabidi.BiDiDriver
+      assert el1.driver == Wallabidi.Remote.Drivers.ChromeBiDi
       assert el2.bidi_shared_id == "shared-2"
     end
   end

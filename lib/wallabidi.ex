@@ -84,10 +84,10 @@ defmodule Wallabidi do
     # monitoring for crashed-test cleanup.
     case resolve_driver(opts) do
       :live_view -> Wallabidi.LiveViewDriver.start_session(opts)
-      d when d in [:lightpanda, :lightpanda_v2] -> Wallabidi.LightpandaDriver.start_session(opts)
-      d when d in [:chrome_cdp, :chrome_cdp_v2] -> Wallabidi.ChromeDriver.start_session(opts)
-      d when d in [:chrome, :chrome_bidi_v2] -> Wallabidi.BiDiDriver.start_session(opts)
-      _browser -> Wallabidi.ChromeDriver.start_session(opts)
+      d when d in [:lightpanda, :lightpanda_v2] -> Wallabidi.Remote.Drivers.LightpandaCDP.start_session(opts)
+      d when d in [:chrome_cdp, :chrome_cdp_v2] -> Wallabidi.Remote.Drivers.ChromeCDP.start_session(opts)
+      d when d in [:chrome, :chrome_bidi_v2] -> Wallabidi.Remote.Drivers.ChromeBiDi.start_session(opts)
+      _browser -> Wallabidi.Remote.Drivers.ChromeCDP.start_session(opts)
     end
   end
 
@@ -122,10 +122,10 @@ defmodule Wallabidi do
   def driver_module do
     case resolve_driver() do
       :live_view -> Wallabidi.LiveViewDriver
-      d when d in [:lightpanda, :lightpanda_v2] -> Wallabidi.LightpandaDriver
-      d when d in [:chrome_cdp, :chrome_cdp_v2] -> Wallabidi.ChromeDriver
-      d when d in [:chrome, :chrome_bidi_v2] -> Wallabidi.BiDiDriver
-      _ -> Wallabidi.ChromeDriver
+      d when d in [:lightpanda, :lightpanda_v2] -> Wallabidi.Remote.Drivers.LightpandaCDP
+      d when d in [:chrome_cdp, :chrome_cdp_v2] -> Wallabidi.Remote.Drivers.ChromeCDP
+      d when d in [:chrome, :chrome_bidi_v2] -> Wallabidi.Remote.Drivers.ChromeBiDi
+      _ -> Wallabidi.Remote.Drivers.ChromeCDP
     end
   end
 

@@ -1,4 +1,4 @@
-defmodule Wallabidi.Chrome.Logger do
+defmodule Wallabidi.Remote.Chrome.Logger do
   @moduledoc false
   @log_regex ~r/^(?<url>\S+) (?<line>\d+):(?<column>\d+) (?<message>.*)$/s
   @string_regex ~r/^"(?<string>.+)"$/

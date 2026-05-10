@@ -1,4 +1,4 @@
-defmodule Wallabidi.LightpandaDriver do
+defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
   @moduledoc false
 
   # Parallel V2-only driver implementing the existing

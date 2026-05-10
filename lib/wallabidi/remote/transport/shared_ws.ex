@@ -5,7 +5,7 @@ defmodule Wallabidi.Remote.Transport.SharedWS do
   # via CDP's flat-session protocol. Each `acquire/1`:
   #
   #   1. Fetches the shared ws_pid from a connection-holder Agent
-  #      (typically `Wallabidi.Chrome.SharedConnection`).
+  #      (typically `Wallabidi.Remote.Chrome.SharedConnection`).
   #   2. Creates a fresh BrowserContext on that shared WS.
   #   3. Creates a Target inside that BrowserContext (about:blank).
   #   4. Attaches to the target (flat session) → gets a sessionId

@@ -2,7 +2,7 @@ defmodule Wallabidi.Remote.Transport.BiDi.HandshakeTest do
   use ExUnit.Case, async: false
 
   alias Wallabidi.Remote.Transport.BiDi.Handshake
-  alias Wallabidi.Chrome.BidiServer
+  alias Wallabidi.Remote.ChromiumBiDi.Server, as: BidiServer
   alias Wallabidi.Remote.BiDi.WebSocketClient
 
   @moduletag :browser

@@ -1,7 +1,7 @@
-defmodule Wallabidi.ChromeDriver do
+defmodule Wallabidi.Remote.Drivers.ChromeCDP do
   @moduledoc false
 
-  # Chrome driver over the V2 transport stack. Mirrors `Wallabidi.LightpandaDriver`
+  # Chrome driver over the V2 transport stack. Mirrors `Wallabidi.Remote.Drivers.LightpandaCDP`
   # but launches/connects to a real Chrome browser and creates one
   # `BrowserContext` + `Target` per session, multiplexed over a single
   # shared `V2.WebSocket` (matching Playwright's "one browser, many
@@ -21,11 +21,11 @@ defmodule Wallabidi.ChromeDriver do
   @behaviour Wallabidi.Driver
 
   alias Wallabidi.{DependencyError, Element, Metadata, Session}
-  alias Wallabidi.Chrome.Server, as: ChromeServer
+  alias Wallabidi.Remote.Chrome.Server, as: ChromeServer
   alias Wallabidi.Remote.CDP.Client, as: CDPClient
   alias Wallabidi.Remote.{Transport, WebSocket}
   alias Wallabidi.Remote.Transport.Protocol
-  alias Wallabidi.Chrome.SharedConnection
+  alias Wallabidi.Remote.Chrome.SharedConnection
   import Wallabidi.Driver.LogChecker
 
   @base_user_agent "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 " <>
@@ -450,10 +450,10 @@ defmodule Wallabidi.ChromeDriver do
   def blank_page?(%Session{} = session), do: CDPClient.blank_page?(session)
 
   # LogChecker calls driver.parse_log/1 on each drained log entry —
-  # Wallabidi.Chrome.Logger raises Wallabidi.JSError on SEVERE entries
+  # Wallabidi.Remote.Chrome.Logger raises Wallabidi.JSError on SEVERE entries
   # and prints console output, which is exactly what JSErrorsTest
   # checks for.
-  defdelegate parse_log(log), to: Wallabidi.Chrome.Logger
+  defdelegate parse_log(log), to: Wallabidi.Remote.Chrome.Logger
 
   # ----- Dialog handling (uses Page.handleJavaScriptDialog) -----
   @impl true
