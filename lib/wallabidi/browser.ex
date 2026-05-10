@@ -758,15 +758,15 @@ defmodule Wallabidi.Browser do
     cond do
       session && session.driver == Wallabidi.Remote.Drivers.LightpandaCDP &&
           not in_frame?(session) && not in_switched_window?(session) ->
-        # V2Driver (Lightpanda): route through V2.CDPClient.click_aware
-        # which captures pre_page_id, classifies, clicks, awaits
-        # page_ready — same shape as do_post_click but in one native
-        # V2 call. Avoids the post-click `find` polling fallback that
-        # cost LP ~3s per submit-form click.
+        # Lightpanda: route through CDPClient.click_aware which
+        # captures pre_page_id, classifies, clicks, awaits page_ready
+        # — same shape as do_post_click but in one native call.
+        # Avoids the post-click `find` polling fallback that cost LP
+        # ~3s per submit-form click.
         #
-        # V2ChromeDriver and V2BiDiDriver are NOT routed here — they
-        # both have nav-timeout / patch-aware orchestration in their
-        # own click impl that needs Element.click + driver.click.
+        # The Chrome CDP and Chrome BiDi drivers are NOT routed here —
+        # they both have nav-timeout / patch-aware orchestration in
+        # their own click impl that needs Element.click + driver.click.
         v2_click_with_await(parent, query)
 
       true ->
@@ -776,8 +776,8 @@ defmodule Wallabidi.Browser do
     end
   end
 
-  # V2 click path: find the element, then route the click through
-  # V2.CDPClient.click_aware which:
+  # click path: find the element, then route the click through
+  # CDPClient.click_aware which:
   #   1. captures pre_page_id from the bootstrap
   #   2. classifies the click (patch / navigate / full_page / none)
   #   3. dispatches the click via JS
@@ -816,7 +816,7 @@ defmodule Wallabidi.Browser do
     end
   end
 
-  # Pick the V2 client module that owns a given session's transport.
+  # Pick the client module that owns a given session's transport.
   # CDP and BiDi expose the same `click_aware/2` shape, so callers
   # can invoke `mod.click_aware(...)` uniformly.
   defp v2_click_module(%Wallabidi.Session{driver: Wallabidi.Remote.Drivers.ChromeBiDi}),
@@ -1038,8 +1038,8 @@ defmodule Wallabidi.Browser do
   # one or two ops — e.g. Browser.text/2, attr/3. Subsequent ops on
   # lazy elements re-resolve via [query, target N] inside W.run.
   #
-  # Falls back to eager find on drivers that don't support the V2
-  # ops pipeline (LiveView driver), since the lazy path requires the
+  # Falls back to eager find on drivers that don't support the ops
+  # pipeline (LiveView driver), since the lazy path requires the
   # W.run interpreter on the page.
   defp find_lazy(parent, %Query{} = query) do
     session = get_session(parent)
@@ -1616,8 +1616,8 @@ defmodule Wallabidi.Browser do
       session &&
         session.driver in [Wallabidi.Remote.Drivers.LightpandaCDP, Wallabidi.Remote.Drivers.ChromeCDP, Wallabidi.Remote.Drivers.ChromeBiDi] &&
           not in_frame?(session) && not in_switched_window?(session) ->
-        # V2 transport uses the same ops pipeline shape (push-based finds
-        # via Runtime.addBinding). Routes through V2.CDPClient.
+        # transport uses the same ops pipeline shape (push-based finds
+        # via Runtime.addBinding). Routes through CDPClient.
         execute_query_pipeline(parent, driver, query, opts)
 
       session && not is_nil(session.protocol) &&
@@ -1651,7 +1651,7 @@ defmodule Wallabidi.Browser do
             Wallabidi.Remote.BiDi.Client.find_elements_lazy(parent, validated, timeout: timeout)
 
           session.driver == Wallabidi.Remote.Drivers.ChromeBiDi ->
-            # V2 BiDi: push-based bootstrap pipeline speaking BiDi.
+            # BiDi: push-based bootstrap pipeline speaking BiDi.
             Wallabidi.Remote.BiDi.Client.find_elements(parent, validated, timeout: timeout)
 
           session.driver in [Wallabidi.Remote.Drivers.LightpandaCDP, Wallabidi.Remote.Drivers.ChromeCDP] and
@@ -1659,7 +1659,7 @@ defmodule Wallabidi.Browser do
             Wallabidi.Remote.CDP.Client.find_elements_lazy(parent, validated, timeout: timeout)
 
           session.driver in [Wallabidi.Remote.Drivers.LightpandaCDP, Wallabidi.Remote.Drivers.ChromeCDP] ->
-            # V2 CDP: same push pipeline routed through V2.Session.
+            # CDP: same push pipeline routed through Session.
             Wallabidi.Remote.CDP.Client.find_elements(parent, validated, timeout: timeout)
         end
 
@@ -1798,49 +1798,6 @@ defmodule Wallabidi.Browser do
   end
 
   @doc """
-  Waits for the page to settle after an action.
-
-  Checks two signals before returning:
-
-  1. **Network idle** — no new HTTP requests have started for `idle_time` ms
-  2. **LiveView idle** — no `phx-*-loading` classes are present on any element
-
-  This means `settle` works for both traditional apps (waits for XHR/fetch)
-  and LiveView apps (waits for the server to process events and patch the DOM).
-  For pages without LiveView, the LiveView check is a no-op.
-
-  Works correctly with persistent connections (LiveView WebSockets, SSE,
-  long-polling) since those don't fire new request events.
-
-  For non-BiDi sessions this is a no-op and returns the session immediately.
-
-  ## Options
-
-    * `:timeout` - Maximum time in milliseconds to wait (default: 5000)
-    * `:idle_time` - How long in milliseconds with no activity before
-      the page is considered settled (default: 500)
-
-  ## Examples
-
-      # LiveView — wait for server roundtrip
-      session
-      |> click(Query.button("Save"))
-      |> settle()
-      |> assert_has(Query.css(".flash-info", text: "Saved!"))
-
-      # Traditional — wait for AJAX
-      session
-      |> click(Query.button("Load Data"))
-      |> settle()
-      |> assert_has(Query.css(".data-loaded"))
-  """
-  @spec settle(session, keyword()) :: session
-  def settle(%Session{} = session, _opts \\ []) do
-    # V1 BiDi-only feature; no-op under V2. Kept for API compatibility.
-    session
-  end
-
-  @doc """
   Waits for the next LiveView DOM patch.
 
   Installed automatically via JavaScript — no `app.js` changes needed.
@@ -1874,65 +1831,6 @@ defmodule Wallabidi.Browser do
 
     session
   end
-
-  @doc """
-  Registers a callback that is invoked for each browser console message.
-
-  The callback receives two arguments: the log level (e.g. `"log"`, `"warn"`,
-  `"error"`) and the message text.
-
-  For non-BiDi sessions this is a no-op and returns the session immediately.
-
-  ## Examples
-
-      session
-      |> on_console(fn level, message ->
-        IO.puts("[console.\#{level}] \#{message}")
-      end)
-      |> visit("/page")
-  """
-  @spec on_console(session, (String.t(), String.t() -> any())) :: session
-  def on_console(%Session{} = session, callback) when is_function(callback, 2) do
-    _ = callback
-    # V1 BiDi-only feature; no-op under V2. Kept for API compatibility.
-    session
-  end
-
-  @doc """
-  Intercepts network requests matching `url_pattern` and responds with a
-  custom response.
-
-  `response` may be a map with `:status`, `:headers`, and `:body` keys, or a
-  function that receives the request event and returns such a map.
-
-  Only supported for BiDi sessions. Raises `RuntimeError` for non-BiDi
-  sessions.
-
-  ## Examples
-
-      # Static response
-      session
-      |> intercept_request("/api/users", %{
-        status: 200,
-        headers: [%{name: "content-type", value: "application/json"}],
-        body: ~s({"users": []})
-      })
-
-      # Dynamic response
-      session
-      |> intercept_request("/api/*", fn _request ->
-        %{status: 200, headers: [], body: "mocked"}
-      end)
-  """
-  @spec intercept_request(session, String.t(), map() | (map() -> map())) :: session
-  def intercept_request(%Session{} = _session, _url_pattern, _response) do
-    # V1 BiDi-only feature. V2 BiDi doesn't have request interception
-    # implemented yet; restore when ported.
-    raise RuntimeError,
-          "intercept_request/3 is not currently supported. " <>
-            "Removed with the V1 BiDi driver retirement; needs re-implementation on V2."
-  end
-
 
   # Any session that has a protocol adapter can run JS → LiveView-aware.
   defp live_view_aware?(%Session{protocol: mod}) when not is_nil(mod), do: true

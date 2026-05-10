@@ -101,13 +101,6 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
       |> assert_has(Query.css("#result", text: "async result"))
     end
 
-    test "settle works for async chains", %{session: session, live_url: url} do
-      session
-      |> visit("#{url}/async")
-      |> click(Query.css("#load"))
-      |> settle()
-      |> assert_has(Query.css("#result", text: "async result"))
-    end
   end
 
   describe "text-aware await_selector" do

@@ -1,14 +1,14 @@
 defmodule Wallabidi.Remote.Transport.IsolatedProcess do
   @moduledoc false
 
-  # Transport: a fresh browser process AND a fresh V2.WebSocket per
+  # Transport: a fresh browser process AND a fresh WebSocket per
   # session. The slowest model — every session pays a binary-startup
   # cost — but cleanest isolation: each session gets a private
   # browser, no contention with peers.
   #
   # Suitable when the browser doesn't multiplex CDP sessions well over
   # one connection (or has bugs that surface under concurrent load).
-  # Currently the default Lightpanda V2 transport.
+  # Currently the default Lightpanda transport.
 
   @behaviour Wallabidi.Remote.Transport
 

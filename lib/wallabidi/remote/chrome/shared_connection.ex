@@ -1,7 +1,7 @@
 defmodule Wallabidi.Remote.Chrome.SharedConnection do
   @moduledoc false
 
-  # Single shared `V2.WebSocket` connection to Chrome's browser-level
+  # Single shared `WebSocket` connection to Chrome's browser-level
   # debugging endpoint. All `V2ChromeDriver` sessions multiplex over
   # this one WS via CDP flat-session protocol.
   #
@@ -18,7 +18,7 @@ defmodule Wallabidi.Remote.Chrome.SharedConnection do
   end
 
   @doc """
-  Returns the shared V2.WebSocket pid, lazily connecting on first call.
+  Returns the shared WebSocket pid, lazily connecting on first call.
   Caller passes the driver module so we can resolve the local server
   name when no remote URL is configured.
   """
@@ -63,7 +63,7 @@ defmodule Wallabidi.Remote.Chrome.SharedConnection do
   end
 
   # Same /json/version discovery logic as ChromeCDP.SharedConnection.
-  # Kept here verbatim to avoid coupling V2 to the BiDi-era module.
+  # Kept here verbatim to avoid coupling to the BiDi-era module.
   defp discover_ws_url(endpoint) do
     endpoint = String.trim_trailing(endpoint, "/")
 

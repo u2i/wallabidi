@@ -3,14 +3,14 @@ defmodule Wallabidi.Remote.Transport do
 
   # Strategy for the "where does a session get its WebSocket" question.
   #
-  # The V2 stack already has a shape for talking to a CDP-speaking
-  # browser: a `V2.WebSocket` pid + a routing key (the CDP `sessionId`,
+  # The stack already has a shape for talking to a CDP-speaking
+  # browser: a `WebSocket` pid + a routing key (the CDP `sessionId`,
   # used for flat-session multiplexing). The thing that varies across
   # browsers is *how a session acquires that pid* at start_session time.
   #
   # Three concrete shapes today:
   #
-  #   * `SharedWS`        — Chrome CDP. One V2.WebSocket per BEAM, held
+  #   * `SharedWS`        — Chrome CDP. One WebSocket per BEAM, held
   #                         in an Agent. Each session gets a fresh
   #                         BrowserContext + Target + sessionId on the
   #                         shared WS.
@@ -21,7 +21,7 @@ defmodule Wallabidi.Remote.Transport do
   #                         Each WS lives inside a `PerSession.Actor`
   #                         GenServer.
   #
-  #   * `IsolatedProcess` — One browser process AND one V2.WebSocket
+  #   * `IsolatedProcess` — One browser process AND one WebSocket
   #                         per session. Slower but isolated. Used as
   #                         a fallback / for browsers we can't share.
   #
@@ -33,17 +33,17 @@ defmodule Wallabidi.Remote.Transport do
 
   @typedoc """
   What `acquire/1` returns. The driver builds a `Wallabidi.Session`
-  from these fields and hands `teardown_fun` to V2.Session as its
+  from these fields and hands `teardown_fun` to Session as its
   on-terminate callback.
 
-    * `:ws_pid`       — the V2.WebSocket the session sends through
+    * `:ws_pid`       — the WebSocket the session sends through
     * `:target_id`    — Chrome target id (CDP) for window-handle
                         bookkeeping; nil if N/A
     * `:session_id`   — the CDP flat-session sessionId (routing key);
                         nil if the transport doesn't multiplex
     * `:browser_context_id` — for SharedWS only; teardown
                         disposes this rather than closing the WS
-    * `:teardown_fun` — 1-arity called from V2.Session.terminate/2;
+    * `:teardown_fun` — 1-arity called from Session.terminate/2;
                         receives the session struct
     * `:capabilities` — opaque map merged into the session capabilities
   """
@@ -117,8 +117,8 @@ defmodule Wallabidi.Remote.Transport do
   # ----- Shared session bring-up -----
 
   @doc """
-  Builds the Session struct + hands it to V2.Session.start_link with
-  the supplied teardown_fun. Then runs the standard V2 init sequence
+  Builds the Session struct + hands it to Session.start_link with
+  the supplied teardown_fun. Then runs the standard init sequence
   (page lifecycle, bootstrap, frame tracking, optional metadata UA,
   optional window_size).
 
@@ -142,7 +142,7 @@ defmodule Wallabidi.Remote.Transport do
         {:ok, session}
 
       err ->
-        # Already-attempted teardown so the V2.WebSocket / context isn't
+        # Already-attempted teardown so the WebSocket / context isn't
         # leaked when the Session GenServer fails to come up.
         try do
           teardown.(session_struct)

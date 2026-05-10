@@ -1,7 +1,7 @@
 defmodule Wallabidi.Remote.BiDi.Client do
   @moduledoc false
 
-  # BiDi-flavored counterpart to V2.CDPClient.
+  # BiDi-flavored counterpart to CDPClient.
   #
   # Same operation surface (visit, find_elements, click, evaluate,
   # text, attribute, ...) but every wire call goes out as a
@@ -15,8 +15,8 @@ defmodule Wallabidi.Remote.BiDi.Client do
   # public surface, BiDi-flavored. Things implemented op-by-op as
   # tests and integration coverage drive them. The orchestration
   # primitives (await_page_load, register_find/await_find_result,
-  # bootstrap channel) are reused from V2.Transport.Protocol — they
-  # were verified end-to-end in V2.Transport.BiDi phases A/B/C.
+  # bootstrap channel) are reused from Transport.Protocol — they
+  # were verified end-to-end in Transport.BiDi phases A/B/C.
 
   alias Wallabidi.Remote.BiDi.{Commands, ResponseParser, WebSocketClient}
   alias Wallabidi.Remote.Bootstrap
@@ -168,7 +168,7 @@ defmodule Wallabidi.Remote.BiDi.Client do
   Run an asynchronous user script — the user's snippet is wrapped so
   the final `arguments[arguments.length - 1]` is a `__resolve`
   callback they invoke with the eventual value. Mirrors
-  V2.CDPClient.evaluate_async/3.
+  CDPClient.evaluate_async/3.
   """
   @spec evaluate_async(Session.t(), String.t(), list) :: {:ok, term} | {:error, term}
   def evaluate_async(%Session{} = session, expression, args)
@@ -220,7 +220,7 @@ defmodule Wallabidi.Remote.BiDi.Client do
 
   # WebDriver-style element reference — translate to a BiDi node handle
   # so `arguments[N]` is a live DOM element on the page side, not an
-  # opaque JSON object. Mirrors V2.CDPClient.encode_script_args's
+  # opaque JSON object. Mirrors CDPClient.encode_script_args's
   # element detection.
   defp encode_arg(%{@web_element_identifier => shared_id}) when is_binary(shared_id),
     do: %{"sharedId" => shared_id}
@@ -554,7 +554,7 @@ defmodule Wallabidi.Remote.BiDi.Client do
         opts
       )
       when is_list(query_ops) and is_integer(index) and is_binary(fn_decl) do
-    # Lazy element on BiDi: see V2.CDPClient.call_on_element/5 lazy clause.
+    # Lazy element on BiDi: see CDPClient.call_on_element/5 lazy clause.
     [caller_ops] = args
     full_ops = query_ops ++ [["target", index] | caller_ops]
     ops_json = Jason.encode!(full_ops)
@@ -659,7 +659,7 @@ defmodule Wallabidi.Remote.BiDi.Client do
   @doc """
   LV-aware click. Captures `pre_page_id` BEFORE the click, classifies
   the element to decide what to await, then issues the click and
-  blocks for the appropriate signal. Mirrors V2.CDPClient.click_aware
+  blocks for the appropriate signal. Mirrors CDPClient.click_aware
   shape — same primitive contract, BiDi underneath.
 
   Returns `{:ok, classification}` on success, `{:error, :timeout}`
@@ -677,7 +677,7 @@ defmodule Wallabidi.Remote.BiDi.Client do
   end
 
   # Click-classification → wait orchestration. Mirrors Browser.do_post_click
-  # for V2 BiDi: patch-classified clicks wait first for the patch promise,
+  # for BiDi: patch-classified clicks wait first for the patch promise,
   # fall through to await_ack on slow handle_event, then page_ready;
   # navigate-classified clicks await page_ready directly. "none" returns
   # immediately.
@@ -732,7 +732,7 @@ defmodule Wallabidi.Remote.BiDi.Client do
   @doc """
   Like `click_aware/3` but returns a status tag (`:ready` or
   `:timeout`) so callers can handle patch-classified timeouts
-  silently — same shape as V2.CDPClient.click_aware_with_classification.
+  silently — same shape as CDPClient.click_aware_with_classification.
   """
   @spec click_aware_with_classification(Session.t(), Element.t(), keyword) ::
           {:ok, String.t(), :ready | :timeout} | {:error, term}

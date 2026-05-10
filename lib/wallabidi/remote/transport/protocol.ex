@@ -3,11 +3,10 @@ defmodule Wallabidi.Remote.Transport.Protocol do
 
   # Documents the message protocol every transport-actor honors, and
   # provides thin client helpers that wrap the corresponding
-  # `GenServer.call`/`GenServer.cast`. Callers (today: V2.CDPClient,
-  # Browser through V2 dispatch) go through this module instead of
-  # talking to V2.Session directly — that lets us swap the actor
+  # `GenServer.call`/`GenServer.cast`. Callers (today: CDPClient,
+  # Browser through dispatch) go through this module instead of
+  # talking to Session directly — that lets us swap the actor
   # underneath each session for a different transport implementation
-  # (e.g. PerSession, Multiplexed.Slot) without touching call sites.
   #
   # ## Why a "protocol" and not a `@behaviour`
   #
@@ -69,8 +68,8 @@ defmodule Wallabidi.Remote.Transport.Protocol do
   # Lifecycle:
   #
   #   * The actor is started by a transport-specific function (e.g.
-  #     `V2.Transport.PerSession.acquire/1`,
-  #     `V2.Transport.Multiplexed.acquire/1`).
+  #     `Transport.PerSession.acquire/1`,
+  #     `Transport.IsolatedProcess.acquire/1`).
   #   * The actor monitors its owner; if the owner dies, it stops
   #     itself and runs its teardown_fun.
   #   * `stop/1` triggers an orderly shutdown.

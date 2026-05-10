@@ -1,7 +1,7 @@
 defmodule Wallabidi.Remote.Transport.SharedWS do
   @moduledoc false
 
-  # Transport: ONE V2.WebSocket per BEAM, shared across all sessions
+  # Transport: ONE WebSocket per BEAM, shared across all sessions
   # via CDP's flat-session protocol. Each `acquire/1`:
   #
   #   1. Fetches the shared ws_pid from a connection-holder Agent

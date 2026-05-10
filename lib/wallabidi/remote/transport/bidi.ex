@@ -1,7 +1,7 @@
 defmodule Wallabidi.Remote.Transport.BiDi do
   @moduledoc false
 
-  # V2 transport for chromium-bidi: one POST → one WS → one Chrome.
+  # transport for chromium-bidi: one POST → one WS → one Chrome.
   #
   # The chromium-bidi server (priv/bidi-server/run.mjs) exposes a
   # WebDriver-style HTTP `POST /session` that pre-binds a fresh

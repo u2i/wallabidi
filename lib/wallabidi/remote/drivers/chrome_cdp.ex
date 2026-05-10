@@ -1,19 +1,19 @@
 defmodule Wallabidi.Remote.Drivers.ChromeCDP do
   @moduledoc false
 
-  # Chrome driver over the V2 transport stack. Mirrors `Wallabidi.Remote.Drivers.LightpandaCDP`
+  # Chrome driver over the transport stack. Mirrors `Wallabidi.Remote.Drivers.LightpandaCDP`
   # but launches/connects to a real Chrome browser and creates one
   # `BrowserContext` + `Target` per session, multiplexed over a single
-  # shared `V2.WebSocket` (matching Playwright's "one browser, many
+  # shared `WebSocket` (matching Playwright's "one browser, many
   # contexts" model).
   #
   # Differences from V2Driver:
   #
-  #   * One shared V2.WebSocket per BEAM (held by the supervisor's
+  #   * One shared WebSocket per BEAM (held by the supervisor's
   #     SharedConnection child), reused across every session.
   #   * Per-session `Target.createBrowserContext` + `Target.createTarget`
   #     + `Target.attachToTarget`, returning a `sessionId` that's used
-  #     as the V2 routing key (CDP flat-session protocol).
+  #     as the routing key (CDP flat-session protocol).
   #   * Teardown disposes the BrowserContext rather than closing the WS.
 
   use Supervisor
@@ -91,8 +91,8 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
              Transport.start_session_from(acquired, session_struct, owner: caller) do
         # Forward console + exception events to the test caller's
         # mailbox so LogChecker.check_logs! can drain them after each
-        # operation. Subscribe at the V2.WebSocket layer so the test
-        # process is the direct subscriber (V2.Session normally
+        # operation. Subscribe at the WebSocket layer so the test
+        # process is the direct subscriber (Session normally
         # consumes events itself, but LogChecker reads from the
         # caller's mailbox).
         _ =
@@ -189,7 +189,7 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
     # Element-scoped screenshot — fall back to a full-page capture on
     # the element's session. Cropping to the element's bounding rect
     # would require Page.captureScreenshot's `clip` option threaded
-    # through V2.CDPClient; not strictly required for the tests we
+    # through CDPClient; not strictly required for the tests we
     # gate on today.
     take_screenshot(Element.root_session(element))
   end
@@ -231,7 +231,7 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
           # Legacy patch-classified timeout silently falls through
           # (caller's assert_has retries do the work) — but only AFTER
           # awaiting the LV server's ack of the click event, which
-          # closes the slow-handle_event race. V2 doesn't have an LV
+          # closes the slow-handle_event race. doesn't have an LV
           # ack channel, but we can do the next-best thing: poll
           # `current_url` for a transition, plus another page_ready
           # window of equal length. Closes SlowDestMount.
@@ -362,7 +362,7 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
     end
   end
 
-  # ----- Mouse/touch/geometry (delegated to V2.CDPClient helpers) -----
+  # ----- Mouse/touch/geometry (delegated to CDPClient helpers) -----
 
   def hover(%Element{} = element), do: CDPClient.hover(element)
 
@@ -483,7 +483,7 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
     session = Element.root_session(parent)
     ws_pid = session.bidi_pid
 
-    # Switch the V2.Session's CDP target by re-attaching to the new
+    # Switch the Session's CDP target by re-attaching to the new
     # one (gets a new sessionId). Update session.browsing_context so
     # subsequent cdp_send opts route there.
     case WebSocket.send_sync(ws_pid, "Target.attachToTarget", %{
@@ -567,7 +567,7 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
   def focus_frame(%Session{} = session, %Element{handle: object_id})
       when is_binary(object_id) do
     # Resolve the iframe element's frameId via DOM.describeNode, then
-    # ask V2.Session to push the frame's executionContextId so all
+    # ask Session to push the frame's executionContextId so all
     # subsequent script evals target it.
     case CDPClient.cdp_send(session, "DOM.describeNode", %{objectId: object_id}) do
       {:ok, %{"node" => %{"frameId" => frame_id}}} when is_binary(frame_id) ->

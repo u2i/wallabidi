@@ -1,7 +1,7 @@
 defmodule Wallabidi.Remote.OpsShared do
   @moduledoc false
 
-  # Shared op bodies between V2.CDPClient and V2.BiDiClient.
+  # Shared op bodies between CDPClient and BiDiClient.
   #
   # Each function here is a JS-on-element shim that already has an
   # identical implementation in both clients today. The shared

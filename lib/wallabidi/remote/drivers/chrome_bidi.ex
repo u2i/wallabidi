@@ -1,7 +1,7 @@
 defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
   @moduledoc false
 
-  # V2 driver speaking WebDriver-BiDi against a chromium-bidi server.
+  # driver speaking WebDriver-BiDi against a chromium-bidi server.
   #
   # ## Topology
   #
@@ -15,9 +15,9 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
   #
   # `start_session/1` delegates the bring-up dance (POST + WS upgrade
   # + `browsingContext.create` + bootstrap preload install) to
-  # `V2.Transport.BiDi.start_session/1`. Driver callbacks are thin
-  # wrappers around `V2.BiDiClient` — same surface as `V2Driver`'s
-  # delegation to `V2.CDPClient`, just BiDi-flavored.
+  # `Transport.BiDi.start_session/1`. Driver callbacks are thin
+  # wrappers around `BiDiClient` — same surface as `V2Driver`'s
+  # delegation to `CDPClient`, just BiDi-flavored.
 
   use Supervisor
 
@@ -348,7 +348,7 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
 
   # LogChecker calls driver.parse_log/1 on each drained log entry.
   # Wallabidi.Remote.Chrome.Logger raises Wallabidi.JSError on SEVERE entries
-  # and prints console output — same shape both V2 BiDi and V2 Chrome
+  # and prints console output — same shape both BiDi and Chrome
   # CDP need.
   defdelegate parse_log(log), to: Wallabidi.Remote.Chrome.Logger
 
@@ -477,7 +477,7 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
         Process.put({:wallabidi_bidi_v2_frame_stack, session.id}, [current | stack])
         Process.put({:wallabidi_bidi_v2_frame, session.id}, child_ctx)
         # Browser.in_frame? checks for this proc-dict key to skip the
-        # V2 click_aware fast path (legacy behavior — frame-scoped
+        # click_aware fast path (legacy behavior — frame-scoped
         # clicks don't go through bootstrap).
         Process.put({:wallabidi_frame_context, session.id}, child_ctx)
         {:ok, nil}

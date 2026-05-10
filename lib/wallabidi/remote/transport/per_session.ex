@@ -2,9 +2,9 @@ defmodule Wallabidi.Remote.Transport.PerSession do
   @moduledoc false
 
   # Transport: ONE actor per session. The actor owns its own raw Mint
-  # WebSocket directly — no separate V2.WebSocket process, no
-  # V2.Session in front. Compared to the old PerSessionWS
-  # (V2.WebSocket + V2.Session linked together) this halves the
+  # WebSocket directly — no separate WebSocket process, no
+  # Session in front. Compared to the old PerSessionWS
+  # (WebSocket + Session linked together) this halves the
   # per-cdp-call hop count.
   #
   # All inbound WS frames AND all outbound caller calls land in ONE

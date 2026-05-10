@@ -3,12 +3,12 @@ defmodule Wallabidi.Remote.CDP.Client do
 
   # Thin façade over `Wallabidi.Remote.Transport.Session` providing CDP-shaped
   # operations (`Page.navigate`, `Runtime.evaluate`, etc.). Exists so
-  # callers (drivers, tests) can write `V2.CDPClient.evaluate(s, ...)`
+  # callers (drivers, tests) can write `CDPClient.evaluate(s, ...)`
   # without knowing about the Session GenServer or wire-id correlation.
   #
   # Each function:
   #   1. Constructs the CDP method + params
-  #   2. Calls `V2.Session.cdp_send/4`
+  #   2. Calls `Session.cdp_send/4`
   #   3. Returns `{:ok, result_map}` or `{:error, reason}`
   #
   # No retries, no waiters, no protocol-aware semantics — those are
@@ -43,7 +43,7 @@ defmodule Wallabidi.Remote.CDP.Client do
   end
 
   @doc false
-  # Helper: send a raw CDP method+params via V2.Session and return
+  # Helper: send a raw CDP method+params via Session and return
   # the unwrapped CDP result.
   def cdp_send(%Session{} = session, method, params) do
     Protocol.cdp_send(session, method, params, send_opts(session))
@@ -61,7 +61,7 @@ defmodule Wallabidi.Remote.CDP.Client do
 
   @doc """
   Enables CDP's Page domain for the session and subscribes to
-  `Page.lifecycleEvent`. After this returns, V2.Session is set up
+  `Page.lifecycleEvent`. After this returns, Session is set up
   to resolve `await_page_load/4` calls when matching events arrive.
 
   Idempotent — safe to call more than once.
@@ -89,7 +89,7 @@ defmodule Wallabidi.Remote.CDP.Client do
        runs the bootstrap IIFE in every new document. Defines
        `window.__w` (opcode interpreter, find machinery, LV patch hook).
 
-  After this, push-based element finding works: the V2 find path
+  After this, push-based element finding works: the find path
   registers a query in `window.__w.queries`, calls `W.check()`, and
   awaits a `Runtime.bindingCalled` event matching its query id.
 
@@ -264,7 +264,7 @@ defmodule Wallabidi.Remote.CDP.Client do
       {:ok, %{"result" => %{"value" => %{"__wallabidi_stale" => true}}}} ->
         # JS opted into the stale sentinel by returning a flag map
         # — translate to :stale_reference so callers don't all repeat
-        # the same pattern. Mirrors V2.BiDiClient.call_on_element.
+        # the same pattern. Mirrors BiDiClient.call_on_element.
         {:error, :stale_reference}
 
       {:ok, %{"result" => %{"value" => value}}} ->
@@ -680,7 +680,7 @@ defmodule Wallabidi.Remote.CDP.Client do
 
   @doc """
   Enables CDP's Page domain (already done by enable_page_lifecycle_events)
-  AND subscribes to Runtime execution-context events so V2.Session can
+  AND subscribes to Runtime execution-context events so Session can
   track the frameId → executionContextId mapping needed by
   focus_frame_by_id/2.
 
@@ -894,7 +894,7 @@ defmodule Wallabidi.Remote.CDP.Client do
   Uses the existing browser-side bootstrap (`window.__w`) and
   `Bootstrap.register_js/4` to push-register a query. When the
   bootstrap fires `__wallabidi(...)` with the matching query id,
-  V2.Session resolves the waiter; we then fetch real CDP `objectId`s
+  Session resolves the waiter; we then fetch real CDP `objectId`s
   for the matched elements via `Runtime.getProperties` against the
   stored `window.__w.queries[id].elements` array.
 
@@ -1546,8 +1546,8 @@ defmodule Wallabidi.Remote.CDP.Client do
 
     handler =
       spawn(fn ->
-        # Subscribe directly at the V2.WebSocket level so the event is
-        # routed straight to this handler — V2.Session normally
+        # Subscribe directly at the WebSocket level so the event is
+        # routed straight to this handler — Session normally
         # consumes events itself, but for one-shot dialog handling we
         # don't need its routing.
         ctx = session.browsing_context || :global

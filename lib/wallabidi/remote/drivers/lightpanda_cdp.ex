@@ -1,21 +1,13 @@
 defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
   @moduledoc false
 
-  # Parallel V2-only driver implementing the existing
-  # `Wallabidi.Driver` behaviour. Backs every callback with the V2
-  # transport stack: V2.WebSocket + V2.Session + V2.CDPClient.
+  # Lightpanda driver speaking CDP over the wallabidi transport stack
+  # (WebSocket + Session + CDPClient).
   #
-  # This is a stepping stone to migrating real drivers (Lightpanda,
-  # ChromeCDP) over. Not yet integrated with `Wallabidi.Browser`'s
-  # pipeline path — that path calls `Wallabidi.SessionProcess.*` and
-  # `Wallabidi.Remote.CDP.Client.execute_ops` directly, bypassing the Driver
-  # behaviour. Those couplings need their own surgery before any
-  # driver flips fully.
-  #
-  # Targets Lightpanda by default — `start_session/1` brings up a
-  # `Lightpanda.Server`, opens a `V2.WebSocket` to it, attaches a
-  # CDP target, and boots a `V2.Session`. Pass
-  # `:ws_url` in opts to point at a different CDP-speaking browser.
+  # `start_session/1` brings up a `Lightpanda.Server`, opens a
+  # `WebSocket` to it, attaches a CDP target, and boots a `Session`.
+  # Pass `:ws_url` in opts to point at a different CDP-speaking
+  # browser.
 
   use Supervisor
 
@@ -95,12 +87,12 @@ defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
     case pick_transport(opts) do
       {:per_session, ws_url} ->
         # Single-actor-per-session — actor IS the WebSocket. One hop
-        # per CDP call. See V2.Transport.PerSession.
+        # per CDP call. See Transport.PerSession.
         start_per_session(opts, ws_url)
 
       {transport_mod, transport_opts} ->
-        # Two-actor shape: separate V2.WebSocket (acquired by the
-        # transport) + V2.Session linked to it. SharedWS / IsolatedProcess.
+        # Two-actor shape: separate WebSocket (acquired by the
+        # transport) + Session linked to it. SharedWS / IsolatedProcess.
         start_legacy(opts, transport_mod, transport_opts)
     end
   end
@@ -116,7 +108,7 @@ defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
       capabilities: %{
         flat_session_id: true,
         # Lightpanda's JS engine doesn't ship a real document.evaluate
-        # — V2.CDPClient.visit injects wgxpath after each page load.
+        # — CDPClient.visit injects wgxpath after each page load.
         needs_xpath_polyfill: true
       }
     }
@@ -176,7 +168,7 @@ defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
   defp pick_transport(opts) do
     base_caps = %{
       # Lightpanda's JS engine doesn't ship a real document.evaluate
-      # — V2.CDPClient.visit injects wgxpath after each page load.
+      # — CDPClient.visit injects wgxpath after each page load.
       needs_xpath_polyfill: true
     }
 

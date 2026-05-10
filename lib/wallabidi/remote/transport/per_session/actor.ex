@@ -11,23 +11,23 @@ defmodule Wallabidi.Remote.Transport.PerSession.Actor do
   # mailbox in arrival order. Causal ordering between events and
   # responses is preserved without a barrier.
   #
-  # Compared to today's V2.WebSocket + V2.Session pair, this actor
+  # Compared to today's WebSocket + Session pair, this actor
   # eliminates the inter-process hop on every cdp_send: caller →
   # actor.cdp_send is one GenServer.call instead of two.
   #
   # Implements the Wallabidi.Remote.Transport.Protocol message contract
-  # so V2.CDPClient can drive it the same way it drives V2.Session.
+  # so CDPClient can drive it the same way it drives Session.
 
   use GenServer
   require Logger
 
   defstruct [
-    # ----- Connection state (was V2.WebSocket) -----
+    # ----- Connection state (was WebSocket) -----
     :conn,
     :ref,
     :websocket,
     :status,
-    # ----- Per-session state (was V2.Session) -----
+    # ----- Per-session state (was Session) -----
     :session,
     :owner_ref,
     :teardown_fun,
@@ -380,7 +380,7 @@ defmodule Wallabidi.Remote.Transport.PerSession.Actor do
     :ok
   end
 
-  # ----- WS frame processing (was V2.WebSocket.process_response/_frame) -----
+  # ----- WS frame processing (was WebSocket.process_response/_frame) -----
 
   defp process_response({:status, ref, status}, %{ref: ref} = state) do
     if status != 101 do
@@ -512,7 +512,7 @@ defmodule Wallabidi.Remote.Transport.PerSession.Actor do
 
   defp handle_event(state, _method, _event), do: state
 
-  # ----- Helpers (was V2.Session helpers) -----
+  # ----- Helpers (was Session helpers) -----
 
   defp buffer_load(state, loader_id, name) do
     loads = Map.update(state.loads, loader_id, %{name => true}, &Map.put(&1, name, true))

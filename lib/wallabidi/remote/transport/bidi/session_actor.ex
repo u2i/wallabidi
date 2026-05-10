@@ -2,7 +2,7 @@ defmodule Wallabidi.Remote.Transport.BiDi.SessionActor do
   @moduledoc false
 
   # One actor per BiDi session. Owns a Wallabidi.Remote.BiDi.WebSocketClient
-  # (which in turn owns the Mint WebSocket) and translates V2
+  # (which in turn owns the Mint WebSocket) and translates
   # Transport.Protocol calls into BiDi commands & event waits.
   #
   # The actor's lifetime IS the session's lifetime: it monitors the
@@ -85,12 +85,12 @@ defmodule Wallabidi.Remote.Transport.BiDi.SessionActor do
       owner_ref = Process.monitor(owner)
 
       # Patch the session's `pid` to point at this actor — that's
-      # what V2.Transport.Protocol callers will dispatch through.
+      # what Transport.Protocol callers will dispatch through.
       session = %{session_struct | pid: self(), bidi_pid: ws_pid}
 
       # Register with SessionStore so Wallabidi.Feature can discover
       # this session for failure-screenshot / sandbox cleanup. Same
-      # contract V2.Session honors for the two-actor model.
+      # contract Session honors for the two-actor model.
       try do
         Wallabidi.SessionStore.register(session, owner)
       catch
@@ -428,7 +428,7 @@ defmodule Wallabidi.Remote.Transport.BiDi.SessionActor do
         state.teardown_fun.(state.session)
       catch
         kind, err ->
-          Logger.warning("V2.Transport.BiDi teardown failed: #{inspect({kind, err})}")
+          Logger.warning("Transport.BiDi teardown failed: #{inspect({kind, err})}")
       end
     end
 

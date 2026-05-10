@@ -40,7 +40,7 @@ defmodule Wallabidi.Remote.Bootstrap do
   count, root)`. Called from CDPClient and BiDiClient find paths.
 
   `root_js` is `"this"` for scoped (Element parent) or `"null"` for document.
-  Bootstrap must be installed before this runs — V2 install_bootstrap
+  Bootstrap must be installed before this runs — install_bootstrap
   guarantees that, so there's no fallback path.
   """
   def register_js(query_id, ops_json, count_js, root_js \\ "null") do

@@ -93,7 +93,7 @@ defmodule Wallabidi.Remote.WebSocket do
 
   Caveat: this consumes the next `:v2_response` matching `wire_id`
   from the calling process's mailbox. Don't use it from a process
-  that has other in-flight V2 calls.
+  that has other in-flight calls.
   """
   @spec send_sync(pid, String.t(), map, keyword) :: {:ok, map} | {:error, term}
   def send_sync(ws_pid, method, params, opts \\ []) do
@@ -243,7 +243,7 @@ defmodule Wallabidi.Remote.WebSocket do
 
       {:error, conn, reason, _responses} ->
         Logger.warning(
-          "V2.WebSocket transport error pid=#{inspect(self())} msg=#{inspect(message)} reason=#{inspect(reason)}"
+          "WebSocket transport error pid=#{inspect(self())} msg=#{inspect(message)} reason=#{inspect(reason)}"
         )
 
         notify_all_pending(state, {:error, :session_closed})
@@ -264,7 +264,7 @@ defmodule Wallabidi.Remote.WebSocket do
 
   defp process_response({:status, ref, status}, %{ref: ref} = state) do
     if status != 101 do
-      Logger.error("V2.WebSocket upgrade failed with status #{status}")
+      Logger.error("WebSocket upgrade failed with status #{status}")
     end
 
     %{state | status: status}
@@ -277,7 +277,7 @@ defmodule Wallabidi.Remote.WebSocket do
         flush_queued(state)
 
       {:error, conn, reason} ->
-        Logger.error("V2.WebSocket handshake failed: #{inspect(reason)}")
+        Logger.error("WebSocket handshake failed: #{inspect(reason)}")
         %{state | conn: conn}
     end
   end
@@ -291,7 +291,7 @@ defmodule Wallabidi.Remote.WebSocket do
         Enum.reduce(frames, state, &process_frame/2)
 
       {:error, websocket, reason} ->
-        Logger.error("V2.WebSocket decode error: #{inspect(reason)}")
+        Logger.error("WebSocket decode error: #{inspect(reason)}")
         %{state | websocket: websocket}
     end
   end
@@ -309,7 +309,7 @@ defmodule Wallabidi.Remote.WebSocket do
 
       {:error, _} ->
         Logger.warning(
-          "V2.WebSocket received invalid JSON: #{inspect(String.slice(text, 0, 200))}"
+          "WebSocket received invalid JSON: #{inspect(String.slice(text, 0, 200))}"
         )
 
         state

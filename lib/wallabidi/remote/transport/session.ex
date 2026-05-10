@@ -10,7 +10,7 @@ defmodule Wallabidi.Remote.Transport.Session do
   #     page-state machine — all the per-session state today's
   #     `SessionProcess` carries
   #
-  # Key property: events from the V2.WebSocket and synchronous calls
+  # Key property: events from the WebSocket and synchronous calls
   # from the test process arrive in ONE mailbox. FIFO ordering means
   # the test process can never observe state earlier than what was
   # implied by events the WebSocket already delivered. No barrier.
@@ -74,7 +74,7 @@ defmodule Wallabidi.Remote.Transport.Session do
   # ----- Public API -----
 
   @doc """
-  Starts a Session GenServer linked to the V2.WebSocket given by `ws_pid`.
+  Starts a Session GenServer linked to the WebSocket given by `ws_pid`.
 
   Opts:
     * `:ws_pid` (required)
@@ -108,7 +108,7 @@ defmodule Wallabidi.Remote.Transport.Session do
   @doc """
   Send a CDP/BiDi RPC and block until the response arrives.
 
-  Internally: dispatches to the V2.WebSocket via `cast_send/5`,
+  Internally: dispatches to the WebSocket via `cast_send/5`,
   registers the caller's `from` keyed by the wire id, and returns
   `:noreply`. When the matching `:v2_response` lands in the Session's
   mailbox, we look up `from` and reply.
@@ -119,7 +119,7 @@ defmodule Wallabidi.Remote.Transport.Session do
   network round-trip is on the critical path. Calls to DIFFERENT
   sessions don't contend with each other at all.
 
-  `opts` is forwarded to V2.WebSocket.cast_send/5; see its docs for
+  `opts` is forwarded to WebSocket.cast_send/5; see its docs for
   `:flat_session_id` / `:session_id`.
   """
   @spec cdp_send(Wallabidi.Session.t(), String.t(), map, keyword) ::
@@ -134,7 +134,7 @@ defmodule Wallabidi.Remote.Transport.Session do
 
   @doc """
   Fire-and-forget CDP send. Returns `:ok` synchronously after handing
-  the command to the V2.WebSocket. The response is delivered to the
+  the command to the WebSocket. The response is delivered to the
   Session GenServer but ignored (no caller is waiting for it).
 
   Use for enables (`Page.enable`, `Runtime.enable`, etc.) where the
@@ -152,7 +152,7 @@ defmodule Wallabidi.Remote.Transport.Session do
   Subscribes the Session to a wire-level event method.
 
   Combines:
-    1. Telling the V2.WebSocket to route events with this method to us
+    1. Telling the WebSocket to route events with this method to us
        (so they arrive in our mailbox as `{:v2_event, method, event}`).
     2. Tagging the routing entry with the session's `browsing_context`
        (CDP `sessionId` / BiDi context id) so events for OTHER sessions
@@ -202,13 +202,12 @@ defmodule Wallabidi.Remote.Transport.Session do
   end
 
   @doc """
-  Synchronisation barrier — blocks until the SessionProcess has
+  Synchronisation barrier — blocks until the session actor has
   processed every message that was already in its mailbox at the
-  moment of this call. V2.Session technically doesn't need this
-  (its FIFO mailbox already provides ordering), but the existing
+  moment of this call. Session technically doesn't need this (its
+  FIFO mailbox already provides ordering), but the existing
   `Wallabidi.SessionProcess.sync_barrier/1` is hard-coded across
-  Browser and CDPClient. We expose it here for API parity so V2
-  sessions can stand in for SessionProcess pids.
+  Browser and CDPClient, so we expose it here for API parity.
   """
   @spec sync_barrier(Wallabidi.Session.t()) :: :ok
   def sync_barrier(%Wallabidi.Session{pid: pid}) when is_pid(pid) do
@@ -221,10 +220,10 @@ defmodule Wallabidi.Remote.Transport.Session do
 
   @doc """
   Returns `{state, history}` for diagnostic compatibility with
-  `Wallabidi.SessionProcess.get_page_state/1`. V2 doesn't yet
-  implement the bootstrap state machine — returns a minimal
-  `{:lv_ready, []}` so callers (like `NavigationTimeoutError`) can
-  pattern-match on the shape without crashing.
+  `Wallabidi.SessionProcess.get_page_state/1`. The bootstrap state
+  machine isn't tracked here — returns a minimal `{:lv_ready, []}`
+  so callers (like `NavigationTimeoutError`) can pattern-match on
+  the shape without crashing.
   """
   @spec get_page_state(Wallabidi.Session.t()) :: {atom, list}
   def get_page_state(%Wallabidi.Session{pid: pid}) when is_pid(pid) do
@@ -305,7 +304,7 @@ defmodule Wallabidi.Remote.Transport.Session do
   Returns the currently-focused frame's `executionContextId` (or
   `nil` for the root frame).
 
-  Used internally by V2.CDPClient to target Runtime.evaluate /
+  Used internally by CDPClient to target Runtime.evaluate /
   callFunctionOn at the right frame after `focus_frame/2`.
   """
   @spec current_context_id(Wallabidi.Session.t()) :: integer | nil
@@ -321,7 +320,7 @@ defmodule Wallabidi.Remote.Transport.Session do
 
   `context_id` is the frame's `executionContextId` (an integer
   assigned by Chrome's `Runtime.executionContextCreated` event).
-  V2.CDPClient resolves the right context_id from a frame element
+  CDPClient resolves the right context_id from a frame element
   before calling this.
   """
   @spec push_frame(Wallabidi.Session.t(), integer) :: :ok
@@ -342,7 +341,7 @@ defmodule Wallabidi.Remote.Transport.Session do
 
   @doc """
   Records the `frameId → executionContextId` mapping for a frame.
-  V2.CDPClient calls this when handling `Runtime.executionContextCreated`
+  CDPClient calls this when handling `Runtime.executionContextCreated`
   events so future `focus_frame` calls can resolve a frame element to
   its execution context.
   """
@@ -563,7 +562,7 @@ defmodule Wallabidi.Remote.Transport.Session do
   @impl true
   def handle_cast({:cdp_cast, method, params, opts}, state) do
     # Override session_id with live browsing_context (same as
-    # :cdp_send). Hand the command to V2.WebSocket without registering
+    # :cdp_send). Hand the command to WebSocket without registering
     # a pending entry — the response will land in our mailbox via
     # `:v2_response` and `handle_info` will see no matching entry and
     # drop it, which is what we want.
