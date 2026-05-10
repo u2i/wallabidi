@@ -183,25 +183,37 @@ defmodule Wallabidi.Browser do
   """
   @spec fill_in(parent, Query.t(), with: String.t()) :: parent
   def fill_in(%Session{} = parent, query, with: value) do
-    # Fused: one round-trip does silent clear + set_value + (when LV-
-    # aware) drain_patches. Saves two round-trips vs the legacy
-    # element-op-per-step.
-    drain_idle_ms =
-      if live_view_aware?(parent) and classify_interaction(parent, query, :change) != :none,
-        do: 300,
-        else: 0
+    if remote_session?(parent) do
+      # Fused: one round-trip does silent clear + set_value + (when LV-
+      # aware) drain_patches. Saves two round-trips vs the legacy
+      # element-op-per-step.
+      drain_idle_ms =
+        if live_view_aware?(parent) and classify_interaction(parent, query, :change) != :none,
+          do: 300,
+          else: 0
 
-    find_lazy(parent, query, fn element ->
-      session = Wallabidi.Element.root_session(element)
-      mod = fill_in_module(session)
-      mod.fill_in(session, element, value, drain_idle_ms)
-    end)
+      find_lazy(parent, query, fn element ->
+        session = Wallabidi.Element.root_session(element)
+        remote_client(session).fill_in(session, element, value, drain_idle_ms)
+      end)
+    else
+      # In-process LV driver: route through Element.fill_in (no JS,
+      # no W.run — driver overrides clear/set_value directly).
+      find(parent, query, &Element.fill_in(&1, with: value))
+    end
   end
 
-  defp fill_in_module(%Session{driver: Wallabidi.Remote.Drivers.ChromeBiDi}),
+  # CDP/BiDi clients ship element ops through W.run; the LV driver
+  # doesn't have W.run and uses its own Element handle shape.
+  defp remote_session?(%Session{driver: Wallabidi.Remote.Drivers.ChromeBiDi}), do: true
+  defp remote_session?(%Session{driver: Wallabidi.Remote.Drivers.ChromeCDP}), do: true
+  defp remote_session?(%Session{driver: Wallabidi.Remote.Drivers.LightpandaCDP}), do: true
+  defp remote_session?(_), do: false
+
+  defp remote_client(%Session{driver: Wallabidi.Remote.Drivers.ChromeBiDi}),
     do: Wallabidi.Remote.BiDi.Client
 
-  defp fill_in_module(_), do: Wallabidi.Remote.CDP.Client
+  defp remote_client(_), do: Wallabidi.Remote.CDP.Client
 
   # @doc """
   # Clears an input field. Input elements are looked up by id, label text, or name.
@@ -720,17 +732,35 @@ defmodule Wallabidi.Browser do
   @spec set_value(parent, Query.t(), Element.value()) :: parent
 
   def set_value(parent, query, :selected) do
-    find_lazy(parent, query, fn element ->
-      session = Wallabidi.Element.root_session(element)
-      fill_in_module(session).set_checked(session, element, true)
-    end)
+    if remote_session?(get_session(parent)) do
+      find_lazy(parent, query, fn element ->
+        session = Wallabidi.Element.root_session(element)
+        remote_client(session).set_checked(session, element, true)
+      end)
+    else
+      find(parent, query, fn element ->
+        case Element.selected?(element) do
+          true -> :ok
+          false -> Element.click(element)
+        end
+      end)
+    end
   end
 
   def set_value(parent, query, :unselected) do
-    find_lazy(parent, query, fn element ->
-      session = Wallabidi.Element.root_session(element)
-      fill_in_module(session).set_checked(session, element, false)
-    end)
+    if remote_session?(get_session(parent)) do
+      find_lazy(parent, query, fn element ->
+        session = Wallabidi.Element.root_session(element)
+        remote_client(session).set_checked(session, element, false)
+      end)
+    else
+      find(parent, query, fn element ->
+        case Element.selected?(element) do
+          false -> :ok
+          true -> Element.click(element)
+        end
+      end)
+    end
   end
 
   def set_value(parent, query, value) do
@@ -1166,9 +1196,21 @@ defmodule Wallabidi.Browser do
 
   def has_value?(%Element{} = element, value) do
     session = Wallabidi.Element.root_session(element)
-    mod = fill_in_module(session)
 
-    case mod.await_value(session, element, value, max_wait_time()) do
+    if remote_session?(session) do
+      case remote_client(session).await_value(session, element, value, max_wait_time()) do
+        {:ok, true} -> true
+        _ -> false
+      end
+    else
+      retry_match(fn -> Element.value(element) == value end)
+    end
+  end
+
+  defp retry_match(predicate) do
+    case retry(fn ->
+           if predicate.(), do: {:ok, true}, else: {:error, false}
+         end) do
       {:ok, true} -> true
       _ -> false
     end
@@ -1210,15 +1252,18 @@ defmodule Wallabidi.Browser do
   end
 
   def has_text?(%Element{} = element, text) when is_binary(text) do
-    # Single-RT await: V8 polls textContent with MutationObserver +
-    # onPatchEnd until match or timeout. Replaces an Elixir-side retry
-    # loop that polled Element.text every 25ms.
     session = Wallabidi.Element.root_session(element)
-    mod = fill_in_module(session)
 
-    case mod.await_text(session, element, text, max_wait_time()) do
-      {:ok, true} -> true
-      _ -> false
+    if remote_session?(session) do
+      # Single-RT await: V8 polls textContent with MutationObserver +
+      # onPatchEnd until match or timeout. Replaces an Elixir-side
+      # retry loop that polled Element.text every 25ms.
+      case remote_client(session).await_text(session, element, text, max_wait_time()) do
+        {:ok, true} -> true
+        _ -> false
+      end
+    else
+      retry_match(fn -> Element.text(element) =~ text end)
     end
   end
 

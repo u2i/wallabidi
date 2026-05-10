@@ -9,7 +9,7 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
   """
   use ExUnit.Case, async: false
 
-  @moduletag :v2
+  @moduletag :cdp_only
 
   alias Wallabidi.Integration.V2SessionHelper
   alias Wallabidi.Query
@@ -106,7 +106,7 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
 
       assert {:ok, "object"} = CDPClient.evaluate(session, "typeof window.__w")
       assert {:ok, "function"} = CDPClient.evaluate(session, "typeof window.__w.check")
-      assert {:ok, "function"} = CDPClient.evaluate(session, "typeof window.__w.exec")
+      assert {:ok, "function"} = CDPClient.evaluate(session, "typeof window.__w.run")
     end
 
     test "__wallabidi binding is callable", %{session: session} do
