@@ -50,32 +50,32 @@ Each driver scales differently with `--max-cases`. The values below come from ru
 
 ![per-test wall time vs max-cases](priv/perf-matrix.svg)
 
-Wall time in seconds for the full integration suite at each `--max-cases`:
+Wall time in seconds for the shared 145-test integration suite at each `--max-cases`:
 
-| Driver         | mc1   | mc2   | mc4   | mc8     | mc16    | Tests |
-|----------------|-------|-------|-------|---------|---------|-------|
-| **BiDi** (Chrome)  | 917s  | 690s  | —     | —       | —       | 285   |
-| **CDP** (Chrome)   | 421s  | 240s  | **175s** | 148s ⚠ | 144s ⚠ | 289   |
-| **Lightpanda**     | 140s  | 84s   | 49s   | 34s     | **30s** | 153   |
-| **LiveView**       | 122s  | 78s   | 42s   | 28s     | **25s** | 124   |
+| Driver         | mc1   | mc2   | mc4   | mc8     | mc16    |
+|----------------|-------|-------|-------|---------|---------|
+| **BiDi** (Chrome)  | 237s  | 135s  | 90s   | 90s     | 92s     |
+| **CDP** (Chrome)   | 150s  | 87s   | 67s   | 54s     | **52s** |
+| **Lightpanda**     | 118s  | 63s   | 44s   | 29s     | **26s** |
+| **LiveView**       | 116s  | 69s   | 38s   | 24s     | **23s** |
 
-⚠ = passes mostly but introduces 1–2 flaky failures from concurrency contention.
+All cells in this sweep ran with zero failures across all four drivers and all concurrency levels.
 
 **Recommended `--max-cases` per driver:**
 
 | Driver | Recommended | Why |
 |--------|-------------|-----|
-| **BiDi** | `2` | chromium-bidi's BiDi Mapper is single-threaded JS in one Chrome tab. Each pool slot adds another Chrome+Mapper, so concurrency = pool size. Benchmarked up to 2; higher is possible. |
-| **CDP** | `4` | CDP's flat-session protocol multiplexes parallel work across Chrome's per-target threads. mc4 is the sweet spot — beyond it you save ~30s and pick up flakes. |
+| **BiDi** | `4` | chromium-bidi's BiDi Mapper is single-threaded JS in one Chrome tab — concurrency past mc=4 plateaus (mc=4, 8, and 16 all hit ~90s). |
+| **CDP** | `8` | CDP's flat-session protocol multiplexes parallel work across Chrome's per-target threads. mc=8 captures essentially all the scaling win. |
 | **Lightpanda** | `16` | In-process, scales near-linearly with BEAM concurrency. |
 | **LiveView** | `16` | No external process; just BEAM. Use as much concurrency as ExUnit allows. |
 
 **When to pick which driver in CI:**
 
 - *Default:* let wallabidi route each test to the cheapest driver that supports it. Most LiveView-app tests run on the LiveView driver and are nearly free.
-- *JS-heavy app:* Lightpanda at mc16 — fastest real headless option.
-- *Need full browser fidelity (CSS, screenshots, mouse events):* CDP at mc4.
-- *Cross-browser portability or BiDi spec features:* BiDi at mc2. Slower than CDP today because the BiDi protocol serializes through a single Mapper per Chrome; will improve as chromium-bidi or successor implementations add parallel mapping.
+- *JS-heavy app:* Lightpanda at mc16 — fastest real headless option, essentially matches LiveView at scale.
+- *Need full browser fidelity (CSS, screenshots, mouse events):* CDP at mc=8.
+- *Cross-browser portability or BiDi spec features:* BiDi at mc=4. Slower than CDP today because the BiDi protocol serializes through a single Mapper per Chrome; will improve as chromium-bidi or successor implementations add parallel mapping.
 
 ## Why fork?
 

@@ -17,45 +17,48 @@
 <line x1="65" y1="370.0" x2="70" y2="370.0" stroke="#999"/>
 <text x="62" y="374.0" text-anchor="end" font-size="11" fill="#444">0.00s</text>
 <line x1="65" y1="285.0" x2="70" y2="285.0" stroke="#999"/>
-<text x="62" y="289.0" text-anchor="end" font-size="11" fill="#444">0.85s</text>
+<text x="62" y="289.0" text-anchor="end" font-size="11" fill="#444">0.50s</text>
 <line x1="65" y1="200.0" x2="70" y2="200.0" stroke="#999"/>
-<text x="62" y="204.0" text-anchor="end" font-size="11" fill="#444">1.70s</text>
+<text x="62" y="204.0" text-anchor="end" font-size="11" fill="#444">1.00s</text>
 <line x1="65" y1="115.0" x2="70" y2="115.0" stroke="#999"/>
-<text x="62" y="119.0" text-anchor="end" font-size="11" fill="#444">2.54s</text>
+<text x="62" y="119.0" text-anchor="end" font-size="11" fill="#444">1.50s</text>
 <line x1="65" y1="30.0" x2="70" y2="30.0" stroke="#999"/>
-<text x="62" y="34.0" text-anchor="end" font-size="11" fill="#444">3.39s</text>
+<text x="62" y="34.0" text-anchor="end" font-size="11" fill="#444">2.00s</text>
 <text x="20" y="200.0" text-anchor="middle" font-size="12" fill="#222" transform="rotate(-90 20 200.0)">seconds per test</text>
-<path d="M70.0,47.05014749262534 L187.5,127.28613569321536" stroke="#7c3aed" stroke-width="2" fill="none"/>
-<circle cx="70.0" cy="47.05014749262534" r="3.5" fill="#7c3aed"/>
-<circle cx="187.5" cy="127.28613569321536" r="3.5" fill="#7c3aed"/>
-<path d="M70.0,223.56932153392333 L187.5,286.7551622418879 L305.0,308.8200589970501 L422.5,318.8495575221239 L540.0,319.8525073746313" stroke="#2563eb" stroke-width="2" fill="none"/>
-<circle cx="70.0" cy="223.56932153392333" r="3.5" fill="#2563eb"/>
-<circle cx="187.5" cy="286.7551622418879" r="3.5" fill="#2563eb"/>
-<circle cx="305.0" cy="308.8200589970501" r="3.5" fill="#2563eb"/>
-<circle cx="422.5" cy="318.8495575221239" r="3.5" fill="#2563eb"/>
-<circle cx="540.0" cy="319.8525073746313" r="3.5" fill="#2563eb"/>
-<path d="M70.0,277.7286135693215 L187.5,314.83775811209443 L305.0,337.905604719764 L422.5,347.93510324483776 L540.0,349.94100294985253" stroke="#10b981" stroke-width="2" fill="none"/>
-<circle cx="70.0" cy="277.7286135693215" r="3.5" fill="#10b981"/>
-<circle cx="187.5" cy="314.83775811209443" r="3.5" fill="#10b981"/>
-<circle cx="305.0" cy="337.905604719764" r="3.5" fill="#10b981"/>
-<circle cx="422.5" cy="347.93510324483776" r="3.5" fill="#10b981"/>
-<circle cx="540.0" cy="349.94100294985253" r="3.5" fill="#10b981"/>
-<path d="M70.0,271.71091445427726 L187.5,306.8141592920354 L305.0,335.89970501474926 L422.5,346.9321533923304 L540.0,349.94100294985253" stroke="#f59e0b" stroke-width="2" fill="none"/>
-<circle cx="70.0" cy="271.71091445427726" r="3.5" fill="#f59e0b"/>
-<circle cx="187.5" cy="306.8141592920354" r="3.5" fill="#f59e0b"/>
-<circle cx="305.0" cy="335.89970501474926" r="3.5" fill="#f59e0b"/>
-<circle cx="422.5" cy="346.9321533923304" r="3.5" fill="#f59e0b"/>
-<circle cx="540.0" cy="349.94100294985253" r="3.5" fill="#f59e0b"/>
+<path d="M70.0,92.13793103448279 L187.5,211.72413793103448 L305.0,264.48275862068965 L422.5,264.48275862068965 L540.0,262.13793103448273" stroke="#7c3aed" stroke-width="2" fill="none"/>
+<circle cx="70.0" cy="92.13793103448279" r="3.5" fill="#7c3aed"/>
+<circle cx="187.5" cy="211.72413793103448" r="3.5" fill="#7c3aed"/>
+<circle cx="305.0" cy="264.48275862068965" r="3.5" fill="#7c3aed"/>
+<circle cx="422.5" cy="264.48275862068965" r="3.5" fill="#7c3aed"/>
+<circle cx="540.0" cy="262.13793103448273" r="3.5" fill="#7c3aed"/>
+<path d="M70.0,194.13793103448273 L187.5,268.0 L305.0,291.44827586206895 L422.5,306.6896551724138 L540.0,309.0344827586207" stroke="#2563eb" stroke-width="2" fill="none"/>
+<circle cx="70.0" cy="194.13793103448273" r="3.5" fill="#2563eb"/>
+<circle cx="187.5" cy="268.0" r="3.5" fill="#2563eb"/>
+<circle cx="305.0" cy="291.44827586206895" r="3.5" fill="#2563eb"/>
+<circle cx="422.5" cy="306.6896551724138" r="3.5" fill="#2563eb"/>
+<circle cx="540.0" cy="309.0344827586207" r="3.5" fill="#2563eb"/>
+<path d="M70.0,231.6551724137931 L187.5,296.1379310344828 L305.0,318.41379310344826 L422.5,336.0 L540.0,339.51724137931035" stroke="#10b981" stroke-width="2" fill="none"/>
+<circle cx="70.0" cy="231.6551724137931" r="3.5" fill="#10b981"/>
+<circle cx="187.5" cy="296.1379310344828" r="3.5" fill="#10b981"/>
+<circle cx="305.0" cy="318.41379310344826" r="3.5" fill="#10b981"/>
+<circle cx="422.5" cy="336.0" r="3.5" fill="#10b981"/>
+<circle cx="540.0" cy="339.51724137931035" r="3.5" fill="#10b981"/>
+<path d="M70.0,234.0 L187.5,289.1034482758621 L305.0,325.44827586206895 L422.5,341.86206896551727 L540.0,343.0344827586207" stroke="#f59e0b" stroke-width="2" fill="none"/>
+<circle cx="70.0" cy="234.0" r="3.5" fill="#f59e0b"/>
+<circle cx="187.5" cy="289.1034482758621" r="3.5" fill="#f59e0b"/>
+<circle cx="305.0" cy="325.44827586206895" r="3.5" fill="#f59e0b"/>
+<circle cx="422.5" cy="341.86206896551727" r="3.5" fill="#f59e0b"/>
+<circle cx="540.0" cy="343.0344827586207" r="3.5" fill="#f59e0b"/>
 <line x1="558" y1="40" x2="578" y2="40" stroke="#7c3aed" stroke-width="2"/>
-<circle cx="568" cy="40" r="3.5" fill="#7c3aed"/>
-<text x="584" y="44" font-size="11" fill="#222">BiDi (Chrome)</text>
+<circle cx="568.0" cy="40" r="3.5" fill="#7c3aed"/>
+<text x="584" y="44" font-size="11" fill="#222">Chrome BiDi</text>
 <line x1="558" y1="62" x2="578" y2="62" stroke="#2563eb" stroke-width="2"/>
-<circle cx="568" cy="62" r="3.5" fill="#2563eb"/>
-<text x="584" y="66" font-size="11" fill="#222">CDP (Chrome)</text>
+<circle cx="568.0" cy="62" r="3.5" fill="#2563eb"/>
+<text x="584" y="66" font-size="11" fill="#222">Chrome CDP</text>
 <line x1="558" y1="84" x2="578" y2="84" stroke="#10b981" stroke-width="2"/>
-<circle cx="568" cy="84" r="3.5" fill="#10b981"/>
+<circle cx="568.0" cy="84" r="3.5" fill="#10b981"/>
 <text x="584" y="88" font-size="11" fill="#222">Lightpanda</text>
 <line x1="558" y1="106" x2="578" y2="106" stroke="#f59e0b" stroke-width="2"/>
-<circle cx="568" cy="106" r="3.5" fill="#f59e0b"/>
+<circle cx="568.0" cy="106" r="3.5" fill="#f59e0b"/>
 <text x="584" y="110" font-size="11" fill="#222">LiveView</text>
 </svg>

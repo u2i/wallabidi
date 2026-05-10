@@ -226,43 +226,39 @@ LiveView uses no browser at all.
 
 ### Reliability and concurrency under load
 
-Measured on perf_bench (136 LV scenarios), 3-run averages:
+Measured on the integration suite (145 shared tests, like-for-like
+across drivers), single-run wallclock:
 
-| mc | Chrome CDP | Chrome BiDi | Lightpanda | Wallaby | LiveView |
-|---:|---:|---:|---:|---:|---:|
-| 1  | 63s | 164s | 42s | 203s | 15s |
-| 4  | 41s | 73s, 6 flake | 11s | 66s | 6s |
-| 8  | 41s | 69s, 10 flake | 7s | 52s, 17 flake | 4s |
-| 16 | 42s | 76s, 10 flake | 8s | 50s, 7 flake | 4s |
+| mc | LiveView | Lightpanda | Chrome CDP | Chrome BiDi |
+|---:|---:|---:|---:|---:|
+| 1  | 116s | 118s | 150s | 237s |
+| 2  | 69s  | 63s  | 87s  | 135s |
+| 4  | 38s  | 44s  | 67s  | 90s  |
+| 8  | 24s  | 29s  | 54s  | 90s  |
+| 16 | 23s  | 26s  | 52s  | 92s  |
 
-Reliability picture at mc=16 across 3 runs:
+All cells finished with 0 failures. Earlier sweeps measured
+intermittent Chrome BiDi flakes at high mc (`session.subscribe`
+serialisation in chromium-bidi); this sweep didn't reproduce them
+but the underlying contention is real.
 
-- **Chrome CDP**: 0 flakes
-- **Lightpanda**: 0 flakes
-- **LiveView**: 0 flakes
-- **Chrome BiDi**: 10 flakes — chromium-bidi's session.subscribe
-  serializes under concurrency. Structural; not solvable from the
-  wallabidi side.
-- **Wallaby (chromedriver)**: 7 flakes — chromedriver's
-  session-per-test creation is the bottleneck and intermittent
-  timeouts cascade.
-
-For typical test workloads (especially CI runs that share a
-machine with non-functional tests), Chrome CDP and Lightpanda
-both run flake-free at mc=16 with the default supervised single
-browser process. No tuning required.
+For typical test workloads, all four drivers run flake-free at mc=16
+with the default supervised single browser process. No tuning
+required.
 
 ### Speed picking guide
 
-- **LiveView** — 10-50× faster than any browser driver. Use where
-  the test doesn't need a real DOM (most LiveView assertions).
-- **Lightpanda** — fastest browser driver. 5–7× ahead of Chrome CDP
-  at mc≥4, within 2× of in-process LiveView at mc=8. Reliable.
-- **Chrome CDP** — solid default for tests that need real Chrome
-  semantics.
-- **Chrome BiDi** — slowest browser driver and the only one with
-  structural reliability issues. Available for tests that specifically
-  exercise the WebDriver BiDi protocol.
+- **LiveView** — fastest by a small margin at scale, but Lightpanda
+  is within 10–15%. Use where the test doesn't need a real DOM.
+- **Lightpanda** — fastest browser driver, essentially matches
+  LiveView at mc=16. Reliable.
+- **Chrome CDP** — about 2× the headless-driver wallclock at scale.
+  Use for tests that need real Chrome semantics (CSS visibility,
+  screenshots, native mouse).
+- **Chrome BiDi** — slowest browser driver because chromium-bidi
+  routes everything through a single Node-side Mapper per Chrome.
+  Plateaus around mc=4; no scaling win past that. Available for
+  tests that specifically exercise the WebDriver BiDi protocol.
 
 ### Why no server pool
 
