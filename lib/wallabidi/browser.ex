@@ -1017,7 +1017,7 @@ defmodule Wallabidi.Browser do
     do_find(parent, query, current_time())
   end
 
-  # Pipeline path can return :stale_reference when a concurrent
+  # The find path can return :stale_reference when a concurrent
   # navigation cleared `window.__w.queries` between the count
   # notification and the element fetch, OR when the find itself timed
   # out but the elements actually exist (sync recheck found > 0). In
