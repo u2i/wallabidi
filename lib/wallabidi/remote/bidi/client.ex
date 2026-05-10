@@ -548,7 +548,7 @@ defmodule Wallabidi.Remote.BiDi.Client do
 
   def call_on_element(
         %Session{} = session,
-        %Element{bidi_shared_id: {:lazy, query_ops, index}},
+        %Element{bidi_shared_id: {:lazy, query_ops, index, parent_id}},
         fn_decl,
         args,
         opts
@@ -559,13 +559,27 @@ defmodule Wallabidi.Remote.BiDi.Client do
     full_ops = query_ops ++ [["target", index] | caller_ops]
     ops_json = Jason.encode!(full_ops)
 
-    params = %{
-      "expression" => "window.__w.run(#{ops_json}, null)",
-      "awaitPromise" => Keyword.get(opts, :await_promise, false),
-      "target" => %{"context" => ctx(session)}
-    }
+    {bidi_method, params} =
+      if is_binary(parent_id) do
+        {"script.callFunction",
+         %{
+           "functionDeclaration" =>
+             "function() { return window.__w.run(#{ops_json}, this); }",
+           "this" => %{"sharedId" => parent_id},
+           "arguments" => [],
+           "awaitPromise" => Keyword.get(opts, :await_promise, false),
+           "target" => %{"context" => ctx(session)}
+         }}
+      else
+        {"script.evaluate",
+         %{
+           "expression" => "window.__w.run(#{ops_json}, null)",
+           "awaitPromise" => Keyword.get(opts, :await_promise, false),
+           "target" => %{"context" => ctx(session)}
+         }}
+      end
 
-    case Protocol.cdp_send(session, "script.evaluate", params, []) do
+    case Protocol.cdp_send(session, bidi_method, params, []) do
       {:ok, %{"type" => "exception", "exceptionDetails" => details}} ->
         if stale_marker?(details),
           do: {:error, :stale_reference},
@@ -803,8 +817,54 @@ defmodule Wallabidi.Remote.BiDi.Client do
   @spec set_value(Session.t(), Element.t(), term) :: {:ok, nil} | {:error, term}
   def set_value(%Session{} = session, %Element{} = element, value) do
     case file_input?(session, element) do
-      {:ok, true} -> set_file_value(session, element, to_string(value))
-      _ -> set_value_dom(session, element, value)
+      {:ok, true} ->
+        # set_file_value uses a custom JS body (DataTransfer), not the
+        # W.run dispatcher — so a lazy element can't be passed through.
+        # Materialize to a real sharedId first.
+        case materialize(session, element) do
+          {:ok, eager} -> set_file_value(session, eager, to_string(value))
+          {:error, _} = err -> err
+        end
+
+      _ ->
+        set_value_dom(session, element, value)
+    end
+  end
+
+  @doc false
+  @spec materialize(Session.t(), Element.t()) :: {:ok, Element.t()} | {:error, term}
+  def materialize(_session, %Element{bidi_shared_id: id} = element) when is_binary(id),
+    do: {:ok, element}
+
+  def materialize(session, %Element{bidi_shared_id: {:lazy, ops, index, parent_id}} = element) do
+    ops_json = Jason.encode!(ops)
+
+    fn_decl =
+      "function() { var r = window.__w.run(#{ops_json}, this); return r.els[#{index}]; }"
+
+    base_params = %{
+      "functionDeclaration" => fn_decl,
+      "awaitPromise" => false,
+      "resultOwnership" => "root",
+      "target" => %{"context" => ctx(session)}
+    }
+
+    params =
+      if is_binary(parent_id) do
+        base_params
+        |> Map.put("this", %{"sharedId" => parent_id})
+        |> Map.put("arguments", [])
+      else
+        base_params
+        |> Map.put("arguments", [])
+      end
+
+    case Protocol.cdp_send(session, "script.callFunction", params, []) do
+      {:ok, %{"type" => "success", "result" => %{"sharedId" => sid}}} when is_binary(sid) ->
+        {:ok, %{element | bidi_shared_id: sid}}
+
+      _ ->
+        {:error, :stale_reference}
     end
   end
 
@@ -1068,9 +1128,11 @@ defmodule Wallabidi.Remote.BiDi.Client do
   end
 
   defp lazy_elements(%{driver: driver, session_url: url} = parent, ops, count) do
+    parent_id = parent_shared_id(parent)
+
     Enum.map(0..(count - 1), fn idx ->
       %Element{
-        bidi_shared_id: {:lazy, ops, idx},
+        bidi_shared_id: {:lazy, ops, idx, parent_id},
         parent: parent,
         driver: driver,
         url: url,
@@ -1078,6 +1140,9 @@ defmodule Wallabidi.Remote.BiDi.Client do
       }
     end)
   end
+
+  defp parent_shared_id(%Element{bidi_shared_id: id}) when is_binary(id), do: id
+  defp parent_shared_id(_), do: nil
 
   defp final_sync_exec(%Session{} = session, ops_json, parent_shared_id) do
     ctx = ctx(session)

@@ -175,32 +175,49 @@ defmodule Wallabidi.Remote.CDP.Client do
 
   def call_on_element(
         %Session{} = session,
-        %Element{bidi_shared_id: {:lazy, query_ops, index}},
+        %Element{bidi_shared_id: {:lazy, query_ops, index, parent_id}},
         fn_decl,
         args,
         opts
       )
       when is_list(query_ops) and is_integer(index) and is_binary(fn_decl) and is_list(args) do
     # Lazy element: no V8 ref to bind. Splice [query_ops, ["target", index]]
-    # in front of the caller's ops, run the whole pipeline at document
-    # scope, and read the resolved value out of the {els, meta, value}
-    # blob. The element op runs in V8 the same as it would under
-    # callFunctionOn — only the dispatch shape differs.
+    # in front of the caller's ops, run the whole pipeline, and read
+    # the resolved value out of the {els, meta, value} blob. The
+    # element op runs in V8 the same as it would under callFunctionOn
+    # — only the dispatch shape differs.
+    #
+    # When the find was scoped to a parent Element, we re-bind that
+    # parent via callFunctionOn so the `query` op's `this` resolves
+    # the same way it did at find time.
     [caller_ops] = args
     full_ops = query_ops ++ [["target", index] | caller_ops]
     ops_json = Jason.encode!(full_ops)
 
-    base_params = %{
-      expression: "window.__w.run(#{ops_json}, null)",
-      returnByValue: true
-    }
+    base_params =
+      if is_binary(parent_id) do
+        %{
+          objectId: parent_id,
+          functionDeclaration:
+            "function() { return window.__w.run(#{ops_json}, this); }",
+          returnByValue: true
+        }
+      else
+        %{
+          expression: "window.__w.run(#{ops_json}, null)",
+          returnByValue: true
+        }
+      end
 
     params =
       if Keyword.get(opts, :await_promise, false),
         do: Map.put(base_params, :awaitPromise, true),
         else: base_params
 
-    case cdp_send(session, "Runtime.evaluate", params) do
+    method =
+      if is_binary(parent_id), do: "Runtime.callFunctionOn", else: "Runtime.evaluate"
+
+    case cdp_send(session, method, params) do
       {:ok, %{"result" => %{"value" => %{"error" => "stale_reference"}}}} ->
         {:error, :stale_reference}
 
@@ -293,13 +310,69 @@ defmodule Wallabidi.Remote.CDP.Client do
   @spec set_value(Session.t(), Element.t(), term) :: {:ok, nil} | {:error, term}
   def set_value(%Session{} = session, %Element{} = element, value) do
     # File inputs reject `.value = x` for security reasons. The only
-    # programmatic way to populate them is CDP's DOM.setFileInputFiles.
+    # programmatic way to populate them is CDP's DOM.setFileInputFiles,
+    # which needs a real V8 objectId — so we materialize the ref on
+    # the file-input branch. The common non-file path stays lazy.
     case file_input?(session, element) do
       {:ok, true} ->
-        set_file_input(session, element, value)
+        case materialize(session, element) do
+          {:ok, eager} -> set_file_input(session, eager, value)
+          {:error, _} = err -> err
+        end
 
       _ ->
         set_value_dom(session, element, value)
+    end
+  end
+
+  @doc false
+  # Convert a lazy element to one carrying a real V8 objectId. Re-runs
+  # the find pipeline eagerly. Eager elements pass through unchanged.
+  @spec materialize(Session.t(), Element.t()) :: {:ok, Element.t()} | {:error, term}
+  def materialize(_session, %Element{bidi_shared_id: id} = element) when is_binary(id),
+    do: {:ok, element}
+
+  def materialize(session, %Element{bidi_shared_id: {:lazy, ops, index, parent_id}} = element) do
+    case fetch_lazy_ref(session, ops, index, parent_id) do
+      {:ok, object_id} -> {:ok, %{element | bidi_shared_id: object_id}}
+      {:error, _} = err -> err
+    end
+  end
+
+  # Re-resolve a lazy element to its V8 objectId by running the find
+  # ops with returnByValue: false, then taking the `index`-th element's
+  # objectId via Runtime.getProperties. Honors parent_id scoping.
+  defp fetch_lazy_ref(%Session{} = session, ops, index, parent_id) do
+    ops_json = Jason.encode!(ops)
+
+    eval_result =
+      if is_binary(parent_id) do
+        cdp_send(session, "Runtime.callFunctionOn", %{
+          objectId: parent_id,
+          functionDeclaration: "function() { return window.__w.run(#{ops_json}, this).els; }",
+          returnByValue: false
+        })
+      else
+        cdp_send(session, "Runtime.evaluate", %{
+          expression: "window.__w.run(#{ops_json}, null).els",
+          returnByValue: false
+        })
+      end
+
+    with {:ok, ev} <- eval_result,
+         {:ok, array_id} when is_binary(array_id) <-
+           ResponseParser.extract_object_id({:ok, ev}),
+         {get_method, get_params} = Commands.get_properties(array_id),
+         {:ok, props_result} <- cdp_send(session, get_method, get_params),
+         {:ok, ids} <- ResponseParser.extract_element_ids({:ok, props_result}) do
+      cdp_cast(session, "Runtime.releaseObject", %{objectId: array_id})
+
+      case Enum.at(ids, index) do
+        nil -> {:error, :stale_reference}
+        object_id -> {:ok, object_id}
+      end
+    else
+      _ -> {:error, :stale_reference}
     end
   end
 
@@ -945,9 +1018,15 @@ defmodule Wallabidi.Remote.CDP.Client do
   end
 
   defp lazy_elements(%{driver: driver, session_url: url} = parent, ops, count) do
+    # If the find was scoped to a parent Element (vs. a Session), the
+    # ops list assumes `this` is the parent during query. Capture the
+    # parent's objectId so the lazy dispatch can rebind it on
+    # re-resolution. Document-scoped finds carry nil here.
+    parent_id = parent_object_id(parent)
+
     Enum.map(0..(count - 1), fn idx ->
       %Element{
-        bidi_shared_id: {:lazy, ops, idx},
+        bidi_shared_id: {:lazy, ops, idx, parent_id},
         parent: parent,
         driver: driver,
         url: url,
@@ -955,6 +1034,9 @@ defmodule Wallabidi.Remote.CDP.Client do
       }
     end)
   end
+
+  defp parent_object_id(%Element{bidi_shared_id: id}) when is_binary(id), do: id
+  defp parent_object_id(_), do: nil
 
   defp final_sync_exec(%Session{} = session, ops_json, parent_id) do
     # When the original query was scoped to a parent element, run the

@@ -188,13 +188,13 @@ defmodule Wallabidi.Browser do
       # phx-change patches so the server has processed the final value.
       result =
         parent
-        |> find(query, &Element.fill_in(&1, with: value))
+        |> find_lazy(query, &Element.fill_in(&1, with: value))
 
       Wallabidi.Remote.LiveViewAware.drain_patches(parent)
       result
     else
       parent
-      |> find(query, &Element.fill_in(&1, with: value))
+      |> find_lazy(query, &Element.fill_in(&1, with: value))
     end
   end
 
@@ -207,7 +207,7 @@ defmodule Wallabidi.Browser do
   def clear(parent, query) do
     with_patch_await(parent, query, :change, fn ->
       parent
-      |> find(query, &Element.clear/1)
+      |> find_lazy(query, &Element.clear/1)
     end)
   end
 
@@ -675,7 +675,7 @@ defmodule Wallabidi.Browser do
 
   def send_keys(parent, query, list) do
     with_patch_await(parent, query, :change, fn ->
-      find(parent, query, fn element ->
+      find_lazy(parent, query, fn element ->
         element
         |> Element.send_keys(list)
       end)
@@ -715,7 +715,7 @@ defmodule Wallabidi.Browser do
   @spec set_value(parent, Query.t(), Element.value()) :: parent
 
   def set_value(parent, query, :selected) do
-    find(parent, query, fn element ->
+    find_lazy(parent, query, fn element ->
       case Element.selected?(element) do
         true -> :ok
         false -> Element.click(element)
@@ -724,7 +724,7 @@ defmodule Wallabidi.Browser do
   end
 
   def set_value(parent, query, :unselected) do
-    find(parent, query, fn element ->
+    find_lazy(parent, query, fn element ->
       case Element.selected?(element) do
         false -> :ok
         true -> Element.click(element)
@@ -733,7 +733,7 @@ defmodule Wallabidi.Browser do
   end
 
   def set_value(parent, query, value) do
-    find(parent, query, fn element ->
+    find_lazy(parent, query, fn element ->
       element
       |> Element.set_value(value)
     end)
@@ -954,7 +954,7 @@ defmodule Wallabidi.Browser do
 
   def text(%Session{} = session) do
     session
-    |> find(Query.css("body"))
+    |> find_lazy(Query.css("body"))
     |> Element.text()
   end
 
@@ -1015,6 +1015,17 @@ defmodule Wallabidi.Browser do
   @spec find(parent, Query.t()) :: Element.t() | [Element.t()]
   def find(parent, %Query{} = query) do
     do_find(parent, query, current_time())
+  end
+
+  # Callback form of find_lazy/2: mirrors find/3 but elements are lazy.
+  # Caller's callback runs against the lazy element and the parent is
+  # returned for piping. The callback may invoke any Element op that
+  # routes through call_on_element — pointer/touch ops and frame focus
+  # need eager refs and should not be on the lazy path.
+  defp find_lazy(parent, %Query{} = query, callback) when is_function(callback) do
+    results = find_lazy(parent, query)
+    callback.(results)
+    parent
   end
 
   # Internal find that returns lazy Elements (no V8 ref-fetch round
@@ -1211,13 +1222,13 @@ defmodule Wallabidi.Browser do
   @spec has_text?(parent, Query.t(), String.t()) :: boolean()
   def has_text?(parent, query, text) do
     parent
-    |> find(query)
+    |> find_lazy(query)
     |> has_text?(text)
   end
 
   def has_text?(%Session{} = session, text) when is_binary(text) do
     session
-    |> find(Query.css("body"))
+    |> find_lazy(Query.css("body"))
     |> has_text?(text)
   end
 
@@ -1266,7 +1277,7 @@ defmodule Wallabidi.Browser do
   @spec assert_text(parent, Query.t(), String.t()) :: parent
   def assert_text(parent, query, text) when is_binary(text) do
     parent
-    |> find(query)
+    |> find_lazy(query)
     |> assert_text(text)
   end
 

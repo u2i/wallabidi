@@ -54,7 +54,7 @@ defmodule Wallabidi.Integration.Element.LazyElementTest do
 
   defp lazy_el(%{driver: driver, session_url: url} = parent, query_ops, index) do
     %Element{
-      bidi_shared_id: {:lazy, query_ops, index},
+      bidi_shared_id: {:lazy, query_ops, index, nil},
       parent: parent,
       driver: driver,
       url: url,
