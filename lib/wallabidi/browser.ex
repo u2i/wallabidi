@@ -1981,79 +1981,24 @@ defmodule Wallabidi.Browser do
     end
   end
 
-  @classify_el_js """
-  function classifyEl(el, type) {
-    if (!el) return "none";
+  # Both check_phx_binding/* delegate to W.run via a [query, classify_first]
+  # opcode pipeline. The single source of truth for the classifier is
+  # `W.classify` in priv/wallabidi.js — the page-side interpreter
+  # exposes it via the `classify_first` accumulator op.
+  defp check_phx_binding(session, selector, interaction),
+    do: classify_via_query(session, "css", selector, interaction)
 
-    if (type === 'click') {
-      // Check for LiveView navigate/patch links
-      var link = el.closest('[data-phx-link]');
-      if (link) {
-        return link.getAttribute('data-phx-link') === 'redirect' ? 'navigate' : 'patch';
-      }
+  defp check_phx_binding_xpath(session, xpath, interaction),
+    do: classify_via_query(session, "xpath", xpath, interaction)
 
-      // Check phx-click on the element itself
-      var phxClick = el.getAttribute('phx-click');
-      if (phxClick) {
-        return (phxClick.includes('push') || !phxClick.startsWith('[')) ? 'patch' : 'none';
-      }
-      // Check if it's a submit button inside a form
-      if (el.type === 'submit' || el.tagName === 'BUTTON') {
-        var form = el.closest('form');
-        if (form && form.getAttribute('phx-submit')) return 'patch';
-        if (form) return 'full_page';
-      }
-      // Check if it's a plain link that will cause a full page navigation
-      var anchor = el.closest('a[href]');
-      if (anchor && anchor.getAttribute('href') && !anchor.getAttribute('href').startsWith('#')) {
-        // target="_blank" etc. open in a new tab — source page doesn't navigate.
-        var tgt = anchor.getAttribute('target');
-        if (tgt && tgt !== '_self' && tgt !== '_top' && tgt !== '_parent') return 'none';
-        // onclick handler may preventDefault — can't statically tell.
-        if (anchor.hasAttribute('onclick')) return 'none';
-        return 'full_page';
-      }
-      return 'none';
-    }
+  defp classify_via_query(session, query_type, selector, interaction) do
+    ops_json =
+      Jason.encode!([
+        ["query", query_type, selector],
+        ["classify_first", to_string(interaction)]
+      ])
 
-    if (type === 'change') {
-      var phxChange = el.getAttribute('phx-change') ||
-        (el.closest('form') && el.closest('form').getAttribute('phx-change'));
-      if (!phxChange) return 'none';
-      return (phxChange.includes('push') || !phxChange.startsWith('[')) ? 'patch' : 'none';
-    }
-
-    return 'patch';
-  }
-  """
-
-  defp check_phx_binding(session, selector, interaction) do
-    js =
-      "(() => {" <>
-        @classify_el_js <>
-        "return classifyEl(document.querySelector(#{Jason.encode!(selector)}), #{Jason.encode!(to_string(interaction))});" <>
-        "})()"
-
-    case Wallabidi.Remote.Protocol.eval(session, js) do
-      {:ok, result} ->
-        parse_classification(result)
-
-      _ ->
-        :none
-    end
-  rescue
-    _ -> :none
-  end
-
-  defp check_phx_binding_xpath(session, xpath, interaction) do
-    js =
-      "(() => {" <>
-        @classify_el_js <>
-        """
-        var result = document.evaluate(#{Jason.encode!(xpath)}, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-        return classifyEl(result.singleNodeValue, #{Jason.encode!(to_string(interaction))});
-        })()
-        """
+    js = "window.__w.run(#{ops_json}, null).meta.classification"
 
     case Wallabidi.Remote.Protocol.eval(session, js) do
       {:ok, result} -> parse_classification(result)

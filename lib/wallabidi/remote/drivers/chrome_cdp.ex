@@ -23,6 +23,7 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
   alias Wallabidi.{DependencyError, Element, Metadata, Session}
   alias Wallabidi.Remote.Chrome.Server, as: ChromeServer
   alias Wallabidi.Remote.CDP.Client, as: CDPClient
+  alias Wallabidi.Remote.LiveViewAware
   alias Wallabidi.Remote.{Transport, WebSocket}
   alias Wallabidi.Remote.Transport.Protocol
   alias Wallabidi.Remote.Chrome.SharedConnection
@@ -144,46 +145,9 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
   def visit(%Session{} = session, url) do
     check_logs!(session, fn ->
       result = CDPClient.visit(session, url)
-      _ = await_liveview_connected_v2(session)
+      _ = LiveViewAware.await_liveview_connected(session)
       result
     end)
-  end
-
-  # V2 equivalent of LiveViewAware.await_liveview_connected/2 that
-  # doesn't depend on Wallabidi.Remote.Protocol (V2 sessions have
-  # protocol: nil). Returns quickly when no LiveView marker is in the
-  # DOM; otherwise polls liveSocket.main.joinPending up to `timeout`.
-  defp await_liveview_connected_v2(%Session{} = session) do
-    timeout = 5_000
-
-    js = """
-    new Promise(function(resolve) {
-      var deadline = Date.now() + #{timeout};
-      function check() {
-        if (document.readyState === 'loading') {
-          if (Date.now() > deadline) return resolve(false);
-          return setTimeout(check, 20);
-        }
-        if (!document.querySelector('[data-phx-session]')) {
-          return resolve('no-liveview');
-        }
-        var ls = window.liveSocket;
-        if (ls && ls.main && !ls.main.joinPending) return resolve(true);
-        if (Date.now() > deadline) return resolve(false);
-        setTimeout(check, 30);
-      }
-      check();
-    })
-    """
-
-    _ =
-      CDPClient.cdp_send(session, "Runtime.evaluate", %{
-        expression: js,
-        awaitPromise: true,
-        returnByValue: true
-      })
-
-    :ok
   end
 
   @impl true

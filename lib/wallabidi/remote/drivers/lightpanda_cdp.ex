@@ -23,6 +23,7 @@ defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
 
   alias Wallabidi.{Element, Session}
   alias Wallabidi.Remote.CDP.Client, as: CDPClient
+  alias Wallabidi.Remote.LiveViewAware
   alias Wallabidi.Remote.Transport
   alias Wallabidi.Remote.Transport.Protocol
 
@@ -213,48 +214,8 @@ defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
   @impl true
   def visit(%Session{} = session, url) do
     result = CDPClient.visit(session, url)
-    _ = await_liveview_connected_v2(session)
+    _ = LiveViewAware.await_liveview_connected(session)
     result
-  end
-
-  # Mirrors V2ChromeDriver.await_liveview_connected_v2/1: after a navigation,
-  # if the page has [data-phx-session], block until liveSocket.main.joinPending
-  # is false (or 5s deadline). Without this, post-visit interactions like
-  # fill_in / click can land before the LV channel finishes joining and the
-  # phx-change/phx-click event is dropped, surfacing as a flaky failure.
-  defp await_liveview_connected_v2(%Session{} = session) do
-    timeout = 5_000
-
-    js = """
-    new Promise(function(resolve) {
-      var deadline = Date.now() + #{timeout};
-      function check() {
-        if (document.readyState === 'loading') {
-          if (Date.now() > deadline) return resolve(false);
-          return setTimeout(check, 20);
-        }
-        if (!document.querySelector('[data-phx-session]')) {
-          return resolve('no-liveview');
-        }
-        var ls = window.liveSocket;
-        if (ls && ls.main && !ls.main.joinPending) return resolve(true);
-        if (Date.now() > deadline) return resolve(false);
-        setTimeout(check, 30);
-      }
-      check();
-    })
-    """
-
-    _ =
-      CDPClient.cdp_send(session, "Runtime.evaluate", %{
-        expression: js,
-        awaitPromise: true,
-        returnByValue: true
-      })
-
-    :ok
-  rescue
-    _ -> :ok
   end
 
   @impl true
