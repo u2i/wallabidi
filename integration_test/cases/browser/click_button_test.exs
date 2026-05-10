@@ -283,7 +283,6 @@ defmodule Wallabidi.Integration.Browser.Actions.ClickButtonTest do
   end
 
   @tag :polling
-
   test "throws an error if the button cannot be found on the page", %{page: page} do
     assert_raise Wallabidi.QueryError, ~r/Expected (.*) 1/, fn ->
       click(page, button("unfound button", []))

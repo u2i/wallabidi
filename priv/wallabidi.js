@@ -255,15 +255,35 @@ W.focus = function(el) {
 // anyway so the caller still gets a routable answer.
 W.awaitLvReadyAndClassify = function(el, interaction, timeoutMs) {
   return new Promise(function(resolve) {
+    // Classify synchronously first. Some classifications don't need
+    // LV-channel readiness:
+    //   * "full_page"  — form submits / plain <a href> leave the page;
+    //                    the destination LV mounts fresh either way
+    //   * "none"       — non-LV-aware element; waiting is pointless
+    // Others (patch, navigate, change-without-classification-yet) DO
+    // need LV ready, because the click dispatches a phx-event that the
+    // current LV channel must receive.
+    var classification = W.classify(el, interaction);
+    if (classification === 'none' || classification === 'full_page') {
+      return resolve(classification);
+    }
+
+    function done() { resolve(classification); }
+    function isReady() {
+      if (W.observedPatch === true) return true;
+      var ls = window.liveSocket;
+      if (!ls || !ls.main) return true;
+      if (typeof ls.main.isJoined === 'function' && ls.main.isJoined()) return true;
+      if (ls.main.joinPending !== true) return true;
+      return false;
+    }
+
+    if (isReady()) return done();
+
     var deadline = Date.now() + (timeoutMs || 5000);
     function check() {
-      var ls = window.liveSocket;
-      if (!ls || !ls.main || ls.main.joinPending !== true) {
-        return resolve(W.classify(el, interaction));
-      }
-      if (Date.now() > deadline) {
-        return resolve(W.classify(el, interaction));
-      }
+      if (isReady()) return done();
+      if (Date.now() > deadline) return done();
       setTimeout(check, 20);
     }
     check();

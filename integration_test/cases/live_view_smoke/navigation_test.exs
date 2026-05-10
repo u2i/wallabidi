@@ -6,6 +6,8 @@ defmodule Wallabidi.Integration.LiveViewSmoke.NavigationTest do
   @base Application.compile_env(:wallabidi, :live_app_url, "http://localhost:4321")
 
   @tag :cross_lv_nav
+  # Dest LV's connected mount sleeps 200ms; cross-LV nav adds visit+click overhead.
+  @tag slow: 2_500
   test "<.link navigate>: same live_session, dest LV mounts", %{session: session} do
     # push_navigate within a single live_session — no full page reload.
     # The dest LV's mount sleeps 200ms in connected? branch; asserting

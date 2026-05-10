@@ -74,6 +74,7 @@ defmodule Wallabidi.Integration.Browser.FindTest do
     end
 
     @tag :headless
+    @tag :polling
     test "find/2 raises an error if the element is not visible", %{session: session} do
       session
       |> visit("page_1.html")

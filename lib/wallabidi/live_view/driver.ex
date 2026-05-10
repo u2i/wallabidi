@@ -1,4 +1,4 @@
-defmodule Wallabidi.LiveViewDriver do
+defmodule Wallabidi.LiveView.Driver do
   @moduledoc """
   Direct LiveView driver — connects to LiveViews via Phoenix channels
   without a browser. Same wallabidi API, no Chrome/Docker required.

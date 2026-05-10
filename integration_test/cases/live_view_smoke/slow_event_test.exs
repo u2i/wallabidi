@@ -6,6 +6,7 @@ defmodule Wallabidi.Integration.LiveViewSmoke.SlowEventTest do
   @base Application.compile_env(:wallabidi, :live_app_url, "http://localhost:4321")
 
   @tag :cross_lv_nav
+  @tag :polling
   test "click → 3s server work → push_navigate; assertion waits for full transition", %{
     session: session
   } do

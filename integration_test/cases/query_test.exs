@@ -87,6 +87,7 @@ defmodule Wallabidi.Integration.QueryTest do
 
   describe "filtering queries by visibility" do
     @tag :headless
+    @tag :polling
     test "finds elements that are invisible", %{session: session} do
       assert_raise Wallabidi.QueryError, fn ->
         session

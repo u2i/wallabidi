@@ -16,6 +16,7 @@ defmodule Wallabidi.Integration.Browser.StaleElementsTest do
     end
 
     @tag :headless
+    @tag :polling
     test "when a DOM element disappears", %{session: session} do
       element =
         session

@@ -106,7 +106,7 @@ excludes =
     # old :chrome / :chrome_cdp atoms route to V2 modules in
     # lib/wallabidi.ex). :cdp_only tests reference V1-internal modules
     # (Wallabidi.ChromeCDP.SharedConnection, Wallabidi.Remote.Protocol.eval,
-    # Wallabidi.CDP.Ops.*) and are excluded everywhere V1 isn't running.
+    # Wallabidi.Remote.CDP.Ops.*) and are excluded everywhere V1 isn't running.
     driver in [:chrome_cdp_v2, :chrome_bidi_v2, :chrome, :chrome_cdp] ->
       excludes ++ [live_view_only: true, cdp_only: true]
 
