@@ -20,6 +20,7 @@ defmodule Wallabidi do
 
   @doc false
   def start(_type, _args) do
+    Wallabidi.Bench.Timing.setup()
     driver_mod = driver_module()
 
     case driver_mod.validate() do

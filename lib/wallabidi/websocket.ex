@@ -175,8 +175,9 @@ defmodule Wallabidi.WebSocket do
       ) do
     # Connection still upgrading. Assign the id now and queue the send.
     id = state.next_id
+    t0 = Wallabidi.Bench.Timing.mark_now()
     queued = state.queued ++ [{id, owner_pid, method, params, opts}]
-    pending = Map.put(state.pending, id, owner_pid)
+    pending = Map.put(state.pending, id, {owner_pid, t0})
     {:reply, id, %{state | next_id: id + 1, queued: queued, pending: pending}}
   end
 
@@ -185,7 +186,8 @@ defmodule Wallabidi.WebSocket do
 
     case do_send(state, id, method, params, opts) do
       {:ok, state} ->
-        pending = Map.put(state.pending, id, owner_pid)
+        t0 = Wallabidi.Bench.Timing.mark_now()
+        pending = Map.put(state.pending, id, {owner_pid, t0})
         {:reply, id, %{state | next_id: id + 1, pending: pending}}
 
       {:error, state, reason} ->
@@ -329,7 +331,8 @@ defmodule Wallabidi.WebSocket do
         # No registered owner — fire-and-forget cast or stale id. Ignore.
         state
 
-      {owner_pid, pending} ->
+      {{owner_pid, t0}, pending} ->
+        Wallabidi.Bench.Timing.record(t0)
         send(owner_pid, {:v2_response, id, parse_response(response)})
         %{state | pending: pending}
     end
@@ -365,7 +368,7 @@ defmodule Wallabidi.WebSocket do
   end
 
   defp notify_all_pending(state, reply) do
-    Enum.each(state.pending, fn {id, owner_pid} ->
+    Enum.each(state.pending, fn {id, {owner_pid, _t0}} ->
       send(owner_pid, {:v2_response, id, reply})
     end)
   end
