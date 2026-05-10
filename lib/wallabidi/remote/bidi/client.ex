@@ -1135,16 +1135,17 @@ defmodule Wallabidi.Remote.BiDi.Client do
     end
   end
 
-  defp lazy_elements(%{driver: driver, session_url: url} = parent, ops, count) do
+  defp lazy_elements(parent, ops, count) do
     parent_id = parent_shared_id(parent)
+    session = Element.root_session(parent)
 
     Enum.map(0..(count - 1), fn idx ->
       %Element{
         bidi_shared_id: {:lazy, ops, idx, parent_id},
-        parent: parent,
-        driver: driver,
-        url: url,
-        session_url: url
+        parent: session,
+        driver: session.driver,
+        url: session.session_url,
+        session_url: session.session_url
       }
     end)
   end

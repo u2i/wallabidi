@@ -138,6 +138,19 @@ defmodule Wallabidi.Remote.OpsShared do
         end
       end
 
+      @doc """
+      Toggle a checkbox or radio button to match `target`. Reads current
+      `.checked` / `.selected` state and clicks only when it differs.
+      One round-trip vs the legacy selected? + click two-step.
+      """
+      @spec set_checked(Session.t(), Element.t(), boolean) :: {:ok, nil} | {:error, term}
+      def set_checked(%Session{} = session, %Element{} = element, target) when is_boolean(target) do
+        case call_on_element(session, element, unquote(@dispatch_fn), [[["set_checked", target]]]) do
+          {:ok, _} -> {:ok, nil}
+          err -> err
+        end
+      end
+
       # ----- Page introspection (shared) -----
 
       # Trivia accessors fall back to native expressions when window.__w
@@ -181,6 +194,7 @@ defmodule Wallabidi.Remote.OpsShared do
                      clear: 2,
                      clear: 3,
                      send_keys_text: 3,
+                     set_checked: 3,
                      current_url: 1,
                      current_path: 1,
                      page_title: 1,

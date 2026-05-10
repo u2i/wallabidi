@@ -721,19 +721,15 @@ defmodule Wallabidi.Browser do
 
   def set_value(parent, query, :selected) do
     find_lazy(parent, query, fn element ->
-      case Element.selected?(element) do
-        true -> :ok
-        false -> Element.click(element)
-      end
+      session = Wallabidi.Element.root_session(element)
+      fill_in_module(session).set_checked(session, element, true)
     end)
   end
 
   def set_value(parent, query, :unselected) do
     find_lazy(parent, query, fn element ->
-      case Element.selected?(element) do
-        false -> :ok
-        true -> Element.click(element)
-      end
+      session = Wallabidi.Element.root_session(element)
+      fill_in_module(session).set_checked(session, element, false)
     end)
   end
 

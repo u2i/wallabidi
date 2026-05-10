@@ -268,6 +268,15 @@ W.focus = function(el) {
 // interaction. Returns a Promise resolving to the classification string.
 // Times out after timeoutMs (defaults 5000) — on timeout, classifies
 // anyway so the caller still gets a routable answer.
+// Pipelined set_checked: read current selected state, click only if it
+// differs from the target value. Saves one round-trip vs the
+// selected? + click two-step. Returns null on no-op, true on click.
+W.setChecked = function(el, target) {
+  if (W.isSelected(el) === !!target) return null;
+  W.clickEl(el);
+  return true;
+};
+
 // Pipelined fill_in: silent clear, set_value, optionally drain patches
 // — all in one Promise. Saves up to 3 round-trips per fill_in.
 //
@@ -668,6 +677,8 @@ W.run = function(ops, target) {
           value = W.awaitReadyClassifyAndClick(target, op[1]); break;
         case 'fill_in':
           value = W.fillIn(target, op[1], op[2]); break;
+        case 'set_checked':
+          value = W.setChecked(target, op[1]); break;
 
         // --- Document ops — global. ---
         case 'prepare_patch':       value = W.preparePatch(); break;
