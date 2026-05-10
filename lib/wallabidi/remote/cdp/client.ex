@@ -937,43 +937,13 @@ defmodule Wallabidi.Remote.CDP.Client do
       register_js = Bootstrap.register_js(query_id, ops_json, count_js, root_js)
 
       :ok = Protocol.register_find(session, query_id, timeout)
-
-      # Fire-and-forget: register the query and call W.check(). The
-      # response carries no info we need — what matters is the binding
-      # event (Runtime.bindingCalled), which V2.Transport.PerSession
-      # sees on its own mailbox. CDP serializes commands per session,
-      # so subsequent operations still observe this register's effect.
-      if ops.parent_id do
-        cdp_cast(session, "Runtime.callFunctionOn", %{
-          objectId: ops.parent_id,
-          functionDeclaration: "function() { #{register_js} }",
-          returnByValue: true
-        })
-      else
-        # Thread the active frame's executionContextId so find runs
-        # inside the focused iframe (set via focus_frame_by_id).
-        base = %{expression: register_js, returnByValue: true}
-
-        params =
-          case Protocol.current_context_id(session) do
-            nil -> base
-            ctx -> Map.put(base, :contextId, ctx)
-          end
-
-        cdp_cast(session, "Runtime.evaluate", params)
-      end
+      cast_register(session, ops.parent_id, register_js)
 
       case Protocol.await_find_result(session, query_id, timeout) do
-        {:ok, found_count, _meta} when found_count > 0 ->
+        {:ok, found, _meta} when found > 0 ->
           case mode do
-            :lazy ->
-              # Lazy elements: skip the ref-fetch round-trip entirely.
-              # Each element carries the ops + its index so element-op
-              # dispatch re-runs the pipeline in V8.
-              {:ok, lazy_elements(parent, ops.ops, found_count)}
-
-            :eager ->
-              fetch_element_refs(session, query_id, found_count)
+            :lazy -> {:ok, lazy_elements(parent, ops.ops, found)}
+            :eager -> fetch_element_refs(session, query_id, found)
           end
 
         {:ok, _, _} ->
@@ -990,6 +960,32 @@ defmodule Wallabidi.Remote.CDP.Client do
           final_sync_exec(session, ops_json, ops.parent_id)
       end
     end
+  end
+
+  # Fire-and-forget the query-register IIFE. Two shapes: scoped to a
+  # parent element via callFunctionOn (this = parent), or document-
+  # scope via Runtime.evaluate (with the current iframe's context id
+  # threaded through). CDP serializes commands per session so
+  # subsequent ops still observe this register's effect.
+  defp cast_register(%Session{} = session, nil, register_js) do
+    base = %{expression: register_js, returnByValue: true}
+
+    params =
+      case Protocol.current_context_id(session) do
+        nil -> base
+        ctx -> Map.put(base, :contextId, ctx)
+      end
+
+    cdp_cast(session, "Runtime.evaluate", params)
+  end
+
+  defp cast_register(%Session{} = session, parent_object_id, register_js)
+       when is_binary(parent_object_id) do
+    cdp_cast(session, "Runtime.callFunctionOn", %{
+      objectId: parent_object_id,
+      functionDeclaration: "function() { #{register_js} }",
+      returnByValue: true
+    })
   end
 
   defp lazy_elements(parent, ops, count) do
