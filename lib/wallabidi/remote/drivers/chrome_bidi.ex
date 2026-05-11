@@ -341,7 +341,7 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
 
   def blank_page?(%Session{} = session) do
     case BiDiClient.current_url(session) do
-      {:ok, url} -> url in ["about:blank", "", nil]
+      {:ok, url} -> url in ["about:blank", ""]
       _ -> false
     end
   end

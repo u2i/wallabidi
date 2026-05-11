@@ -367,34 +367,39 @@ defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
   def element_location(%Element{} = element), do: CDPClient.element_location(element)
   def blank_page?(%Session{} = session), do: CDPClient.blank_page?(session)
 
+  # Dialog support is a stub on Lightpanda — its JS engine doesn't
+  # surface window.alert/confirm/prompt to CDP yet, so all `:browser`-
+  # tagged dialog tests are excluded on this driver. The implementations
+  # below exist only to satisfy the Driver behaviour.
+
   @impl true
   def accept_alert(session, fun) do
-    result = fun.(session)
-    {:ok, [result]}
+    fun.(session)
+    ""
   end
 
   @impl true
   def accept_confirm(session, fun) do
-    result = fun.(session)
-    {:ok, [result]}
+    fun.(session)
+    ""
   end
 
   @impl true
   def accept_prompt(session, _text, fun) do
-    result = fun.(session)
-    {:ok, [result]}
+    fun.(session)
+    ""
   end
 
   @impl true
   def dismiss_confirm(session, fun) do
-    result = fun.(session)
-    {:ok, [result]}
+    fun.(session)
+    ""
   end
 
   @impl true
   def dismiss_prompt(session, fun) do
-    result = fun.(session)
-    {:ok, [result]}
+    fun.(session)
+    ""
   end
 
   @impl true

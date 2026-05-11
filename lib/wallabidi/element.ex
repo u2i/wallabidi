@@ -36,13 +36,25 @@ defmodule Wallabidi.Element do
           | :unselected
   @type attr :: String.t()
   @type keys_to_send :: String.t() | list(atom | String.t())
+
+  # Handle shapes differ by driver:
+  #   * CDP/BiDi drivers   — String.t() (CDP objectId or BiDi sharedId)
+  #   * LiveView driver    — {:lv_element, css_selector, index, html}
+  #   * Lazy element       — {:lazy, ops, idx, parent_id}, resolved on use
+  #   * Unresolved         — nil
+  @type handle ::
+          String.t()
+          | nil
+          | {:lv_element, String.t(), non_neg_integer(), String.t()}
+          | {:lazy, list(), non_neg_integer(), String.t() | nil}
+
   @type t :: %__MODULE__{
           session_url: String.t(),
           url: String.t(),
           id: String.t(),
           screenshots: list,
           driver: module,
-          handle: String.t() | nil
+          handle: handle()
         }
 
   @doc """
