@@ -32,6 +32,7 @@ DRIVERS=(
   "lightpanda_v2:Lightpanda"
   "chrome_cdp_v2:Chrome CDP"
   "chrome_bidi_v2:Chrome BiDi"
+  "wallaby:Wallaby"
 )
 
 MC_LEVELS=(1 2 4 8 16)
@@ -68,11 +69,17 @@ run_cell() {
   set +e
   (
     cd "$PERF_BENCH"
-    env LIGHTPANDA_PATH="$LP_PATH" \
-        PERF_BENCH_DRIVER=wallabidi \
-        WALLABIDI_DRIVER="$driver" \
-        MIX_ENV=test \
-        mix test --max-cases "$mc" > "$logfile" 2>&1
+    if [[ "$driver" == "wallaby" ]]; then
+      env PERF_BENCH_DRIVER=wallaby \
+          MIX_ENV=test \
+          mix test --max-cases "$mc" > "$logfile" 2>&1
+    else
+      env LIGHTPANDA_PATH="$LP_PATH" \
+          PERF_BENCH_DRIVER=wallabidi \
+          WALLABIDI_DRIVER="$driver" \
+          MIX_ENV=test \
+          mix test --max-cases "$mc" > "$logfile" 2>&1
+    fi
   )
   set -e
 

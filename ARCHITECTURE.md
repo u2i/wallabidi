@@ -230,22 +230,28 @@ Measured on the [perf_bench](https://github.com/u2i/perf_bench)
 LiveView scenario suite (136 tests, all happy-path), single-run
 wallclock:
 
-| mc | LiveView | Lightpanda | Chrome CDP | Chrome BiDi |
-|---:|---:|---:|---:|---:|
-| 1  | 15s | 43s | 68s | 486s |
-| 2  | 9s  | 22s | 52s | 100s |
-| 4  | 6s  | 12s | 48s | 71s  |
-| 8  | 4s  | 8s  | 51s | 68s  |
-| 16 | 4s  | 8s  | 52s | 259s, 2 flakes |
+| mc | LiveView | Lightpanda | Chrome CDP | Chrome BiDi    | Wallaby (chromedriver) |
+|---:|---:|---:|---:|---:|---:|
+| 1  | 15s | 43s | 68s | 486s           | 218s |
+| 2  | 9s  | 22s | 52s | 100s           | 122s |
+| 4  | 6s  | 12s | 48s | 71s            | 80s  |
+| 8  | 4s  | 8s  | 51s | 68s            | 69s, 4 flakes |
+| 16 | 4s  | 8s  | 52s | 259s, 2 flakes | 70s, 5 flakes |
 
 Chrome BiDi's mc=16 result reproduces the structural chromium-bidi
 contention we've measured before: the BiDi Mapper is single-threaded
 JS in one Chrome tab, so once concurrent sessions saturate it, both
 wallclock and reliability degrade. mc=8 is the practical ceiling.
 
+Wallaby's mc≥8 results show a different structural limit:
+chromedriver creates a fresh CDP session per test, and concurrent
+session-creation requests start timing out under contention. The
+total wallclock at mc=8 actually beats Chrome BiDi, but Wallaby
+trades that for ~3% test flakiness.
+
 LiveView and Lightpanda both plateau cleanly (4s and 8s respectively
 at mc≥8 — they've hit the limit of test work, not protocol limits).
-Chrome CDP plateaus around 50s.
+Chrome CDP plateaus around 50s and stays reliable through mc=16.
 
 ### Speed picking guide
 

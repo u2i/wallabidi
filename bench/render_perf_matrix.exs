@@ -28,6 +28,7 @@ defmodule RenderPerfMatrix do
   # Order matters: legend rendering and color assignment match this.
   # Add new drivers at the end so existing colors stay stable.
   @driver_colors [
+    {"Wallaby", "#ef4444"},
     {"Chrome BiDi", "#7c3aed"},
     {"Chrome CDP", "#2563eb"},
     {"Lightpanda", "#10b981"},

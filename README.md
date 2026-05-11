@@ -54,12 +54,13 @@ Wall time in seconds for the [perf_bench](https://github.com/u2i/perf_bench) Liv
 
 | Driver         | mc1    | mc2   | mc4   | mc8     | mc16        |
 |----------------|--------|-------|-------|---------|-------------|
-| **BiDi** (Chrome)  | 486s   | 100s  | 71s   | 68s     | 259s ⚠ (2 flakes) |
-| **CDP** (Chrome)   | 68s    | 52s   | **48s** | 51s   | 52s         |
-| **Lightpanda**     | 43s    | 22s   | 12s   | **8s**  | 8s          |
 | **LiveView**       | 15s    | 9s    | 6s    | **4s**  | 4s          |
+| **Lightpanda**     | 43s    | 22s   | 12s   | **8s**  | 8s          |
+| **CDP** (Chrome)   | 68s    | 52s   | **48s** | 51s   | 52s         |
+| **BiDi** (Chrome)  | 486s   | 100s  | 71s   | **68s** | 259s ⚠ (2 flakes) |
+| **Wallaby** (chromedriver) | 218s | 122s | 80s | 69s ⚠ (4 flakes) | 70s ⚠ (5 flakes) |
 
-⚠ = chromium-bidi's BiDi Mapper serialises under contention; mc=16 reliably introduces flakes.
+⚠ flag = flaky failures at this concurrency. Chrome BiDi's mc=16 trips chromium-bidi's BiDi Mapper contention; Wallaby's mc=8+ trips chromedriver session-creation timeouts.
 
 **Recommended `--max-cases` per driver:**
 

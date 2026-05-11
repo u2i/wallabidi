@@ -25,6 +25,12 @@
 <line x1="65" y1="30.0" x2="70" y2="30.0" stroke="#999"/>
 <text x="62" y="34.0" text-anchor="end" font-size="11" fill="#444">4.00s</text>
 <text x="20" y="200.0" text-anchor="middle" font-size="12" fill="#222" transform="rotate(-90 20 200.0)">seconds per test</text>
+<path d="M70.0,233.75 L187.5,293.75 L305.0,320.0 L422.5,326.875 L540.0,326.25" stroke="#ef4444" stroke-width="2" fill="none"/>
+<circle cx="70.0" cy="233.75" r="3.5" fill="#ef4444"/>
+<circle cx="187.5" cy="293.75" r="3.5" fill="#ef4444"/>
+<circle cx="305.0" cy="320.0" r="3.5" fill="#ef4444"/>
+<circle cx="422.5" cy="326.875" r="3.5" fill="#ef4444"/>
+<circle cx="540.0" cy="326.25" r="3.5" fill="#ef4444"/>
 <path d="M70.0,66.25 L187.5,307.5 L305.0,325.625 L422.5,327.5 L540.0,208.125" stroke="#7c3aed" stroke-width="2" fill="none"/>
 <circle cx="70.0" cy="66.25" r="3.5" fill="#7c3aed"/>
 <circle cx="187.5" cy="307.5" r="3.5" fill="#7c3aed"/>
@@ -49,16 +55,19 @@
 <circle cx="305.0" cy="366.25" r="3.5" fill="#f59e0b"/>
 <circle cx="422.5" cy="367.5" r="3.5" fill="#f59e0b"/>
 <circle cx="540.0" cy="367.5" r="3.5" fill="#f59e0b"/>
-<line x1="558" y1="40" x2="578" y2="40" stroke="#7c3aed" stroke-width="2"/>
-<circle cx="568.0" cy="40" r="3.5" fill="#7c3aed"/>
-<text x="584" y="44" font-size="11" fill="#222">Chrome BiDi</text>
-<line x1="558" y1="62" x2="578" y2="62" stroke="#2563eb" stroke-width="2"/>
-<circle cx="568.0" cy="62" r="3.5" fill="#2563eb"/>
-<text x="584" y="66" font-size="11" fill="#222">Chrome CDP</text>
-<line x1="558" y1="84" x2="578" y2="84" stroke="#10b981" stroke-width="2"/>
-<circle cx="568.0" cy="84" r="3.5" fill="#10b981"/>
-<text x="584" y="88" font-size="11" fill="#222">Lightpanda</text>
-<line x1="558" y1="106" x2="578" y2="106" stroke="#f59e0b" stroke-width="2"/>
-<circle cx="568.0" cy="106" r="3.5" fill="#f59e0b"/>
-<text x="584" y="110" font-size="11" fill="#222">LiveView</text>
+<line x1="558" y1="40" x2="578" y2="40" stroke="#ef4444" stroke-width="2"/>
+<circle cx="568.0" cy="40" r="3.5" fill="#ef4444"/>
+<text x="584" y="44" font-size="11" fill="#222">Wallaby</text>
+<line x1="558" y1="62" x2="578" y2="62" stroke="#7c3aed" stroke-width="2"/>
+<circle cx="568.0" cy="62" r="3.5" fill="#7c3aed"/>
+<text x="584" y="66" font-size="11" fill="#222">Chrome BiDi</text>
+<line x1="558" y1="84" x2="578" y2="84" stroke="#2563eb" stroke-width="2"/>
+<circle cx="568.0" cy="84" r="3.5" fill="#2563eb"/>
+<text x="584" y="88" font-size="11" fill="#222">Chrome CDP</text>
+<line x1="558" y1="106" x2="578" y2="106" stroke="#10b981" stroke-width="2"/>
+<circle cx="568.0" cy="106" r="3.5" fill="#10b981"/>
+<text x="584" y="110" font-size="11" fill="#222">Lightpanda</text>
+<line x1="558" y1="128" x2="578" y2="128" stroke="#f59e0b" stroke-width="2"/>
+<circle cx="568.0" cy="128" r="3.5" fill="#f59e0b"/>
+<text x="584" y="132" font-size="11" fill="#222">LiveView</text>
 </svg>
