@@ -148,6 +148,15 @@ ExUnit.configure(ex_unit_opts)
 # for the 4s default). Override threshold/mode via env:
 #
 #   WALLABIDI_SLOW_TEST_MS=2000  WALLABIDI_SLOW_TEST_MODE=warn
+#
+# BiDi has slower per-test wall time (every fresh session waits for
+# chromium-bidi's session.subscribe round-trip — ~1-12s depending on
+# Mapper warmth). Default to :warn mode there so the SlowTestGuard
+# surfaces offenders without failing the CI job on every run.
+if driver in [:chrome_bidi_v2, :chrome] and is_nil(System.get_env("WALLABIDI_SLOW_TEST_MODE")) do
+  System.put_env("WALLABIDI_SLOW_TEST_MODE", "warn")
+end
+
 ExUnit.start(formatters: [ExUnit.CLIFormatter, Wallabidi.Test.SlowTestGuard])
 
 # --- Start LiveApp endpoint (LiveView integration tests) ---

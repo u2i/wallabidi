@@ -7,7 +7,7 @@ defmodule Wallabidi.Integration.Browser.SessionIsolationTest do
   @moduletag :headless
   @moduletag :isolation
 
-  @tag :polling
+  @tag slow: 20_000
   test "concurrent sessions have independent browsing contexts" do
     {:ok, session_a} = start_test_session()
     {:ok, session_b} = start_test_session()
