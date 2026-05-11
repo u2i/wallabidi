@@ -25,9 +25,9 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
 
   import Wallabidi.Driver.LogChecker
 
-  alias Wallabidi.Remote.BiDi.WebSocketClient
   alias Wallabidi.{Element, Session}
   alias Wallabidi.Remote.BiDi.Client, as: BiDiClient
+  alias Wallabidi.Remote.BiDi.WebSocketClient
   alias Wallabidi.Remote.Transport.BiDi
   alias Wallabidi.Remote.Transport.Protocol
 

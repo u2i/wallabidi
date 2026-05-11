@@ -18,13 +18,13 @@ defmodule Wallabidi.Remote.BiDi.Client do
   # bootstrap channel) are reused from Transport.Protocol — they
   # were verified end-to-end in Transport.BiDi phases A/B/C.
 
+  alias Wallabidi.Element
   alias Wallabidi.Remote.BiDi.{Commands, ResponseParser, WebSocketClient}
   alias Wallabidi.Remote.Bootstrap
   alias Wallabidi.Remote.CDP.Ops
-  alias Wallabidi.Element
   alias Wallabidi.Remote.OpsShared
-  alias Wallabidi.Session
   alias Wallabidi.Remote.Transport.Protocol
+  alias Wallabidi.Session
 
   # Pulls in shared op bodies (text/2, attribute/3, displayed/2,
   # click/2, set_value_dom/3, clear/2, send_keys_text/3, page-info
@@ -83,17 +83,15 @@ defmodule Wallabidi.Remote.BiDi.Client do
     timeout = Keyword.get(opts, :timeout, 10_000)
 
     with {:ok, %{loader_id: nav}} <- navigate(session, url) do
-      cond do
-        is_binary(nav) ->
-          case Protocol.await_page_load(session, nav, "load", timeout) do
-            :ok -> :ok
-            :timeout -> {:error, :timeout}
-          end
-
-        true ->
-          # Same-document or cached navigation — no nav id, no load
-          # event to wait on.
-          :ok
+      if is_binary(nav) do
+        case Protocol.await_page_load(session, nav, "load", timeout) do
+          :ok -> :ok
+          :timeout -> {:error, :timeout}
+        end
+      else
+        # Same-document or cached navigation — no nav id, no load
+        # event to wait on.
+        :ok
       end
     end
   end

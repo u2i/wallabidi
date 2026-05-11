@@ -785,24 +785,21 @@ defmodule Wallabidi.Browser do
   def click(parent, query) do
     session = get_session(parent)
 
-    cond do
-      session && session.driver == Wallabidi.Remote.Drivers.LightpandaCDP &&
-        not in_frame?(session) && not in_switched_window?(session) ->
-        # Lightpanda: route through CDPClient.click_aware which
-        # captures pre_page_id, classifies, clicks, awaits page_ready
-        # — same shape as do_post_click but in one native call.
-        # Avoids the post-click `find` polling fallback that cost LP
-        # ~3s per submit-form click.
-        #
-        # The Chrome CDP and Chrome BiDi drivers are NOT routed here —
-        # they both have nav-timeout / patch-aware orchestration in
-        # their own click impl that needs Element.click + driver.click.
-        v2_click_with_await(parent, query)
-
-      true ->
-        with_patch_await(parent, query, :click, fn ->
-          parent |> find(query, &Element.click/1)
-        end)
+    # Lightpanda: route through CDPClient.click_aware which captures
+    # pre_page_id, classifies, clicks, awaits page_ready — same shape
+    # as do_post_click but in one native call. Avoids the post-click
+    # `find` polling fallback that cost LP ~3s per submit-form click.
+    #
+    # The Chrome CDP and Chrome BiDi drivers are NOT routed here —
+    # they both have nav-timeout / patch-aware orchestration in their
+    # own click impl that needs Element.click + driver.click.
+    if session && session.driver == Wallabidi.Remote.Drivers.LightpandaCDP &&
+         not in_frame?(session) && not in_switched_window?(session) do
+      v2_click_with_await(parent, query)
+    else
+      with_patch_await(parent, query, :click, fn ->
+        parent |> find(query, &Element.click/1)
+      end)
     end
   end
 

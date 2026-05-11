@@ -21,12 +21,12 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
   @behaviour Wallabidi.Driver
 
   alias Wallabidi.{DependencyError, Element, Metadata, Session}
-  alias Wallabidi.Remote.Chrome.Server, as: ChromeServer
   alias Wallabidi.Remote.CDP.Client, as: CDPClient
+  alias Wallabidi.Remote.Chrome.Server, as: ChromeServer
+  alias Wallabidi.Remote.Chrome.SharedConnection
   alias Wallabidi.Remote.LiveViewAware
   alias Wallabidi.Remote.{Transport, WebSocket}
   alias Wallabidi.Remote.Transport.Protocol
-  alias Wallabidi.Remote.Chrome.SharedConnection
   import Wallabidi.Driver.LogChecker
 
   @base_user_agent "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 " <>
@@ -268,19 +268,17 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
   end
 
   defp poll_url(session, pre_url, deadline) do
-    cond do
-      System.monotonic_time(:millisecond) >= deadline ->
-        :timeout
+    if System.monotonic_time(:millisecond) >= deadline do
+      :timeout
+    else
+      case CDPClient.current_url(session) do
+        {:ok, url} when url != pre_url and url != "" ->
+          :ok
 
-      true ->
-        case CDPClient.current_url(session) do
-          {:ok, url} when url != pre_url and url != "" ->
-            :ok
-
-          _ ->
-            Process.sleep(50)
-            poll_url(session, pre_url, deadline)
-        end
+        _ ->
+          Process.sleep(50)
+          poll_url(session, pre_url, deadline)
+      end
     end
   end
 

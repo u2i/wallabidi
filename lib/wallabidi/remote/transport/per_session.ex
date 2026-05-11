@@ -16,9 +16,9 @@ defmodule Wallabidi.Remote.Transport.PerSession do
   # Target + attachToTarget on that WS, and the resulting actor
   # handles everything for that session.
 
-  alias Wallabidi.Session
   alias Wallabidi.Remote.CDP.Client, as: CDPClient
   alias Wallabidi.Remote.Transport.PerSession.Actor
+  alias Wallabidi.Session
 
   @doc """
   Bring up a new session.

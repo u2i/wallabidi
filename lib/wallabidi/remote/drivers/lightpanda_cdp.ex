@@ -181,13 +181,18 @@ defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
 
       Process.whereis(@lightpanda_server_name) ->
         # Shared singleton spawned by the supervisor — fast path.
+        # apply/3 used so the compiler doesn't require @lightpanda_server
+        # to exist (test-only dep).
+        # credo:disable-for-next-line Credo.Check.Refactor.Apply
         ws_url = apply(@lightpanda_server, :ws_url, [@lightpanda_server_name])
         {:per_session, ws_url}
 
       Code.ensure_loaded?(@lightpanda_server) ->
         {Transport.IsolatedProcess,
          [
+           # credo:disable-for-next-line Credo.Check.Refactor.Apply
            spawn_fun: fn -> apply(@lightpanda_server, :start_link, [[name: nil]]) end,
+           # credo:disable-for-next-line Credo.Check.Refactor.Apply
            url_fun: fn server -> apply(@lightpanda_server, :ws_url, [server]) end,
            extra_capabilities: base_caps
          ]}

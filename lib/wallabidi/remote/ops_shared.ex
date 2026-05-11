@@ -50,7 +50,10 @@ defmodule Wallabidi.Remote.OpsShared do
     "(window.__w && window.__w.run([['" <> op <> "']])) || " <> native_fallback
   end
 
+  # The injected `quote do` block is intentionally long — each clause
+  # is a thin protocol-agnostic op body shared between CDP and BiDi.
   defmacro __using__(_opts) do
+    # credo:disable-for-next-line Credo.Check.Refactor.LongQuoteBlocks
     quote do
       @doc "Returns the element's visible text content."
       @spec text(Session.t(), Element.t()) :: {:ok, String.t()} | {:error, term}

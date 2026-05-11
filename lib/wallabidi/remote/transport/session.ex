@@ -521,15 +521,13 @@ defmodule Wallabidi.Remote.Transport.Session do
   end
 
   def handle_call({:await_page_ready_after, pre_page_id, timeout_ms}, from, state) do
-    cond do
-      # If we already have a different pageId, return :ok immediately.
-      pre_page_id != nil and state.last_page_id != nil and
-          state.last_page_id != pre_page_id ->
-        {:reply, :ok, state}
-
-      true ->
-        timer_ref = Process.send_after(self(), {:page_ready_timeout, from}, timeout_ms)
-        {:noreply, %{state | page_ready_waiter: {from, pre_page_id, timer_ref}}}
+    # If we already have a different pageId, return :ok immediately.
+    if pre_page_id != nil and state.last_page_id != nil and
+         state.last_page_id != pre_page_id do
+      {:reply, :ok, state}
+    else
+      timer_ref = Process.send_after(self(), {:page_ready_timeout, from}, timeout_ms)
+      {:noreply, %{state | page_ready_waiter: {from, pre_page_id, timer_ref}}}
     end
   end
 

@@ -423,7 +423,7 @@ defmodule Wallabidi.Remote.CDP.Client do
       # via el.files. The browser exposes .value as
       # 'C:\\fakepath\\<basename>' which is what Wallabidi tests
       # check for. File contents aren't read.
-      {:error, {-31998, "UnknownMethod"}} ->
+      {:error, {-31_998, "UnknownMethod"}} ->
         set_file_input_via_data_transfer(session, element, paths)
 
       {:error, _} = err ->
@@ -688,9 +688,8 @@ defmodule Wallabidi.Remote.CDP.Client do
   """
   @spec enable_frame_tracking(Session.t()) :: :ok | {:error, term}
   def enable_frame_tracking(%Session{} = session) do
-    with :ok <- Protocol.subscribe(session, "Runtime.executionContextCreated"),
-         :ok <- Protocol.subscribe(session, "Runtime.executionContextDestroyed") do
-      :ok
+    with :ok <- Protocol.subscribe(session, "Runtime.executionContextCreated") do
+      Protocol.subscribe(session, "Runtime.executionContextDestroyed")
     end
   end
 

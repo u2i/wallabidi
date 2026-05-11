@@ -19,9 +19,9 @@ defmodule Wallabidi.Remote.Transport.BiDi do
   # Phase B will install lifecycle subscriptions; phase C the
   # bootstrap preload script + script.message routing.
 
-  alias Wallabidi.Session
   alias Wallabidi.Remote.Transport.BiDi.{Handshake, SessionActor}
   alias Wallabidi.Remote.Transport.Protocol
+  alias Wallabidi.Session
 
   @doc """
   Bring up a new BiDi session.

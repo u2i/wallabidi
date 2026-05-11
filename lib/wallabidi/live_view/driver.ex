@@ -391,20 +391,7 @@ defmodule Wallabidi.LiveView.Driver do
               |> Plug.Conn.put_private(:phoenix_endpoint, session.server)
               |> @conn_test.dispatch(session.server, :post, action, form_data)
 
-            # Follow the redirect if there is one.
-            case conn.status do
-              s when s in [301, 302, 303, 307, 308] ->
-                location = Plug.Conn.get_resp_header(conn, "location") |> List.first()
-
-                if location do
-                  visit(session, location)
-                else
-                  put_state(session, nil, conn.resp_body || "", action)
-                end
-
-              _ ->
-                put_state(session, nil, conn.resp_body || "", action)
-            end
+            handle_post_response(session, conn, action)
           else
             visit(session, action)
           end
@@ -415,6 +402,19 @@ defmodule Wallabidi.LiveView.Driver do
     end
   rescue
     _ -> :ok
+  end
+
+  defp handle_post_response(session, conn, action) do
+    case conn.status do
+      s when s in [301, 302, 303, 307, 308] ->
+        case Plug.Conn.get_resp_header(conn, "location") do
+          [location | _] -> visit(session, location)
+          _ -> put_state(session, nil, conn.resp_body || "", action)
+        end
+
+      _ ->
+        put_state(session, nil, conn.resp_body || "", action)
+    end
   end
 
   defp click_static(session, _element, el_html) do
