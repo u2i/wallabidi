@@ -2,17 +2,17 @@ import Config
 
 config :logger, level: :warning
 
-# Use the locally-built Lightpanda binary at ../../lightpanda-browser
-# (sibling of the wallaby project) when present. That build carries
+# Lightpanda binary source. The `:lightpanda` hex package (>= 0.2.10-rc.2)
+# already defaults its download URL to the u2i fork release, which carries
 # the WS-cookie-on-upgrade patch needed for Phoenix LiveView channel
-# joins; the upstream 0.2.9 release doesn't carry it. Falls through to
-# the auto-download if the local binary isn't built.
+# joins. Here we only override `:path` when a locally-built sibling
+# checkout exists, so dev rebuilds get picked up automatically.
 local_lp = Path.expand("../../lightpanda-browser/zig-out/bin/lightpanda", __DIR__)
 
 if File.exists?(local_lp) do
   config :lightpanda, :path, local_lp
-  # Local build reports its own dev version; suppress the version-match
-  # warning since the path override is intentional.
+  # Local build reports its own dev version (1.0.0-dev+sha) which won't
+  # match the fork-YYYY-MM-DD release tag — suppress the warning.
   config :lightpanda, :version_check, false
 end
 
