@@ -128,11 +128,17 @@ defmodule Wallabidi.Remote.Transport.BiDi.SessionActor do
       WebSocketClient.subscribe(ws_pid, ev, self(), :global)
     end)
 
+    # The first session.subscribe after browser launch can take a
+    # while on slow runners (GHA Linux) because chromium-bidi's Mapper
+    # is still settling. 30s gives plenty of headroom; subsequent
+    # subscribes are fast and well under any test timeout.
+    timeout = Application.get_env(:wallabidi, :bidi_subscribe_timeout_ms, 30_000)
+
     case WebSocketClient.send_command(
            ws_pid,
            "session.subscribe",
            %{"events" => events},
-           10_000
+           timeout
          ) do
       {:ok, _} -> :ok
       {:error, reason} -> {:error, {:subscribe_failed, reason}}
@@ -266,14 +272,12 @@ defmodule Wallabidi.Remote.Transport.BiDi.SessionActor do
   # ----- Bootstrap channel (Phase C) -----
 
   def handle_call({:await_page_ready_after, pre_page_id, timeout_ms}, from, state) do
-    cond do
-      pre_page_id != nil and state.last_page_id != nil and
-          state.last_page_id != pre_page_id ->
-        {:reply, :ok, state}
-
-      true ->
-        timer_ref = Process.send_after(self(), {:page_ready_timeout, from}, timeout_ms)
-        {:noreply, %{state | page_ready_waiter: {from, pre_page_id, timer_ref}}}
+    if pre_page_id != nil and state.last_page_id != nil and
+         state.last_page_id != pre_page_id do
+      {:reply, :ok, state}
+    else
+      timer_ref = Process.send_after(self(), {:page_ready_timeout, from}, timeout_ms)
+      {:noreply, %{state | page_ready_waiter: {from, pre_page_id, timer_ref}}}
     end
   end
 
