@@ -77,7 +77,7 @@ defmodule Wallabidi.Remote.Transport.BiDi do
 
       {:ok, session}
     else
-      {:error, {:subscribe_failed, _}} = err when retries > 0 ->
+      {:error, {:subscribe_failed, _}} when retries > 0 ->
         Process.sleep(250)
 
         start_with_retry(
