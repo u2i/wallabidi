@@ -135,9 +135,10 @@ defmodule Wallabidi.Remote.Transport.BiDi.SessionActor do
 
     # The first session.subscribe after browser launch can take a
     # while on slow runners (GHA Linux) because chromium-bidi's Mapper
-    # is still settling. 30s gives plenty of headroom; subsequent
-    # subscribes are fast and well under any test timeout.
-    timeout = Application.get_env(:wallabidi, :bidi_subscribe_timeout_ms, 30_000)
+    # is still settling. 12s lets us retry up to 4× (SessionCase) and
+    # still fit inside ExUnit's default 60s test timeout. Subsequent
+    # subscribes are fast (<200ms) so the actual cap rarely fires.
+    timeout = Application.get_env(:wallabidi, :bidi_subscribe_timeout_ms, 12_000)
 
     case WebSocketClient.send_command(
            ws_pid,
