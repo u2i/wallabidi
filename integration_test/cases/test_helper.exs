@@ -137,9 +137,7 @@ ExUnit.configure(ex_unit_opts)
 # for the 4s default). Override threshold/mode via env:
 #
 #   WALLABIDI_SLOW_TEST_MS=2000  WALLABIDI_SLOW_TEST_MODE=warn
-ExUnit.start(
-  formatters: [ExUnit.CLIFormatter, Wallabidi.Test.SlowTestGuard]
-)
+ExUnit.start(formatters: [ExUnit.CLIFormatter, Wallabidi.Test.SlowTestGuard])
 
 # --- Start LiveApp endpoint (LiveView integration tests) ---
 Application.put_env(:wallabidi, Wallabidi.Integration.LiveApp.Endpoint,

@@ -307,7 +307,8 @@ defmodule Wallabidi.LiveView.Driver do
     update_html(session, html)
   end
 
-  defp handle_lv_result(session, {:error, {kind, %{to: to}}}) when kind in [:live_redirect, :redirect] do
+  defp handle_lv_result(session, {:error, {kind, %{to: to}}})
+       when kind in [:live_redirect, :redirect] do
     visit(session, to)
   end
 
@@ -324,10 +325,12 @@ defmodule Wallabidi.LiveView.Driver do
   #   - :phx_click                             everything else (router'd through render_click)
   defp classify_lv_click(session, el_html) do
     el_doc = LazyHTML.from_fragment(el_html)
-    tag = case LazyHTML.tag(el_doc) do
-      [t | _] -> t |> to_string() |> String.downcase()
-      _ -> ""
-    end
+
+    tag =
+      case LazyHTML.tag(el_doc) do
+        [t | _] -> t |> to_string() |> String.downcase()
+        _ -> ""
+      end
 
     cond do
       tag == "a" and first_attr(el_doc, "href") not in [nil, "#", ""] and

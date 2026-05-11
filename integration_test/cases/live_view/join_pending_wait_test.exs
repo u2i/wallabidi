@@ -14,7 +14,6 @@ defmodule Wallabidi.Integration.LiveView.JoinPendingWaitTest do
   use Wallabidi.Integration.SessionCase, async: false
   @moduletag :headless
 
-
   @base Application.compile_env(:wallabidi, :live_app_url, "http://localhost:4321")
 
   # The fake page has no real LV, so `await_page_ready_after` waits its

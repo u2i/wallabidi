@@ -152,7 +152,8 @@ defmodule Wallabidi.Remote.OpsShared do
       One round-trip vs the legacy selected? + click two-step.
       """
       @spec set_checked(Session.t(), Element.t(), boolean) :: {:ok, nil} | {:error, term}
-      def set_checked(%Session{} = session, %Element{} = element, target) when is_boolean(target) do
+      def set_checked(%Session{} = session, %Element{} = element, target)
+          when is_boolean(target) do
         case call_on_element(session, element, unquote(@dispatch_fn), [[["set_checked", target]]]) do
           {:ok, _} -> {:ok, nil}
           err -> err

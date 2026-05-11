@@ -308,9 +308,7 @@ defmodule Wallabidi.Remote.WebSocket do
         state
 
       {:error, _} ->
-        Logger.warning(
-          "WebSocket received invalid JSON: #{inspect(String.slice(text, 0, 200))}"
-        )
+        Logger.warning("WebSocket received invalid JSON: #{inspect(String.slice(text, 0, 200))}")
 
         state
     end

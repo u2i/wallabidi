@@ -427,9 +427,7 @@ defmodule Wallabidi.Remote.Transport.PerSession.Actor do
         handle_event(state, method, event)
 
       {:error, _} ->
-        Logger.warning(
-          "PerSession.Actor invalid JSON: #{inspect(String.slice(text, 0, 200))}"
-        )
+        Logger.warning("PerSession.Actor invalid JSON: #{inspect(String.slice(text, 0, 200))}")
 
         state
     end

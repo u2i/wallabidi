@@ -109,7 +109,13 @@ defmodule Wallabidi.V2.BiDiClientTest do
 
     test "displayed reports true for a visible element", %{base_url: base_url} do
       {:ok, session} = start(base_url)
-      :ok = BiDiClient.visit(session, data_url("<div id='v' style='width:5px;height:5px;background:red'>v</div>"))
+
+      :ok =
+        BiDiClient.visit(
+          session,
+          data_url("<div id='v' style='width:5px;height:5px;background:red'>v</div>")
+        )
+
       [v] = find_one(session, "#v")
       assert {:ok, true} = BiDiClient.displayed(session, v)
     end

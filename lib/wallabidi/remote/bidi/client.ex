@@ -306,7 +306,10 @@ defmodule Wallabidi.Remote.BiDi.Client do
   @spec get_viewport(Session.t()) ::
           {:ok, %{width: non_neg_integer, height: non_neg_integer}} | {:error, term}
   def get_viewport(%Session{} = session) do
-    case evaluate(session, "JSON.stringify({width: window.innerWidth, height: window.innerHeight})") do
+    case evaluate(
+           session,
+           "JSON.stringify({width: window.innerWidth, height: window.innerHeight})"
+         ) do
       {:ok, json} when is_binary(json) ->
         case Jason.decode(json) do
           {:ok, %{"width" => w, "height" => h}} -> {:ok, %{width: w, height: h}}
@@ -332,7 +335,12 @@ defmodule Wallabidi.Remote.BiDi.Client do
           {:ok, String.t()} | {:error, term}
   def child_context_for_iframe(%Session{browsing_context: parent} = session, %Element{} = element) do
     with {:ok, %{"contexts" => contexts}} <-
-           Protocol.cdp_send(session, "browsingContext.getTree", %{"root" => parent, "maxDepth" => 1}, []),
+           Protocol.cdp_send(
+             session,
+             "browsingContext.getTree",
+             %{"root" => parent, "maxDepth" => 1},
+             []
+           ),
          children when is_list(children) <- get_children(contexts, parent) do
       find_matching_child(session, element, children)
     else
@@ -563,8 +571,7 @@ defmodule Wallabidi.Remote.BiDi.Client do
       if is_binary(parent_id) do
         {"script.callFunction",
          %{
-           "functionDeclaration" =>
-             "function() { return window.__w.run(#{ops_json}, this); }",
+           "functionDeclaration" => "function() { return window.__w.run(#{ops_json}, this); }",
            "this" => %{"sharedId" => parent_id},
            "arguments" => [],
            "awaitPromise" => Keyword.get(opts, :await_promise, false),
@@ -626,7 +633,9 @@ defmodule Wallabidi.Remote.BiDi.Client do
 
     case Protocol.cdp_send(session, "script.callFunction", params, []) do
       {:ok, %{"type" => "exception", "exceptionDetails" => details}} ->
-        if stale_marker?(details), do: {:error, :stale_reference}, else: {:error, {:js_exception, details}}
+        if stale_marker?(details),
+          do: {:error, :stale_reference},
+          else: {:error, {:js_exception, details}}
 
       {:ok, result} ->
         case decode_eval_result(result) do
@@ -1307,8 +1316,7 @@ defmodule Wallabidi.Remote.BiDi.Client do
         # Page navigated mid-flight or the array's gone — emit
         # placeholders so callers see the count, but ops on them will
         # surface as stale_reference.
-        {:ok,
-         List.duplicate(%Element{parent: session, driver: session.driver}, found_count)}
+        {:ok, List.duplicate(%Element{parent: session, driver: session.driver}, found_count)}
     end
   end
 
@@ -1344,8 +1352,12 @@ defmodule Wallabidi.Remote.BiDi.Client do
   @spec dismiss_prompt(Session.t(), (Session.t() -> any)) :: String.t()
   def dismiss_prompt(%Session{} = session, fun), do: handle_dialog(session, fun, false)
 
-  defp handle_dialog(%Session{bidi_pid: ws_pid, browsing_context: ctx} = session, fun, accept,
-         user_text \\ nil) do
+  defp handle_dialog(
+         %Session{bidi_pid: ws_pid, browsing_context: ctx} = session,
+         fun,
+         accept,
+         user_text \\ nil
+       ) do
     caller = self()
 
     # Subscribe at the BiDi protocol level once — chromium-bidi makes

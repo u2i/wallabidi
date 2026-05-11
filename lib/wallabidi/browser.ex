@@ -787,7 +787,7 @@ defmodule Wallabidi.Browser do
 
     cond do
       session && session.driver == Wallabidi.Remote.Drivers.LightpandaCDP &&
-          not in_frame?(session) && not in_switched_window?(session) ->
+        not in_frame?(session) && not in_switched_window?(session) ->
         # Lightpanda: route through CDPClient.click_aware which
         # captures pre_page_id, classifies, clicks, awaits page_ready
         # — same shape as do_post_click but in one native call.
@@ -853,7 +853,6 @@ defmodule Wallabidi.Browser do
     do: Wallabidi.Remote.BiDi.Client
 
   defp v2_click_module(_), do: Wallabidi.Remote.CDP.Client
-
 
   @doc """
   Double-clicks left mouse button at the current mouse coordinates.
@@ -1074,11 +1073,12 @@ defmodule Wallabidi.Browser do
   defp find_lazy(parent, %Query{} = query) do
     session = get_session(parent)
 
-    if session && session.driver in [
-         Wallabidi.Remote.Drivers.LightpandaCDP,
-         Wallabidi.Remote.Drivers.ChromeCDP,
-         Wallabidi.Remote.Drivers.ChromeBiDi
-       ] && not in_frame?(session) && not in_switched_window?(session) do
+    if session &&
+         session.driver in [
+           Wallabidi.Remote.Drivers.LightpandaCDP,
+           Wallabidi.Remote.Drivers.ChromeCDP,
+           Wallabidi.Remote.Drivers.ChromeBiDi
+         ] && not in_frame?(session) && not in_switched_window?(session) do
       do_find_lazy(parent, query, current_time())
     else
       do_find(parent, query, current_time())
@@ -1659,14 +1659,18 @@ defmodule Wallabidi.Browser do
 
     cond do
       session &&
-        session.driver in [Wallabidi.Remote.Drivers.LightpandaCDP, Wallabidi.Remote.Drivers.ChromeCDP, Wallabidi.Remote.Drivers.ChromeBiDi] &&
-          not in_frame?(session) && not in_switched_window?(session) ->
+        session.driver in [
+          Wallabidi.Remote.Drivers.LightpandaCDP,
+          Wallabidi.Remote.Drivers.ChromeCDP,
+          Wallabidi.Remote.Drivers.ChromeBiDi
+        ] &&
+        not in_frame?(session) && not in_switched_window?(session) ->
         # transport uses the same ops pipeline shape (push-based finds
         # via Runtime.addBinding). Routes through CDPClient.
         execute_query_pipeline(parent, driver, query, opts)
 
       session && not is_nil(session.protocol) &&
-          not in_frame?(session) && not in_switched_window?(session) ->
+        not in_frame?(session) && not in_switched_window?(session) ->
         # Both CDP and BiDi use the ops pipeline for find+filter in one eval.
         # Push-based: CDP uses Runtime.addBinding, BiDi uses script.channel.
         execute_query_pipeline(parent, driver, query, opts)
@@ -1699,11 +1703,17 @@ defmodule Wallabidi.Browser do
             # BiDi: push-based bootstrap pipeline speaking BiDi.
             Wallabidi.Remote.BiDi.Client.find_elements(parent, validated, timeout: timeout)
 
-          session.driver in [Wallabidi.Remote.Drivers.LightpandaCDP, Wallabidi.Remote.Drivers.ChromeCDP] and
+          session.driver in [
+            Wallabidi.Remote.Drivers.LightpandaCDP,
+            Wallabidi.Remote.Drivers.ChromeCDP
+          ] and
               lazy? ->
             Wallabidi.Remote.CDP.Client.find_elements_lazy(parent, validated, timeout: timeout)
 
-          session.driver in [Wallabidi.Remote.Drivers.LightpandaCDP, Wallabidi.Remote.Drivers.ChromeCDP] ->
+          session.driver in [
+            Wallabidi.Remote.Drivers.LightpandaCDP,
+            Wallabidi.Remote.Drivers.ChromeCDP
+          ] ->
             # CDP: same push pipeline routed through Session.
             Wallabidi.Remote.CDP.Client.find_elements(parent, validated, timeout: timeout)
         end
@@ -1720,7 +1730,6 @@ defmodule Wallabidi.Browser do
       end
     end
   end
-
 
   defp execute_query_legacy(parent, driver, query) do
     retry(fn ->

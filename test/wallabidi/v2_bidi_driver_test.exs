@@ -11,7 +11,8 @@ defmodule Wallabidi.V2BiDiDriverTest do
   alias Wallabidi.Browser
 
   setup do
-    {:ok, _} = Wallabidi.Remote.Drivers.ChromeBiDi.start_link(name: Wallabidi.Remote.Drivers.ChromeBiDi)
+    {:ok, _} =
+      Wallabidi.Remote.Drivers.ChromeBiDi.start_link(name: Wallabidi.Remote.Drivers.ChromeBiDi)
 
     on_exit(fn ->
       try do

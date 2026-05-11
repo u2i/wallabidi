@@ -198,8 +198,7 @@ defmodule Wallabidi.Remote.CDP.Client do
       if is_binary(parent_id) do
         %{
           objectId: parent_id,
-          functionDeclaration:
-            "function() { return window.__w.run(#{ops_json}, this); }",
+          functionDeclaration: "function() { return window.__w.run(#{ops_json}, this); }",
           returnByValue: true
         }
       else
@@ -467,7 +466,7 @@ defmodule Wallabidi.Remote.CDP.Client do
   @doc """
   # clear/3 — provided by Wallabidi.Remote.OpsShared.
 
-  @doc """
+  @doc \"""
   Sends keys to the element. `keys` is a list of string segments
   or special-key atoms (`:enter`, `:tab`, ...). For pure-text
   input we use the shared fast path (no CDP key events — keeps
@@ -1201,7 +1200,8 @@ defmodule Wallabidi.Remote.CDP.Client do
   who want plain expression evaluation should use `evaluate/2`.
   """
   @spec evaluate(Session.t(), String.t(), list) :: {:ok, term} | {:error, term}
-  def evaluate(%Session{} = session, expression, args) when is_binary(expression) and is_list(args) do
+  def evaluate(%Session{} = session, expression, args)
+      when is_binary(expression) and is_list(args) do
     case encode_script_args(args) do
       {:elements, cdp_args} ->
         # Args contain WebDriver-encoded element references — pass them

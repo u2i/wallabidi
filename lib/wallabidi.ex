@@ -83,11 +83,20 @@ defmodule Wallabidi do
     # when the caller dies, so we don't need on_exit hooks or SessionStore
     # monitoring for crashed-test cleanup.
     case resolve_driver(opts) do
-      :live_view -> Wallabidi.LiveView.Driver.start_session(opts)
-      d when d in [:lightpanda, :lightpanda_v2] -> Wallabidi.Remote.Drivers.LightpandaCDP.start_session(opts)
-      d when d in [:chrome_cdp, :chrome_cdp_v2] -> Wallabidi.Remote.Drivers.ChromeCDP.start_session(opts)
-      d when d in [:chrome, :chrome_bidi_v2] -> Wallabidi.Remote.Drivers.ChromeBiDi.start_session(opts)
-      _browser -> Wallabidi.Remote.Drivers.ChromeCDP.start_session(opts)
+      :live_view ->
+        Wallabidi.LiveView.Driver.start_session(opts)
+
+      d when d in [:lightpanda, :lightpanda_v2] ->
+        Wallabidi.Remote.Drivers.LightpandaCDP.start_session(opts)
+
+      d when d in [:chrome_cdp, :chrome_cdp_v2] ->
+        Wallabidi.Remote.Drivers.ChromeCDP.start_session(opts)
+
+      d when d in [:chrome, :chrome_bidi_v2] ->
+        Wallabidi.Remote.Drivers.ChromeBiDi.start_session(opts)
+
+      _browser ->
+        Wallabidi.Remote.Drivers.ChromeCDP.start_session(opts)
     end
   end
 

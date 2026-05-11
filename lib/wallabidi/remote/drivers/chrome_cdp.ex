@@ -53,8 +53,12 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
   @doc false
   def validate do
     cond do
-      remote_url() -> :ok
-      chrome_available?() -> :ok
+      remote_url() ->
+        :ok
+
+      chrome_available?() ->
+        :ok
+
       true ->
         {:error,
          DependencyError.exception(
@@ -270,7 +274,9 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
 
       true ->
         case CDPClient.current_url(session) do
-          {:ok, url} when url != pre_url and url != "" -> :ok
+          {:ok, url} when url != pre_url and url != "" ->
+            :ok
+
           _ ->
             Process.sleep(50)
             poll_url(session, pre_url, deadline)
@@ -609,7 +615,7 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
   @doc false
   def remote_url do
     Wallabidi.BrowserPaths.chrome_url() ||
-      (Application.get_env(:wallabidi, :chrome_cdp_v2, []) |> Keyword.get(:remote_url))
+      Application.get_env(:wallabidi, :chrome_cdp_v2, []) |> Keyword.get(:remote_url)
   end
 
   defp chrome_available? do

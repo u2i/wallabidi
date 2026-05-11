@@ -100,7 +100,6 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
       |> assert_has(Query.css("#status", text: "done"))
       |> assert_has(Query.css("#result", text: "async result"))
     end
-
   end
 
   describe "text-aware await_selector" do
