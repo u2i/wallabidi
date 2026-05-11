@@ -1,6 +1,9 @@
 defmodule Wallabidi.Integration.Browser.DialogTest do
   use Wallabidi.Integration.SessionCase, async: true
   @moduletag :browser
+  # BiDi session.subscribe on fresh sessions can take 12s on slow runners;
+  # set a runtime budget that accommodates that plus dialog handshake.
+  @moduletag slow: 18_000
 
   setup %{session: session} do
     page = visit(session, "dialogs.html")

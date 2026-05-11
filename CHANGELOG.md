@@ -1,5 +1,84 @@
 # Changelog
 
+## Wallabidi 0.3.0 (2026-05-10)
+
+A large refactor + perf release. 123 commits since 0.2.14. The headline
+changes: V2 driver clients are now the default (V1 modules deleted),
+page-side dispatch unified under a `W.run` opcode interpreter,
+element handles become lazy by default, and several hot ops fuse into
+a single round-trip.
+
+### Breaking
+
+- **V1 → V2 driver promotion.** The transitional `_v2` module names are
+  gone: `Wallabidi.Remote.CDP.Client`, `Wallabidi.Remote.BiDi.Client`,
+  `Wallabidi.Remote.Lightpanda.Client`. Driver atoms `:chrome_cdp_v2` /
+  `:chrome_bidi_v2` / `:lightpanda_v2` continue to work; the legacy
+  atoms `:chrome_cdp` / `:chrome_bidi` / `:lightpanda` route to the
+  same V2 implementations.
+- **Layout move.** Remote driver code lives under `Wallabidi.Remote.*`;
+  LiveView driver under `Wallabidi.LiveView.*`. The `Wallabidi.Browser`
+  / `Wallabidi.Element` / `Wallabidi.Query` public API is unchanged.
+- **Element struct rename.** `bidi_shared_id` → `handle`,
+  `parent_shared_id` → `parent_object_id`. Pattern-matching on these
+  fields needs to be updated.
+- **Server pools removed.** The N-process Chrome/BiDi server-pool work
+  shipped in this cycle was rolled back after measurement: per-process
+  parallelism inside chromium-bidi's Mapper bottlenecked anyway, and
+  the added complexity wasn't worth it. `--max-cases` against a single
+  server is the supported model.
+
+### Added
+
+- **`W.run` opcode interpreter** (`priv/wallabidi.js`). Page-side
+  dispatch goes through a single function that walks an opcode list,
+  threading a target value through ops. Replaces ad-hoc inline JS
+  scattered through CDP/BiDi clients.
+- **Lazy element handles.** `Element.find/click/text/...` chains
+  compile to one `W.run` round-trip instead of resolving the
+  reference then issuing follow-up calls. Cuts per-element latency
+  visibly on multi-step interactions.
+- **Op fusion.** Click, `fill_in`, `set_checked`, `has_value?`,
+  `has_text?`, and the await-ready paths each fuse into a single
+  fused W.run op with a Promise tail. Drains `phx-update` patches in
+  the same round-trip on LiveView pages.
+- **Wallaby in the cross-driver perf matrix.** `bench/perf_bench_matrix.sh`
+  + `bench/render_perf_matrix.exs` produce `priv/perf-matrix.svg`
+  covering Wallaby (chromedriver), Chrome CDP, Chrome BiDi,
+  Lightpanda, and the LiveView driver across `--max-cases` 1..16.
+- **SlowTestGuard.** Per-test runtime budgets; tests exceeding the
+  budget are flagged at the end of the run so polling fallbacks /
+  perf regressions don't hide.
+- **CDP send/receive timing instrumentation** (opt-in via env var).
+- **`Wallabidi.Architecture` ExDoc page** covering the driver /
+  transport / pool model.
+
+### Fixed
+
+- **Concurrent navigation races** carried over from 0.2.14 — the
+  early-return guard, `stale_reference` plumbing, and bound-realm
+  retry continue to apply.
+- **LV-driver paths through `Browser.fill_in`, `set_value`,
+  `has_text?`, `has_value?`** — the lazy-element routings now correctly
+  fall back to the LV driver's element ops rather than always
+  resolving via the remote (CDP) client.
+- **Page-ready click_aware split** — pre- and post-click timeouts are
+  now distinct to prevent 5-second stalls when post-click readiness
+  takes longer than pre-click.
+
+### Changed
+
+- **Lightpanda dep → 0.2.10-rc.2**, which defaults its download URL to
+  the u2i fork build (`fork-YYYY-MM-DD` tag) carrying the
+  WS-cookie-on-upgrade patch needed for Phoenix LiveView channel
+  joins.
+- **Default `:max_wait_time` test config tightened** from 5000ms to
+  3500ms — negative-path tests burn the full budget per missing
+  element.
+- **`mix.exs` test paths** unified: `mix test.lightpanda_v2` /
+  `mix test.chrome_cdp_v2` / `mix test.chrome_bidi_v2` all run from
+  `integration_test/cases`.
+
 ## Wallabidi 0.2.14 (2026-05-03)
 
 ### Fixed

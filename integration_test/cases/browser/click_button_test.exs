@@ -240,7 +240,7 @@ defmodule Wallabidi.Integration.Browser.Actions.ClickButtonTest do
     assert find(page, css("#name_field")) |> has_value?("")
   end
 
-  @tag :browser
+  @tag :headless
   test "clicking input type[image] via name submits form", %{page: page} do
     current_url =
       page
@@ -251,7 +251,7 @@ defmodule Wallabidi.Integration.Browser.Actions.ClickButtonTest do
     assert current_url =~ "http://localhost:#{URI.parse(current_url).port}/index.html"
   end
 
-  @tag :browser
+  @tag :headless
   test "clicking input type[image] via id submits form", %{page: page} do
     current_url =
       page
@@ -266,11 +266,15 @@ defmodule Wallabidi.Integration.Browser.Actions.ClickButtonTest do
     assert click(page, button("Hidden Button"))
   end
 
+  @tag :polling
+
   test "throws an error if the button does not include a valid type attribute", %{page: page} do
     assert_raise Wallabidi.QueryError, ~r/button has an invalid 'type'/, fn ->
       click(page, button("button with bad type", []))
     end
   end
+
+  @tag :polling
 
   test "throws an error if clicking on an input with no type", %{page: page} do
     assert_raise Wallabidi.QueryError, ~r/Expected (.*) 1/, fn ->
@@ -278,6 +282,7 @@ defmodule Wallabidi.Integration.Browser.Actions.ClickButtonTest do
     end
   end
 
+  @tag :polling
   test "throws an error if the button cannot be found on the page", %{page: page} do
     assert_raise Wallabidi.QueryError, ~r/Expected (.*) 1/, fn ->
       click(page, button("unfound button", []))
@@ -287,6 +292,8 @@ defmodule Wallabidi.Integration.Browser.Actions.ClickButtonTest do
   test "escapes quotes", %{page: page} do
     assert click(page, button("I'm a button"))
   end
+
+  @tag :polling
 
   test "with duplicate buttons", %{page: page} do
     assert_raise Wallabidi.QueryError, ~r/Expected (.*) 1/, fn ->

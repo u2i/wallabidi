@@ -2,6 +2,11 @@ defmodule Wallabidi.Integration.Browser.FileTest do
   use Wallabidi.Integration.SessionCase, async: true
   @moduletag :browser
 
+  # File-input population requires either CDP's DOM.setFileInputFiles
+  # (Chrome) or the browser's window.DataTransfer API (also Chrome).
+  # Lightpanda has neither, so file inputs are genuinely a Chrome-only
+  # capability.
+
   import Wallabidi.Query, only: [css: 1, file_field: 1]
 
   setup %{session: session} do

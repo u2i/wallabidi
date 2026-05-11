@@ -15,7 +15,10 @@ defmodule Wallabidi.Integration.SessionCase do
   Starts a test session with the default opts for the given driver
   """
   def start_test_session(opts \\ []) do
-    retry(2, fn -> Wallabidi.start_session(opts) end)
+    # 4 retries gives BiDi room to weather a chromium-bidi session.subscribe
+    # timeout (occasional on slow CI runners) or a singleton BidiServer
+    # restart without failing the test.
+    retry(4, fn -> Wallabidi.start_session(opts) end)
   end
 
   @doc """

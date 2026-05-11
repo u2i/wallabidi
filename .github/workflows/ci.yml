@@ -61,22 +61,22 @@ jobs:
         driver:
           - label: LiveView Driver
             task: test.live_view
-            max_cases: 16
+            max_cases: 8
             needs_node: false
             needs_browser_install: false
           - label: Lightpanda
             task: test.lightpanda
-            max_cases: 16
+            max_cases: 8
             needs_node: false
             needs_browser_install: false
           - label: Chrome CDP
             task: test.chrome
-            max_cases: 4
+            max_cases: 2
             needs_node: true
             needs_browser_install: true
           - label: Chrome BiDi
             task: test.chrome.bidi
-            max_cases: 2
+            max_cases: 1
             needs_node: true
             needs_browser_install: true
 

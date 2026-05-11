@@ -62,11 +62,15 @@ defmodule Wallabidi.Integration.Browser.FillInTest do
            |> has_value?("Test Label Text")
   end
 
+  @tag :polling
+
   test "checks for labels without for attributes", %{page: page} do
     assert_raise Wallabidi.QueryError, ~r/label has no 'for'/, fn ->
       fill_in(page, Query.text_field("Input with bad label"), with: "Test")
     end
   end
+
+  @tag :polling
 
   test "checks for mismatched ids on labels", %{page: page} do
     assert_raise Wallabidi.QueryError,
@@ -76,6 +80,8 @@ defmodule Wallabidi.Integration.Browser.FillInTest do
                  end
   end
 
+  @tag :polling
+
   test "checks for duplicate ids on labels", %{page: page} do
     assert_raise Wallabidi.QueryError,
                  ~r/but the label's 'for' attribute\smatches 3 elements/,
@@ -84,6 +90,7 @@ defmodule Wallabidi.Integration.Browser.FillInTest do
                  end
   end
 
+  @tag :polling
   test "provides guidance for labels with type mismatch", %{page: page} do
     assert_raise Wallabidi.QueryError,
                  ~r/but the label's 'for' attribute\smatches one element/,

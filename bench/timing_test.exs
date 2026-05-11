@@ -58,7 +58,15 @@ defmodule Wallabidi.Integration.Chrome.TraceTimingTest do
   end
 
   test "compare all drivers" do
-    drivers = [:chrome_cdp, :chrome, :live_view]
+    drivers = [
+      :lightpanda,
+      :lightpanda_v2,
+      :chrome_cdp,
+      :chrome_cdp_v2,
+      :chrome,
+      :chrome_bidi_v2,
+      :live_view
+    ]
 
     results =
       for driver <- drivers, reduce: [] do
@@ -70,15 +78,34 @@ defmodule Wallabidi.Integration.Chrome.TraceTimingTest do
 
           case Wallabidi.start_session(opts) do
             {:ok, session} ->
+              # Capture-and-continue so one driver's scenario failure
+              # doesn't kill the rest of the comparison run.
+              result =
+                try do
+                  {:ok, run_counter_benchmark(session, driver, quiet: true)}
+                rescue
+                  e -> {:error, Exception.message(e)}
+                catch
+                  kind, value -> {:error, Exception.format(kind, value)}
+                end
+
               try do
-                timings = run_counter_benchmark(session, driver, quiet: true)
-                [{driver, timings} | acc]
-              after
                 Wallabidi.end_session(session)
+              catch
+                _, _ -> :ok
               end
 
-            {:error, _} ->
-              IO.puts("  #{driver}: skipped (driver not available)")
+              case result do
+                {:ok, timings} ->
+                  [{driver, timings} | acc]
+
+                {:error, msg} ->
+                  IO.puts("  #{driver}: failed (#{String.slice(msg, 0, 120)})")
+                  acc
+              end
+
+            {:error, reason} ->
+              IO.puts("  #{driver}: skipped (#{inspect(reason)})")
               acc
           end
       end
@@ -185,17 +212,24 @@ defmodule Wallabidi.Integration.Chrome.TraceTimingTest do
   defp print_comparison(results) do
     ops = [:visit, :find, :click_1, :click_2, :click_3, :assert_count, :assert_done]
 
-    IO.puts("")
-    IO.puts("  ┌──────────────────┬────────────┬────────────┬────────────┐")
-    IO.puts("  │ Operation        │ CDP        │ BiDi       │ LiveView   │")
-    IO.puts("  ├──────────────────┼────────────┼────────────┼────────────┤")
+    drivers = Enum.map(results, &elem(&1, 0))
+    col_w = 14
 
-    totals = %{chrome_cdp: 0, chrome: 0, live_view: 0}
+    IO.puts("")
+    IO.puts("  Operation       " <> Enum.map_join(drivers, "", &pad("│ #{&1}", col_w + 1)) <> "│")
+
+    IO.puts(
+      "  " <>
+        String.duplicate("─", 16) <>
+        Enum.map_join(drivers, "", fn _ -> "┼" <> String.duplicate("─", col_w) end) <> "┼"
+    )
+
+    totals = Map.new(drivers, fn d -> {d, 0} end)
 
     totals =
       Enum.reduce(ops, totals, fn op, totals ->
         cells =
-          for driver <- [:chrome_cdp, :chrome, :live_view] do
+          for driver <- drivers do
             case List.keyfind(results, driver, 0) do
               {^driver, agg} ->
                 case List.keyfind(agg, op, 0) do
@@ -208,23 +242,30 @@ defmodule Wallabidi.Integration.Chrome.TraceTimingTest do
             end
           end
 
-        IO.puts(
-          "  │ #{pad(op, 16)} │ #{pad(us_or_na(Enum.at(cells, 0)), 10)} │ #{pad(us_or_na(Enum.at(cells, 1)), 10)} │ #{pad(us_or_na(Enum.at(cells, 2)), 10)} │"
-        )
+        row =
+          Enum.map_join(cells, "", fn cell -> pad("│ #{us_or_na(cell)}", col_w + 1) end) <> "│"
 
-        Enum.zip([:chrome_cdp, :chrome, :live_view], cells)
+        IO.puts("  #{pad(op, 16)}#{row}")
+
+        Enum.zip(drivers, cells)
         |> Enum.reduce(totals, fn {d, v}, acc ->
           if v, do: Map.update!(acc, d, &(&1 + v)), else: acc
         end)
       end)
 
-    IO.puts("  ├──────────────────┼────────────┼────────────┼────────────┤")
-
     IO.puts(
-      "  │ #{pad("TOTAL", 16)} │ #{pad(us_or_na(totals[:chrome_cdp]), 10)} │ #{pad(us_or_na(totals[:chrome]), 10)} │ #{pad(us_or_na(totals[:live_view]), 10)} │"
+      "  " <>
+        String.duplicate("─", 16) <>
+        Enum.map_join(drivers, "", fn _ -> "┼" <> String.duplicate("─", col_w) end) <> "┼"
     )
 
-    IO.puts("  └──────────────────┴────────────┴────────────┴────────────┘")
+    total_row =
+      Enum.map_join(drivers, "", fn d ->
+        pad("│ #{us_or_na(totals[d])}", col_w + 1)
+      end) <> "│"
+
+    IO.puts("  #{pad("TOTAL", 16)}#{total_row}")
+
     IO.puts("")
     IO.puts("  #{@warmup_rounds} warmup + #{@bench_rounds} bench rounds per driver, median shown")
   end

@@ -12,19 +12,19 @@ defmodule Wallabidi.Integration.LiveView.JoinPendingWaitTest do
   # during the pending window and the delta is negative.
 
   use Wallabidi.Integration.SessionCase, async: false
-
-  @moduletag :browser
+  @moduletag :headless
 
   @base Application.compile_env(:wallabidi, :live_app_url, "http://localhost:4321")
 
+  # The fake page has no real LV, so `await_page_ready_after` waits its
+  # full 5s after the click. Structural to the test, not a regression.
+  @tag slow: 18_000
   test "click waits for liveSocket.main.joinPending to flip false", %{session: session} do
     session = visit(session, @base <> "/join-pending")
 
-    # Let the page install its fake liveSocket (T+50ms). After this
-    # sleep the window has liveSocket.main.joinPending === true, and
-    # the flip will happen another ~750ms later.
-    Process.sleep(150)
-
+    # The page installs its fake liveSocket inline (so by the time
+    # visit returns, joinPending === true). The flip fires 100ms after
+    # parse — well within wallabidi's 200ms default pre-click window.
     click(session, Query.button("Click me"))
 
     text = Wallabidi.Browser.text(session, Query.css("#jp-output"))

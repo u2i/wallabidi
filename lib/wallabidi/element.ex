@@ -25,9 +25,9 @@ defmodule Wallabidi.Element do
   Unlike `Browser` the actions in `Element` do not retry if the element becomes stale. Instead an exception will be raised.
   """
 
-  alias Wallabidi.StaleReferenceError
+  alias Wallabidi.{Session, StaleReferenceError}
 
-  defstruct [:url, :session_url, :parent, :id, :driver, :bidi_shared_id, screenshots: []]
+  defstruct [:url, :session_url, :parent, :id, :driver, :handle, screenshots: []]
 
   @type value ::
           String.t()
@@ -36,14 +36,44 @@ defmodule Wallabidi.Element do
           | :unselected
   @type attr :: String.t()
   @type keys_to_send :: String.t() | list(atom | String.t())
+
+  # Handle shapes differ by driver:
+  #   * CDP/BiDi drivers   — String.t() (CDP objectId or BiDi sharedId)
+  #   * LiveView driver    — {:lv_element, css_selector, index, html}
+  #   * Lazy element       — {:lazy, ops, idx, parent_id}, resolved on use
+  #   * Unresolved         — nil
+  @type handle ::
+          String.t()
+          | nil
+          | {:lv_element, String.t(), non_neg_integer(), String.t()}
+          | {:lazy, list(), non_neg_integer(), String.t() | nil}
+
   @type t :: %__MODULE__{
           session_url: String.t(),
           url: String.t(),
           id: String.t(),
           screenshots: list,
           driver: module,
-          bidi_shared_id: String.t() | nil
+          handle: handle()
         }
+
+  @doc """
+  Returns the root `Session` for an Element or Session.
+
+  Element parent chains can nest (e.g. element → element → session);
+  this walks up to the Session at the root.
+  """
+  @spec root_session(t() | Session.t()) :: Session.t()
+  def root_session(%Session{} = s), do: s
+  def root_session(%__MODULE__{parent: parent}), do: root_session(parent)
+
+  @doc """
+  Returns the BiDi/CDP WebSocket pid for an Element or Session, walking
+  up the parent chain to find the root Session's `:bidi_pid`.
+  """
+  @spec bidi_pid(t() | Session.t()) :: pid() | nil
+  def bidi_pid(%Session{bidi_pid: pid}), do: pid
+  def bidi_pid(%__MODULE__{parent: parent}), do: bidi_pid(parent)
 
   @doc """
   Clears any value set in the element.

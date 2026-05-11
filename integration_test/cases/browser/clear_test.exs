@@ -1,6 +1,7 @@
 defmodule Wallabidi.Integration.Browser.ClearTest do
   use Wallabidi.Integration.SessionCase, async: true
 
+  @tag :polling
   test "clearing input", %{session: session} do
     element =
       session

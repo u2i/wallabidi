@@ -1,7 +1,7 @@
 defmodule Wallabidi.Chrome.LoggerTest do
   use ExUnit.Case, async: false
 
-  alias Wallabidi.Chrome.Logger
+  alias Wallabidi.Remote.Chrome.Logger
   import ExUnit.CaptureIO
   alias Wallabidi.SettingsTestHelpers
 

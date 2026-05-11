@@ -1,6 +1,9 @@
 defmodule Wallabidi.Integration.Browser.WindowHandlesTest do
   use Wallabidi.Integration.SessionCase, async: true
   @moduletag :browser
+  # Tests use explicit :timer.sleep(500) × N for new-tab/window load
+  # races; legitimately slow.
+  @moduletag slow: 15_000
 
   test "switching between tabs and windows", %{session: session} do
     session

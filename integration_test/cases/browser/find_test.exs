@@ -28,7 +28,7 @@ defmodule Wallabidi.Integration.Browser.FindTest do
       assert element
     end
 
-    @tag :browser
+    @tag :headless
     test "queries can be scoped by elements", %{session: session} do
       users =
         session
@@ -41,11 +41,15 @@ defmodule Wallabidi.Integration.Browser.FindTest do
       assert List.first(users) |> Element.text() == "Chris"
     end
 
+    @tag :polling
+
     test "throws a not found error if the element could not be found", %{page: page} do
       assert_raise Wallabidi.QueryError, ~r/Expected to find/, fn ->
         find(page, Query.css("#not-there"))
       end
     end
+
+    @tag :polling
 
     test "throws a not found error if the xpath could not be found", %{page: page} do
       assert_raise Wallabidi.QueryError, ~r/Expected (.*) xpath '\/\/test-element'/, fn ->
@@ -53,11 +57,15 @@ defmodule Wallabidi.Integration.Browser.FindTest do
       end
     end
 
+    @tag :polling
+
     test "ambiguous queries raise an exception", %{page: page} do
       assert_raise Wallabidi.QueryError, ~r/Expected (.*) 1(.*) but 5/, fn ->
         find(page, Query.css(".user"))
       end
     end
+
+    @tag :polling
 
     test "throws errors if element should not be visible", %{page: page} do
       assert_raise Wallabidi.QueryError, ~r/invisible/, fn ->
@@ -65,7 +73,8 @@ defmodule Wallabidi.Integration.Browser.FindTest do
       end
     end
 
-    @tag :browser
+    @tag :headless
+    @tag :polling
     test "find/2 raises an error if the element is not visible", %{session: session} do
       session
       |> visit("page_1.html")
@@ -78,7 +87,7 @@ defmodule Wallabidi.Integration.Browser.FindTest do
              |> length == 1
     end
 
-    @tag :browser
+    @tag :headless
     test "finds invisible elements", %{page: page} do
       assert find(page, Query.css("#invisible", visible: false))
     end
@@ -98,7 +107,7 @@ defmodule Wallabidi.Integration.Browser.FindTest do
       assert find(page, Query.css(".plus-one", text: "+ 1"))
     end
 
-    @tag :browser
+    @tag :headless
     test "scopes can be composed together", %{page: page} do
       assert find(page, Query.css(".user", text: "Same User", count: 2))
       assert find(page, Query.css(".user", text: "Visible User", visible: true))
@@ -137,6 +146,8 @@ defmodule Wallabidi.Integration.Browser.FindTest do
 
     assert find(session, Query.css(".orange", count: 5)) |> length == 5
   end
+
+  @tag :polling
 
   test "finding one or more elements", %{session: session} do
     session

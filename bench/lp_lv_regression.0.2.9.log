@@ -1,0 +1,39 @@
+Generated wallabidi app
+
+21:57:26.425 [info] Running Wallabidi.Integration.LiveApp.Endpoint with cowboy 2.14.2 at 0.0.0.0:4321 (http)
+>>> ready
+
+21:57:26.426 [info] Access Wallabidi.Integration.LiveApp.Endpoint at http://localhost:4321
+
+21:57:29.281 [info] CONNECTED TO Phoenix.LiveView.Socket in 507µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "JQsYJ14zADA_V08KPhUVDiMBfQ0VOTYNQ_Rk3Vryz3y2ivmoEo-4ws_J", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:57:32.845 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "LTc4NTEiMz89WxQ9OjYeAzcAKl1FdhZBeMuGTCglvlVykamHgaBm74w4", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:57:36.367 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "Ixw5BC4KBz15Q3QCNx8HITcNLXwbBDQ2kftvKkSn2t6FfHtjglELiFUC", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:57:39.948 [info] CONNECTED TO Phoenix.LiveView.Socket in 18µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "bQxkDw0wKHY4HA9vOUcVQyd7PSkSYhQn8jIAncB1PRw5ArduMLLAS0Ws", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:57:41.924 [info] CONNECTED TO Phoenix.LiveView.Socket in 18µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "AiUBBwsYIzJmYzAXYBQpERgWGgQBCRBAJ_Lunywa-TrS1CZZHwr4sKq5", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:57:46.511 [notice] SIGTERM received - shutting down
+

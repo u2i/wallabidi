@@ -2,7 +2,7 @@ defmodule Wallabidi.Mixfile do
   use Mix.Project
 
   @source_url "https://github.com/u2i/wallabidi"
-  @version "0.2.14"
+  @version "0.3.0"
   @maintainers ["Tom Clarke"]
 
   def project do
@@ -30,8 +30,17 @@ defmodule Wallabidi.Mixfile do
         ],
         "test.live_view": fn args -> test_driver("live_view", "LiveView", args) end,
         "test.lightpanda": fn args -> test_driver("lightpanda", "Lightpanda", args) end,
+        "test.lightpanda_v2": fn args ->
+          test_driver("lightpanda_v2", "Lightpanda (V2)", args)
+        end,
         "test.chrome": fn args -> test_driver("chrome_cdp", "Chrome (CDP)", args) end,
+        "test.chrome_v2": fn args ->
+          test_driver("chrome_cdp_v2", "Chrome (CDP V2)", args)
+        end,
         "test.chrome.bidi": fn args -> test_driver("chrome", "Chrome (BiDi)", args) end,
+        "test.chrome.bidi_v2": fn args ->
+          test_driver("chrome_bidi_v2", "Chrome (BiDi V2)", args)
+        end,
         "test.bench": fn args -> test_driver("bench", "Benchmarks", args) end
       ],
       test_paths: test_paths(System.get_env("WALLABIDI_DRIVER")),
@@ -45,8 +54,11 @@ defmodule Wallabidi.Mixfile do
         "test.all": :test,
         "test.live_view": :test,
         "test.lightpanda": :test,
+        "test.lightpanda_v2": :test,
         "test.chrome": :test,
+        "test.chrome_v2": :test,
         "test.chrome.bidi": :test,
+        "test.chrome.bidi_v2": :test,
         "test.bench": :test
       ]
     ]
@@ -75,7 +87,7 @@ defmodule Wallabidi.Mixfile do
       {:sandbox_shim, "~> 0.1"},
       {:plug_cowboy, "~> 2.7"},
       # Test-only deps
-      {:lightpanda, "~> 0.2.10-rc.1", only: :test},
+      {:lightpanda, "~> 0.2.10-rc.2", only: :test},
       {:sandbox_case, "~> 0.3.8", only: :test},
       {:cachex, "~> 4.1", only: :test},
       {:fun_with_flags, "~> 1.11", only: :test, runtime: false},
@@ -116,7 +128,8 @@ defmodule Wallabidi.Mixfile do
     [
       extras: [
         "README.md": [title: "Introduction"],
-        "TESTING.md": [title: "Testing"]
+        "TESTING.md": [title: "Testing"],
+        "ARCHITECTURE.md": [title: "Architecture"]
       ],
       source_ref: "v#{@version}",
       source_url: @source_url,
@@ -134,8 +147,11 @@ defmodule Wallabidi.Mixfile do
 
   defp test_paths("live_view"), do: ["integration_test/cases"]
   defp test_paths("lightpanda"), do: ["integration_test/cases"]
+  defp test_paths("lightpanda_v2"), do: ["integration_test/cases"]
   defp test_paths("chrome"), do: ["integration_test/cases"]
   defp test_paths("chrome_cdp"), do: ["integration_test/cases"]
+  defp test_paths("chrome_cdp_v2"), do: ["integration_test/cases"]
+  defp test_paths("chrome_bidi_v2"), do: ["integration_test/cases"]
   defp test_paths("bench"), do: ["bench"]
   defp test_paths(_), do: ["test"]
 

@@ -39,18 +39,17 @@ defmodule Wallabidi.Driver do
   @doc """
   Invoked to accept one alert triggered within `open_dialog_fn` and return the alert message.
   """
-  @callback accept_alert(Session.t(), open_dialog_fn) :: {:ok, [String.t()]} | {:error, reason}
+  @callback accept_alert(Session.t(), open_dialog_fn) :: String.t()
 
   @doc """
   Invoked to accept one confirm triggered within `open_dialog_fn` and return the confirm message.
   """
-  @callback accept_confirm(Session.t(), open_dialog_fn) :: {:ok, [String.t()]} | {:error, reason}
+  @callback accept_confirm(Session.t(), open_dialog_fn) :: String.t()
 
   @doc """
   Invoked to accept one prompt triggered within `open_dialog_fn` and return the prompt message.
   """
-  @callback accept_prompt(Session.t(), String.t() | nil, open_dialog_fn) ::
-              {:ok, [String.t()]} | {:error, reason}
+  @callback accept_prompt(Session.t(), String.t() | nil, open_dialog_fn) :: String.t()
 
   @doc """
   Invoked to close the currently focused window.
@@ -75,12 +74,12 @@ defmodule Wallabidi.Driver do
   @doc """
   Invoked to dismiss one confirm triggered within `open_dialog_fn` and return the confirm message.
   """
-  @callback dismiss_confirm(Session.t(), open_dialog_fn) :: {:ok, [String.t()]} | {:error, reason}
+  @callback dismiss_confirm(Session.t(), open_dialog_fn) :: String.t()
 
   @doc """
   Invoked to dismiss one prompt triggered within `open_dialog_fn` and return the prompt message.
   """
-  @callback dismiss_prompt(Session.t(), open_dialog_fn) :: {:ok, [String.t()]} | {:error, reason}
+  @callback dismiss_prompt(Session.t(), open_dialog_fn) :: String.t()
 
   @doc """
   Invoked to change the driver focus to window specified by handle.

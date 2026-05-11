@@ -46,36 +46,37 @@ Each test runs on the **cheapest driver** that supports it. No env vars, no alia
 
 ## Concurrency and performance
 
-Each driver scales differently with `--max-cases`. The values below come from running the integration suite end-to-end on a 16-thread Mac laptop (M-series, all suites passing at the listed concurrency).
+Each driver scales differently with `--max-cases`. The values below come from running the [perf_bench](https://github.com/u2i/perf_bench) LV scenario suite on a 16-thread Mac laptop (M-series). perf_bench is a separate harness containing 136 LiveView-focused scenarios — happy paths only, no waiting-for-absence tests — so it's a better fit for cross-driver measurements than the wallabidi integration suite, which contains plenty of error-case waits.
 
 ![per-test wall time vs max-cases](priv/perf-matrix.svg)
 
-Wall time in seconds for the full integration suite at each `--max-cases`:
+Wall time in seconds for the [perf_bench](https://github.com/u2i/perf_bench) LiveView scenario suite (136 tests) at each `--max-cases`:
 
-| Driver         | mc1   | mc2   | mc4   | mc8     | mc16    | Tests |
-|----------------|-------|-------|-------|---------|---------|-------|
-| **BiDi** (Chrome)  | 917s  | 690s  | —     | —       | —       | 285   |
-| **CDP** (Chrome)   | 421s  | 240s  | **175s** | 148s ⚠ | 144s ⚠ | 289   |
-| **Lightpanda**     | 140s  | 84s   | 49s   | 34s     | **30s** | 153   |
-| **LiveView**       | 122s  | 78s   | 42s   | 28s     | **25s** | 124   |
+| Driver         | mc1    | mc2   | mc4   | mc8     | mc16        |
+|----------------|--------|-------|-------|---------|-------------|
+| **LiveView**       | 15s    | 9s    | 6s    | **4s**  | 4s          |
+| **Lightpanda**     | 43s    | 22s   | 12s   | **8s**  | 8s          |
+| **CDP** (Chrome)   | 68s    | 52s   | **48s** | 51s   | 52s         |
+| **BiDi** (Chrome)  | 486s   | 100s  | 71s   | **68s** | 259s ⚠ (2 flakes) |
+| **Wallaby** (chromedriver) | 218s | 122s | 80s | 69s ⚠ (4 flakes) | 70s ⚠ (5 flakes) |
 
-⚠ = passes mostly but introduces 1–2 flaky failures from concurrency contention.
+⚠ flag = flaky failures at this concurrency. Chrome BiDi's mc=16 trips chromium-bidi's BiDi Mapper contention; Wallaby's mc=8+ trips chromedriver session-creation timeouts.
 
 **Recommended `--max-cases` per driver:**
 
 | Driver | Recommended | Why |
 |--------|-------------|-----|
-| **BiDi** | `2` | chromium-bidi's BiDi Mapper is single-threaded JS in one Chrome tab. Each pool slot adds another Chrome+Mapper, so concurrency = pool size. Benchmarked up to 2; higher is possible. |
-| **CDP** | `4` | CDP's flat-session protocol multiplexes parallel work across Chrome's per-target threads. mc4 is the sweet spot — beyond it you save ~30s and pick up flakes. |
-| **Lightpanda** | `16` | In-process, scales near-linearly with BEAM concurrency. |
-| **LiveView** | `16` | No external process; just BEAM. Use as much concurrency as ExUnit allows. |
+| **BiDi** | `8` | chromium-bidi's BiDi Mapper is single-threaded JS in one Chrome tab. mc=8 captures the scaling win; mc=16 trips structural flakes. |
+| **CDP** | `4` | CDP's flat-session protocol multiplexes parallel work across Chrome's per-target threads. mc=4 is the sweet spot; past that you save no wallclock. |
+| **Lightpanda** | `8`–`16` | In-process WS, scales linearly to mc=8 then plateaus at LP's `--cdp-max-connections` limit. |
+| **LiveView** | `8`–`16` | No external process; just BEAM. Use as much concurrency as ExUnit allows. |
 
 **When to pick which driver in CI:**
 
 - *Default:* let wallabidi route each test to the cheapest driver that supports it. Most LiveView-app tests run on the LiveView driver and are nearly free.
-- *JS-heavy app:* Lightpanda at mc16 — fastest real headless option.
-- *Need full browser fidelity (CSS, screenshots, mouse events):* CDP at mc4.
-- *Cross-browser portability or BiDi spec features:* BiDi at mc2. Slower than CDP today because the BiDi protocol serializes through a single Mapper per Chrome; will improve as chromium-bidi or successor implementations add parallel mapping.
+- *JS-heavy app:* Lightpanda at mc=8 — fastest real headless option, within 2× of LiveView at scale.
+- *Need full browser fidelity (CSS, screenshots, mouse events):* CDP at mc=4.
+- *Cross-browser portability or BiDi spec features:* BiDi at mc=8. Slower than CDP today because the BiDi protocol serializes through a single Mapper per Chrome; will improve as chromium-bidi or successor implementations add parallel mapping.
 
 ## Why fork?
 
@@ -87,24 +88,26 @@ If you're starting a new project or are willing to do a find-and-replace, Wallab
 
 ## What's different from Wallaby?
 
-**Protocol**: All browser communication uses WebDriver BiDi over WebSocket instead of HTTP polling. This means event-driven log capture, lower latency, and access to features impossible with request-response HTTP.
+**Protocol**: Browser communication goes over WebSocket — Chrome via CDP or BiDi, Lightpanda via CDP — never HTTP polling. This means event-driven log capture, lower latency, and access to features impossible with request-response HTTP.
 
 **LiveView-aware by default**: Every interaction automatically waits for the right thing — no manual sleeps or retry loops needed:
 
 - `visit/2` waits for the LiveSocket to connect before returning.
-- `click/2` inspects the target element's bindings (`phx-click`, `data-phx-link`, plain `href`) and classifies the interaction as patch, navigate, or full-page. It then awaits the corresponding DOM patch, page load, or LiveView reconnection automatically.
-- `fill_in/3` on `phx-change` inputs drains all pending patches (one per keystroke) before returning.
-- `assert_has/2` uses an event-driven `await_selector` that hooks into LiveView's `onPatchEnd` callback — it waits for the next DOM patch before polling, avoiding both false negatives and busy-waiting.
+- `click/2` inspects the target element's bindings (`phx-click`, `data-phx-link`, plain `href`) and classifies the interaction as patch, navigate, or full-page in the *same round-trip* as the click itself. It then awaits the corresponding DOM patch, page load, or LiveView reconnection automatically.
+- `fill_in/3` on `phx-change` inputs fuses silent-clear + set-value + drain-patches into one round-trip — the call returns only once the server has finished processing the final phx-change.
+- `assert_has/2` uses an event-driven `await_selector` that hooks into LiveView's `onPatchEnd` callback and a `MutationObserver` — it fires the next-match check exactly when the DOM changes, never polls.
+- `has_text?/2`, `has_value?/2` route through the same event-driven pattern: a single Promise inside the browser resolves the moment the predicate matches, replacing Elixir-side polling loops.
 
 All of this is installed via injected JavaScript — no changes to your `app.js` or LiveSocket config are needed.
 
-**New features**:
-- `settle/2` — Wait for the page to become idle (no pending HTTP requests, no `phx-*-loading` classes). Useful after PubSub broadcasts, timers, or other non-interaction updates.
-- `await_patch/2` — Wait for the next LiveView DOM patch. Useful for server-pushed updates that aren't triggered by a browser interaction.
-- `on_console/2` — Register a callback for real-time browser console output.
-- `intercept_request/3` — Mock HTTP responses directly in the browser without Bypass or a test server.
+**Architecture**: A single opcode interpreter (`W.run`) on the page side handles every Elixir → browser call. The Elixir side ships opcode lists like `[["query","css",".btn"],["classify_first","click"],["click_first"]]`, never raw JS function bodies. Compound operations (click_aware, fill_in, has_text) fuse multiple steps into a single Promise so each logical operation is one network round-trip.
 
-**Three drivers**: LiveView (in-process, no browser), Lightpanda (headless CDP), Chrome (full BiDi). Tests declare their minimum requirement with `@tag :headless` or `@tag :browser`.
+**Lazy elements**: Most Browser APIs that find then immediately operate (`Browser.text`, `attr`, `fill_in`, `click`, `has_text?`...) skip the V8-object-id ref-fetch that Wallaby would do — the element op re-resolves the query inline on the page. Saves one round-trip per element op without changing semantics.
+
+**New features**:
+- `await_patch/2` — Wait for the next LiveView DOM patch. Useful for server-pushed updates that aren't triggered by a browser interaction.
+
+**Four drivers**: LiveView (in-process, no browser), Lightpanda (headless CDP), Chrome CDP (full browser, direct DevTools Protocol), Chrome BiDi (full browser, W3C WebDriver BiDi via chromium-bidi). Tests declare their minimum requirement with `@tag :headless` or `@tag :browser`.
 
 **Removed**:
 - Selenium driver — replaced with native BiDi + CDP

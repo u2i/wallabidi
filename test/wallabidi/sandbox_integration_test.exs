@@ -44,7 +44,6 @@ defmodule Wallabidi.SandboxIntegrationTest do
 
       session
       |> visit("/dashboard")
-      |> settle()
       |> assert_has(Query.text("Stats: 1"))
     end
   end

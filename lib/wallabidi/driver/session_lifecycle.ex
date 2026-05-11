@@ -1,7 +1,7 @@
 defmodule Wallabidi.Driver.SessionLifecycle do
   @moduledoc false
 
-  alias Wallabidi.BiDi.WebSocketClient
+  alias Wallabidi.Remote.BiDi.WebSocketClient
   alias Wallabidi.Session
 
   # Shared session lifecycle helpers for all drivers.

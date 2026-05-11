@@ -76,10 +76,7 @@ defmodule Wallabidi.SessionProcess do
     page_state: :initial,
     page_state_doc_id: nil,
     page_state_started_at: nil,
-    page_state_history: [],
-    # Lazy ops queue. Side-effect ops (click) append here; the next
-    # blocking RPC auto-flushes them via CDPClient.maybe_flush_pending.
-    pending_ops: []
+    page_state_history: []
   ]
 
   # --- Public API ---
@@ -233,6 +230,38 @@ defmodule Wallabidi.SessionProcess do
   end
 
   @doc """
+  Synchronisation barrier — blocks until the SessionProcess has
+  processed every message that was already in its mailbox at the
+  moment of this call. The reply is itself a no-op (`:ok`); the value
+  comes from the GenServer's serial-mailbox semantics.
+
+  Used by the CDP send path to ensure that any binding events
+  (`Runtime.bindingCalled` arriving as `script.message` /
+  `:bidi_event` messages) and `page_ready` notifications already in
+  the mailbox are reduced into state before the next CDP RPC is
+  issued. Without this barrier, a CDP send can race ahead of
+  pending state updates that are causally-prior — surfacing as
+  spurious flake on concurrent operations.
+
+  Cheap (one round-trip; no work in the handler), but adds a
+  per-call serialisation point. Call only where you need ordering.
+  """
+  @spec sync_barrier(Session.t()) :: :ok
+  def sync_barrier(%Session{pid: pid}) when is_pid(pid) do
+    GenServer.call(pid, :sync_barrier)
+  catch
+    :exit, _ -> :ok
+  end
+
+  # During bootstrap (`init_fun` runs INSIDE the SessionProcess) the
+  # session struct's `:pid` field hasn't been populated yet — it's
+  # backfilled by `start_link/1` after the GenServer process starts.
+  # Calls to sync_barrier before that fill is harmless to skip: there's
+  # no other operation racing them, since we're still single-threaded
+  # in init.
+  def sync_barrier(%Session{}), do: :ok
+
+  @doc """
   Returns `{state, history}` for the bootstrap's page-ready state
   machine. `state` is one of `:initial | :non_lv_ready |
   :awaiting_hook | :hook_installed | :lv_ready`. `history` is a list
@@ -268,19 +297,6 @@ defmodule Wallabidi.SessionProcess do
     GenServer.call(pid, :drain_loads)
   catch
     :exit, _ -> :ok
-  end
-
-  @doc "Append a side-effect op to the lazy queue (non-blocking cast)."
-  def append_ops(%Session{pid: pid}, query_id, ops, action, opts)
-      when is_pid(pid) do
-    GenServer.cast(pid, {:append_ops, query_id, ops, action, opts})
-  end
-
-  @doc "Drain all pending ops atomically. Returns the list and clears it."
-  def drain_ops(%Session{pid: pid}) when is_pid(pid) do
-    GenServer.call(pid, :drain_ops)
-  catch
-    :exit, _ -> []
   end
 
   # --- GenServer callbacks ---
@@ -405,8 +421,10 @@ defmodule Wallabidi.SessionProcess do
     end
   end
 
-  def handle_call(:drain_ops, _from, state) do
-    {:reply, state.pending_ops, %{state | pending_ops: []}}
+  def handle_call(:sync_barrier, _from, state) do
+    # Reaching this clause means every prior message in the mailbox
+    # has been processed. The :ok reply itself carries no information.
+    {:reply, :ok, state}
   end
 
   def handle_call(:get_page_id, _from, state) do
@@ -430,12 +448,6 @@ defmodule Wallabidi.SessionProcess do
       timeout_ref = Process.send_after(self(), :page_ready_timeout, timeout_ms)
       {:noreply, %{state | page_ready_waiter: {from, pre_page_id, timeout_ref}}}
     end
-  end
-
-  @impl true
-  def handle_cast({:append_ops, query_id, ops, action, opts}, state) do
-    entry = {query_id, ops, action, opts}
-    {:noreply, %{state | pending_ops: state.pending_ops ++ [entry]}}
   end
 
   @impl true

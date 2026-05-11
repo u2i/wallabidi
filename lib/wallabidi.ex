@@ -20,6 +20,7 @@ defmodule Wallabidi do
 
   @doc false
   def start(_type, _args) do
+    Wallabidi.Bench.Timing.setup()
     driver_mod = driver_module()
 
     case driver_mod.validate() do
@@ -82,10 +83,20 @@ defmodule Wallabidi do
     # when the caller dies, so we don't need on_exit hooks or SessionStore
     # monitoring for crashed-test cleanup.
     case resolve_driver(opts) do
-      :live_view -> Wallabidi.LiveViewDriver.start_session(opts)
-      :lightpanda -> Wallabidi.Lightpanda.start_session(opts)
-      :chrome_cdp -> Wallabidi.ChromeCDP.start_session(opts)
-      _browser -> Wallabidi.Chrome.start_session(opts)
+      :live_view ->
+        Wallabidi.LiveView.Driver.start_session(opts)
+
+      d when d in [:lightpanda, :lightpanda_v2] ->
+        Wallabidi.Remote.Drivers.LightpandaCDP.start_session(opts)
+
+      d when d in [:chrome_cdp, :chrome_cdp_v2] ->
+        Wallabidi.Remote.Drivers.ChromeCDP.start_session(opts)
+
+      d when d in [:chrome, :chrome_bidi_v2] ->
+        Wallabidi.Remote.Drivers.ChromeBiDi.start_session(opts)
+
+      _browser ->
+        Wallabidi.Remote.Drivers.ChromeCDP.start_session(opts)
     end
   end
 
@@ -95,6 +106,7 @@ defmodule Wallabidi do
   @spec end_session(Session.t()) :: :ok | {:error, reason}
   def end_session(%Session{driver: driver} = session) do
     result = driver.end_session(session)
+
     # Drain any in-flight WebSocket events that arrived after session
     # teardown. Without this, :bidi_event messages linger in the test
     # process mailbox and can interfere with the next session.
@@ -118,10 +130,11 @@ defmodule Wallabidi do
   @doc false
   def driver_module do
     case resolve_driver() do
-      :lightpanda -> Wallabidi.Lightpanda
-      :chrome_cdp -> Wallabidi.ChromeCDP
-      :live_view -> Wallabidi.LiveViewDriver
-      _ -> Wallabidi.Chrome
+      :live_view -> Wallabidi.LiveView.Driver
+      d when d in [:lightpanda, :lightpanda_v2] -> Wallabidi.Remote.Drivers.LightpandaCDP
+      d when d in [:chrome_cdp, :chrome_cdp_v2] -> Wallabidi.Remote.Drivers.ChromeCDP
+      d when d in [:chrome, :chrome_bidi_v2] -> Wallabidi.Remote.Drivers.ChromeBiDi
+      _ -> Wallabidi.Remote.Drivers.ChromeCDP
     end
   end
 

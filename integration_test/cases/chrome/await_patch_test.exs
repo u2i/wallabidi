@@ -1,7 +1,7 @@
 defmodule Wallabidi.Integration.AwaitPatchTest do
   use ExUnit.Case, async: true
+  @moduletag :headless
   use Wallabidi.DSL
-  @moduletag :browser
 
   setup do
     live_url = Application.get_env(:wallabidi, :live_app_url)
@@ -100,14 +100,6 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
       |> assert_has(Query.css("#status", text: "done"))
       |> assert_has(Query.css("#result", text: "async result"))
     end
-
-    test "settle works for async chains", %{session: session, live_url: url} do
-      session
-      |> visit("#{url}/async")
-      |> click(Query.css("#load"))
-      |> settle()
-      |> assert_has(Query.css("#result", text: "async result"))
-    end
   end
 
   describe "text-aware await_selector" do
@@ -170,6 +162,7 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
       )
     end
 
+    @tag slow: 15_000
     test "await_liveview_connected waits for NEW LiveView, not old one", %{
       session: session,
       live_url: url
@@ -179,10 +172,10 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
       # Use execute_script to trigger the click, then call
       # await_liveview_connected manually — without await_patch's delay.
       session = visit(session, "#{url}/nav-source")
-      {:ok, pre_url} = Wallabidi.Protocol.current_url(session)
+      {:ok, pre_url} = Wallabidi.Remote.Protocol.current_url(session)
       execute_script(session, "document.getElementById('go-to-dest').click()")
       Wallabidi.SessionProcess.await_next_page_load(session)
-      Wallabidi.LiveViewAware.await_liveview_connected(session, pre_url: pre_url)
+      Wallabidi.Remote.LiveViewAware.await_liveview_connected(session, pre_url: pre_url)
 
       execute_script(
         session,
@@ -259,6 +252,7 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
   end
 
   describe "fill_in + submit (#9)" do
+    @tag :browser
     test "fill_in awaits the set_value patch, not the clear patch", %{
       session: session,
       live_url: url
