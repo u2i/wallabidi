@@ -51,6 +51,14 @@ defmodule Wallabidi.Remote.Transport.BiDi do
         :error -> []
       end
 
+    # chromium-bidi's session.subscribe can transiently time out on
+    # slow runners. Retry the WHOLE handshake → SessionActor.start_link →
+    # initial-context block on `{:error, {:subscribe_failed, _}}` so
+    # tests aren't held responsible for protocol-level flakes.
+    start_with_retry(base_url, handshake_opts, session_struct, teardown_fun, owner, 4)
+  end
+
+  defp start_with_retry(base_url, handshake_opts, session_struct, teardown_fun, owner, retries) do
     with {:ok, ws_url} <- Handshake.post_session(base_url, handshake_opts),
          {:ok, session} <-
            SessionActor.start_link(
@@ -68,6 +76,33 @@ defmodule Wallabidi.Remote.Transport.BiDi do
       :ok = GenServer.call(session.pid, {:update_browsing_context, nil, context_id})
 
       {:ok, session}
+    else
+      {:error, {:subscribe_failed, _}} = err when retries > 0 ->
+        Process.sleep(250)
+
+        start_with_retry(
+          base_url,
+          handshake_opts,
+          session_struct,
+          teardown_fun,
+          owner,
+          retries - 1
+        )
+
+      {:error, {:timeout, {GenServer, :call, _}}} when retries > 0 ->
+        Process.sleep(250)
+
+        start_with_retry(
+          base_url,
+          handshake_opts,
+          session_struct,
+          teardown_fun,
+          owner,
+          retries - 1
+        )
+
+      other ->
+        other
     end
   end
 

@@ -32,6 +32,7 @@ defmodule Wallabidi.Remote.BiDi.WebSocketClient do
     :exit, {:normal, _} -> {:error, :session_closed}
     :exit, {:shutdown, _} -> {:error, :session_closed}
     :exit, :shutdown -> {:error, :session_closed}
+    :exit, {:timeout, _} -> {:error, :timeout}
   end
 
   @doc """
