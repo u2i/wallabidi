@@ -1,0 +1,21 @@
+driver	mc	wall_seconds	tests	failures
+LiveView	1	15	136	0
+LiveView	2	9	136	0
+LiveView	4	6	136	0
+LiveView	8	4	136	0
+LiveView	16	4	136	0
+Lightpanda	1	43	136	0
+Lightpanda	2	22	136	0
+Lightpanda	4	12	136	0
+Lightpanda	8	8	136	0
+Lightpanda	16	8	136	0
+Chrome CDP	1	68	136	0
+Chrome CDP	2	52	136	0
+Chrome CDP	4	48	136	0
+Chrome CDP	8	51	136	0
+Chrome CDP	16	52	136	0
+Chrome BiDi	1	486	136	0
+Chrome BiDi	2	100	136	0
+Chrome BiDi	4	71	136	0
+Chrome BiDi	8	68	136	0
+Chrome BiDi	16	259	136	2

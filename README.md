@@ -46,36 +46,36 @@ Each test runs on the **cheapest driver** that supports it. No env vars, no alia
 
 ## Concurrency and performance
 
-Each driver scales differently with `--max-cases`. The values below come from running the integration suite end-to-end on a 16-thread Mac laptop (M-series, all suites passing at the listed concurrency).
+Each driver scales differently with `--max-cases`. The values below come from running the [perf_bench](https://github.com/u2i/perf_bench) LV scenario suite on a 16-thread Mac laptop (M-series). perf_bench is a separate harness containing 136 LiveView-focused scenarios — happy paths only, no waiting-for-absence tests — so it's a better fit for cross-driver measurements than the wallabidi integration suite, which contains plenty of error-case waits.
 
 ![per-test wall time vs max-cases](priv/perf-matrix.svg)
 
-Wall time in seconds for the shared 145-test integration suite at each `--max-cases`:
+Wall time in seconds for the [perf_bench](https://github.com/u2i/perf_bench) LiveView scenario suite (136 tests) at each `--max-cases`:
 
-| Driver         | mc1   | mc2   | mc4   | mc8     | mc16    |
-|----------------|-------|-------|-------|---------|---------|
-| **BiDi** (Chrome)  | 237s  | 135s  | 90s   | 90s     | 92s     |
-| **CDP** (Chrome)   | 150s  | 87s   | 67s   | 54s     | **52s** |
-| **Lightpanda**     | 118s  | 63s   | 44s   | 29s     | **26s** |
-| **LiveView**       | 116s  | 69s   | 38s   | 24s     | **23s** |
+| Driver         | mc1    | mc2   | mc4   | mc8     | mc16        |
+|----------------|--------|-------|-------|---------|-------------|
+| **BiDi** (Chrome)  | 486s   | 100s  | 71s   | 68s     | 259s ⚠ (2 flakes) |
+| **CDP** (Chrome)   | 68s    | 52s   | **48s** | 51s   | 52s         |
+| **Lightpanda**     | 43s    | 22s   | 12s   | **8s**  | 8s          |
+| **LiveView**       | 15s    | 9s    | 6s    | **4s**  | 4s          |
 
-All cells in this sweep ran with zero failures across all four drivers and all concurrency levels.
+⚠ = chromium-bidi's BiDi Mapper serialises under contention; mc=16 reliably introduces flakes.
 
 **Recommended `--max-cases` per driver:**
 
 | Driver | Recommended | Why |
 |--------|-------------|-----|
-| **BiDi** | `4` | chromium-bidi's BiDi Mapper is single-threaded JS in one Chrome tab — concurrency past mc=4 plateaus (mc=4, 8, and 16 all hit ~90s). |
-| **CDP** | `8` | CDP's flat-session protocol multiplexes parallel work across Chrome's per-target threads. mc=8 captures essentially all the scaling win. |
-| **Lightpanda** | `16` | In-process, scales near-linearly with BEAM concurrency. |
-| **LiveView** | `16` | No external process; just BEAM. Use as much concurrency as ExUnit allows. |
+| **BiDi** | `8` | chromium-bidi's BiDi Mapper is single-threaded JS in one Chrome tab. mc=8 captures the scaling win; mc=16 trips structural flakes. |
+| **CDP** | `4` | CDP's flat-session protocol multiplexes parallel work across Chrome's per-target threads. mc=4 is the sweet spot; past that you save no wallclock. |
+| **Lightpanda** | `8`–`16` | In-process WS, scales linearly to mc=8 then plateaus at LP's `--cdp-max-connections` limit. |
+| **LiveView** | `8`–`16` | No external process; just BEAM. Use as much concurrency as ExUnit allows. |
 
 **When to pick which driver in CI:**
 
 - *Default:* let wallabidi route each test to the cheapest driver that supports it. Most LiveView-app tests run on the LiveView driver and are nearly free.
-- *JS-heavy app:* Lightpanda at mc16 — fastest real headless option, essentially matches LiveView at scale.
-- *Need full browser fidelity (CSS, screenshots, mouse events):* CDP at mc=8.
-- *Cross-browser portability or BiDi spec features:* BiDi at mc=4. Slower than CDP today because the BiDi protocol serializes through a single Mapper per Chrome; will improve as chromium-bidi or successor implementations add parallel mapping.
+- *JS-heavy app:* Lightpanda at mc=8 — fastest real headless option, within 2× of LiveView at scale.
+- *Need full browser fidelity (CSS, screenshots, mouse events):* CDP at mc=4.
+- *Cross-browser portability or BiDi spec features:* BiDi at mc=8. Slower than CDP today because the BiDi protocol serializes through a single Mapper per Chrome; will improve as chromium-bidi or successor implementations add parallel mapping.
 
 ## Why fork?
 

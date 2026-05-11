@@ -1,6 +1,6 @@
 #!/usr/bin/env elixir
 
-# Reads bench/perf_matrix.tsv and writes priv/perf-matrix.svg.
+# Reads a perf-matrix TSV and writes priv/perf-matrix.svg.
 #
 # Plots per-test wall time (wall_seconds / tests) at each mc level,
 # one line per driver. Same shape as the previous hand-built SVG so
@@ -8,10 +8,11 @@
 #
 # Usage:
 #
-#     elixir bench/render_perf_matrix.exs
+#     elixir bench/render_perf_matrix.exs                       # default: bench/perf_bench_matrix.tsv
+#     elixir bench/render_perf_matrix.exs bench/perf_matrix.tsv # explicit input
 
 defmodule RenderPerfMatrix do
-  @tsv_path "bench/perf_matrix.tsv"
+  @default_tsv "bench/perf_bench_matrix.tsv"
   @svg_path "priv/perf-matrix.svg"
 
   # Chart geometry — kept identical to the previous SVG so the README
@@ -33,17 +34,17 @@ defmodule RenderPerfMatrix do
     {"LiveView", "#f59e0b"}
   ]
 
-  def run do
-    rows = parse_tsv()
+  def run(tsv_path \\ @default_tsv) do
+    rows = parse_tsv(tsv_path)
     by_driver = group_rows(rows)
     max_per_test = max_per_test_seconds(rows)
     svg = render(by_driver, max_per_test)
     File.write!(@svg_path, svg)
-    IO.puts("Wrote #{@svg_path} (#{byte_size(svg)} bytes)")
+    IO.puts("Wrote #{@svg_path} (#{byte_size(svg)} bytes) from #{tsv_path}")
   end
 
-  defp parse_tsv do
-    @tsv_path
+  defp parse_tsv(tsv_path) do
+    tsv_path
     |> File.stream!()
     |> Stream.drop(1)
     |> Stream.map(&String.trim/1)
@@ -239,4 +240,7 @@ defmodule RenderPerfMatrix do
   end
 end
 
-RenderPerfMatrix.run()
+case System.argv() do
+  [] -> RenderPerfMatrix.run()
+  [tsv] -> RenderPerfMatrix.run(tsv)
+end
