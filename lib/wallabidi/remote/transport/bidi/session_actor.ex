@@ -55,7 +55,12 @@ defmodule Wallabidi.Remote.Transport.BiDi.SessionActor do
   @spec start_link(keyword) ::
           {:ok, Wallabidi.Session.t()} | {:error, term}
   def start_link(opts) do
-    case GenServer.start_link(__MODULE__, opts) do
+    # Use `start` rather than `start_link` so the caller (typically a
+    # test process) isn't taken down by an EXIT signal if init/1 fails
+    # (e.g. session.subscribe timeout). The actor still tracks its
+    # owner via Process.monitor and terminates cleanly when the owner
+    # exits.
+    case GenServer.start(__MODULE__, opts) do
       {:ok, pid} ->
         # Pull the session struct now that the actor's running, with
         # its `pid` field correctly set to the actor.
