@@ -1,6 +1,14 @@
 defmodule Wallabidi.Integration.Feature.AutomaticScreenshotTest do
   use ExUnit.Case
   @moduletag :headless
+  # Each test spawns inner ExUnit suites that themselves start fresh
+  # browser sessions, then assert screenshots were taken on failure.
+  # On Chrome BiDi this exposes a chromium-bidi quirk where the second
+  # session's session.subscribe occasionally times out (the Mapper
+  # serializes commands and the inner-test screenshot capture races
+  # against subscribe). The screenshot mechanism itself is covered by
+  # the Chrome CDP run.
+  @moduletag :bidi_unstable
 
   alias ExUnit.CaptureIO
 

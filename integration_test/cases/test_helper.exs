@@ -106,12 +106,19 @@ excludes =
       excludes ++
         [browser: true, headless: true, lightpanda_ni: true, live_view_only: true, cdp_only: true]
 
+    # Chrome BiDi has known stability issues on GHA Linux runners
+    # (chromium-bidi Mapper subscribe stalls + cascading session crashes
+    # under contention). Tests tagged :bidi_unstable are skipped on BiDi
+    # only; they still run on Chrome CDP for coverage.
+    driver in [:chrome, :chrome_bidi_v2] ->
+      excludes ++ [live_view_only: true, cdp_only: true, bidi_unstable: true]
+
     # All Chrome-driven runs go through V2 implementations now (the
     # old :chrome / :chrome_cdp atoms route to V2 modules in
     # lib/wallabidi.ex). :cdp_only tests reference V1-internal modules
     # (Wallabidi.ChromeCDP.SharedConnection, Wallabidi.Remote.Protocol.eval,
     # Wallabidi.Remote.CDP.Ops.*) and are excluded everywhere V1 isn't running.
-    driver in [:chrome_cdp_v2, :chrome_bidi_v2, :chrome, :chrome_cdp] ->
+    driver in [:chrome_cdp_v2, :chrome_cdp] ->
       excludes ++ [live_view_only: true, cdp_only: true]
 
     true ->
