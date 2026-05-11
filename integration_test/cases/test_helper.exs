@@ -100,7 +100,11 @@ excludes =
     # exercises the in-process LV-driver's Feature dispatch — not a
     # generic LV scenario. Keep :live_view_only excluded on LP.
     driver in [:lightpanda, :lightpanda_v2] ->
-      excludes ++ [browser: true, lightpanda_ni: true, live_view_only: true, cdp_only: true]
+      # :headless tests rely on Chromium features (real screenshots,
+      # Phoenix.LiveView.JS dispatch, XPath, real localStorage) that
+      # Lightpanda's lighter JS engine doesn't reach yet.
+      excludes ++
+        [browser: true, headless: true, lightpanda_ni: true, live_view_only: true, cdp_only: true]
 
     # All Chrome-driven runs go through V2 implementations now (the
     # old :chrome / :chrome_cdp atoms route to V2 modules in
