@@ -1,4 +1,8 @@
-ExUnit.configure(exclude: [pending: true])
+# Unit tests run without a real browser; :browser-tagged tests live in
+# integration_test/ and run via the per-driver test.* aliases. Excluding
+# :browser keeps BiDi/CDP end-to-end tests from being pulled in by the
+# default `mix test` command.
+ExUnit.configure(exclude: [pending: true, browser: true])
 EventEmitter.start_link([])
 
 # Start the test app
