@@ -21,13 +21,27 @@ defmodule Wallabidi.Remote.Transport.BiDi.Handshake do
   # them via browsingContext.handleUserPrompt — without this Chrome's
   # default policy auto-dismisses unhandled prompts before the
   # `userPromptOpened` event handler can react.
+  #
+  # Chrome args:
+  #   --headless=new          : Chrome's new headless mode.
+  #   --no-sandbox            : Required when Chrome runs as root (CI
+  #                             containers — GHA runners). Without this
+  #                             Chrome hangs at sandbox init and the
+  #                             BiDi Mapper never finishes the handshake.
+  #   --disable-dev-shm-usage : Use /tmp instead of /dev/shm. /dev/shm
+  #                             is small on most CI runners and
+  #                             Chrome can crash or hang when it fills.
   @default_capabilities %{
     "alwaysMatch" => %{
       "browserName" => "chrome",
       "webSocketUrl" => true,
       "unhandledPromptBehavior" => "ignore",
       "goog:chromeOptions" => %{
-        "args" => ["--headless=new"]
+        "args" => [
+          "--headless=new",
+          "--no-sandbox",
+          "--disable-dev-shm-usage"
+        ]
       }
     }
   }
