@@ -120,7 +120,17 @@ defmodule Wallabidi.Remote.ChromiumBiDi.Server do
 
   # --- Internal ---
 
-  defp parse_output(%{ready?: true} = state, _data), do: state
+  defp parse_output(%{ready?: true} = state, data) do
+    # Keep a sliding tail of stderr post-readiness so when the chromium-
+    # bidi process crashes we have its last words for diagnostics. 4 KB
+    # is plenty to capture a Node stack trace + a few log lines without
+    # holding meaningful memory.
+    tail =
+      (state.buffer <> data)
+      |> binary_part_tail(4096)
+
+    %{state | buffer: tail}
+  end
 
   defp parse_output(state, data) do
     buffer = state.buffer <> data
@@ -182,5 +192,12 @@ defmodule Wallabidi.Remote.ChromiumBiDi.Server do
     Port.close(port)
   catch
     :error, :badarg -> :ok
+  end
+
+  defp binary_part_tail(bin, max) when byte_size(bin) <= max, do: bin
+
+  defp binary_part_tail(bin, max) do
+    skip = byte_size(bin) - max
+    binary_part(bin, skip, max)
   end
 end

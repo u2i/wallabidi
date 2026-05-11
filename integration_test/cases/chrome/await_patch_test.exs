@@ -162,6 +162,7 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
       )
     end
 
+    @tag slow: 15_000
     test "await_liveview_connected waits for NEW LiveView, not old one", %{
       session: session,
       live_url: url

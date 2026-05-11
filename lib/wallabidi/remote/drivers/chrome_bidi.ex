@@ -118,7 +118,7 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
       _ ->
         # Convert the BidiServer's WS URL to its HTTP equivalent —
         # they share the host/port; chromium-bidi serves both.
-        ws_url = Wallabidi.Remote.ChromiumBiDi.Server.ws_url(@bidi_server_name)
+        ws_url = bidi_ws_url_with_retry(5)
 
         ws_url
         |> URI.parse()
@@ -126,6 +126,24 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
         |> Map.put(:path, nil)
         |> URI.to_string()
     end
+  end
+
+  # The supervised BidiServer process can crash mid-suite (chromium-bidi
+  # Node process exits non-zero; OOM on CI runners is the most common
+  # cause). The one_for_one Supervisor restarts it, but there's a
+  # short window where GenServer.call(@bidi_server_name, _) exits with
+  # :noproc or {:bidi_server_exit, _} before the new pid registers
+  # under the name. Retry with a small backoff to ride out the gap.
+  defp bidi_ws_url_with_retry(0) do
+    Wallabidi.Remote.ChromiumBiDi.Server.ws_url(@bidi_server_name)
+  end
+
+  defp bidi_ws_url_with_retry(retries_left) do
+    Wallabidi.Remote.ChromiumBiDi.Server.ws_url(@bidi_server_name)
+  catch
+    :exit, _ ->
+      Process.sleep(500)
+      bidi_ws_url_with_retry(retries_left - 1)
   end
 
   @impl true

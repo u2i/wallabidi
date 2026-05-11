@@ -29,7 +29,7 @@ defmodule Wallabidi.Integration.Chrome.LoadMailboxTest do
   # 10 sequential session create/teardown cycles to verify mailbox
   # cleanup. Each iteration is ~150-250ms; the loop legitimately runs
   # ~2-2.5s with iteration jitter.
-  @tag slow: 3_000
+  @tag slow: 8_000
   test "sequential sessions leave no stale events in mailbox", %{live_app_url: url} do
     iterations = 10
 
