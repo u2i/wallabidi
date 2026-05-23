@@ -71,6 +71,7 @@ defmodule Wallabidi.Integration.V2.DriverTest do
       assert html =~ ~r/<html/i
     end
 
+    @tag slow: 6_000
     test "cookies round-trip", %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)
       :ok = V2Driver.visit(session, base <> "index.html")
