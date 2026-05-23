@@ -184,13 +184,14 @@ defmodule Wallabidi.Browser do
   @spec fill_in(parent, Query.t(), with: String.t()) :: parent
   def fill_in(%Session{} = parent, query, with: value) do
     if remote_session?(parent) do
-      # Fused: one round-trip does silent clear + set_value + (when LV-
-      # aware) drain_patches. Saves two round-trips vs the legacy
-      # element-op-per-step.
+      # Fused: one round-trip does silent clear + set_value + (on
+      # phx-change forms) drain_patches. Saves two round-trips vs the
+      # legacy element-op-per-step. `classify_interaction` returns
+      # `:none` for non-phx-bound inputs (and `prepare_patch` returns
+      # `:no_liveview` for non-LV pages downstream), so we don't need
+      # an outer LV-aware gate.
       drain_idle_ms =
-        if live_view_aware?(parent) and classify_interaction(parent, query, :change) != :none,
-          do: 300,
-          else: 0
+        if classify_interaction(parent, query, :change) != :none, do: 300, else: 0
 
       find_lazy(parent, query, fn element ->
         session = Wallabidi.Element.root_session(element)
@@ -1654,27 +1655,16 @@ defmodule Wallabidi.Browser do
   def execute_query(%{driver: driver} = parent, query, opts) do
     session = get_session(parent)
 
-    cond do
-      session &&
-        session.driver in [
-          Wallabidi.Remote.Drivers.LightpandaCDP,
-          Wallabidi.Remote.Drivers.ChromeCDP,
-          Wallabidi.Remote.Drivers.ChromeBiDi
-        ] &&
-        not in_frame?(session) && not in_switched_window?(session) ->
-        # transport uses the same ops pipeline shape (push-based finds
-        # via Runtime.addBinding). Routes through CDPClient.
-        execute_query_pipeline(parent, driver, query, opts)
-
-      session && not is_nil(session.protocol) &&
-        not in_frame?(session) && not in_switched_window?(session) ->
-        # Both CDP and BiDi use the ops pipeline for find+filter in one eval.
-        # Push-based: CDP uses Runtime.addBinding, BiDi uses script.channel.
-        execute_query_pipeline(parent, driver, query, opts)
-
-      true ->
-        maybe_await_selector(parent, query)
-        execute_query_legacy(parent, driver, query)
+    # CDP and BiDi both use the ops pipeline for find+filter in one
+    # eval. Push-based: CDP uses Runtime.addBinding, BiDi uses
+    # script.channel. The in-frame / switched-window cases keep the
+    # legacy element-by-element path until the pipeline is taught
+    # about frame scoping.
+    if session && remote_session?(session) &&
+         not in_frame?(session) && not in_switched_window?(session) do
+      execute_query_pipeline(parent, driver, query, opts)
+    else
+      execute_query_legacy(parent, driver, query)
     end
   end
 
@@ -1747,42 +1737,6 @@ defmodule Wallabidi.Browser do
       end
     end)
   end
-
-  # For sessions with a JS-evaluating protocol (BiDi or CDP), wait for the
-  # element to appear in the DOM via onPatchEnd + MutationObserver before
-  # polling. Handles both CSS and XPath queries (XPath falls back to
-  # text-based body check). The LiveView driver has no `:protocol` and
-  # falls through to the polling retry loop.
-  defp maybe_await_selector(parent, query) do
-    with %Session{protocol: protocol} = session when not is_nil(protocol) <-
-           get_session(parent),
-         {:ok, validated} <- Query.validate(query) do
-      case Query.compile(validated) do
-        {:css, selector} ->
-          text = Query.inner_text(validated)
-          opts = if text, do: [text: text], else: []
-          Wallabidi.Remote.LiveViewAware.await_selector(session, selector, opts)
-
-        {:xpath, _} ->
-          # XPath can't be used with querySelector. For text-based queries
-          # (Query.text, Query.button, Query.link), await the text appearing
-          # anywhere on the page via a body check.
-          text = extract_await_text(validated)
-
-          if text do
-            Wallabidi.Remote.LiveViewAware.await_selector(session, "body", text: text)
-          end
-      end
-    else
-      _ -> :ok
-    end
-  end
-
-  # Only :text queries have a selector that's guaranteed to be visible text.
-  # :button and :link selectors could be IDs — searching body text for an
-  # ID like "check-in-link" would always time out.
-  defp extract_await_text(%Query{method: :text, selector: text}) when is_binary(text), do: text
-  defp extract_await_text(%Query{} = query), do: Query.inner_text(query)
 
   defp get_session(%Session{} = s), do: s
   defp get_session(%Element{parent: p}), do: get_session(p)
@@ -1875,22 +1829,15 @@ defmodule Wallabidi.Browser do
     session
   end
 
-  # Legacy predicate. The `:protocol` field is never populated by any
-  # driver, so this is permanently false — `fill_in`'s drain calc and
-  # `with_patch_await`'s patch/navigate orchestration both fall through
-  # to their else branches. Kept here to avoid spreading the cleanup
-  # beyond `await_patch/2`; see also the per-driver `click_aware`
-  # paths in the CDP/BiDi clients that already handle their own
-  # patch-awaiting.
-  defp live_view_aware?(%Session{protocol: mod}) when not is_nil(mod), do: true
-  defp live_view_aware?(_), do: false
-
   # Wraps an interaction with prepare_patch/await_patch.
   # Sets up the promise before the action, awaits after.
   # Skips if: not BiDi, no LiveView, or the element is a JS-only click
   # (phx-click without a push command, e.g. JS.toggle).
   defp with_patch_await(%Session{} = session, query, interaction, fun) do
-    if live_view_aware?(session) do
+    # Only remote sessions can run JS for classification. The in-process
+    # LV driver renders synchronously and has no patch lifecycle to
+    # await — `fun.()` is the right answer there.
+    if remote_session?(session) do
       case classify_interaction(session, query, interaction) do
         :patch ->
           do_patch_await(session, fun)
@@ -1899,7 +1846,6 @@ defmodule Wallabidi.Browser do
           do_navigate_await(session, fun)
 
         :full_page ->
-          # Wait for lifecycle event via SessionProcess.
           result = fun.()
           Wallabidi.SessionProcess.await_next_page_load(session)
           Wallabidi.Remote.LiveViewAware.await_liveview_connected(session)

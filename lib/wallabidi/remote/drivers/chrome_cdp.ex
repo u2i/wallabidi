@@ -85,7 +85,6 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
         url: "about:blank",
         session_url: "about:blank",
         driver: __MODULE__,
-        protocol: nil,
         bidi_pid: acquired.ws_pid,
         browsing_context: acquired.session_id,
         capabilities: Map.merge(user_caps, acquired.capabilities)
