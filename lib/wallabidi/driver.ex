@@ -37,6 +37,20 @@ defmodule Wallabidi.Driver do
   @optional_callbacks release_server_session: 1
 
   @doc """
+  Wait for the next LiveView DOM patch on the session.
+
+  Remote drivers (CDP, BiDi, Lightpanda) implement this by arming a
+  JS-side promise on `liveSocket.main.domCallbacks.onPatchEnd` and
+  racing it against the configured timeout. The in-process
+  `Wallabidi.LiveView.Driver` renders synchronously, so for that
+  driver this is a no-op.
+
+  See `Wallabidi.Browser.await_patch/2` for the public-facing
+  contract.
+  """
+  @callback await_patch(Session.t(), keyword()) :: :ok
+
+  @doc """
   Invoked to accept one alert triggered within `open_dialog_fn` and return the alert message.
   """
   @callback accept_alert(Session.t(), open_dialog_fn) :: String.t()

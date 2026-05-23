@@ -28,6 +28,7 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
   alias Wallabidi.{Element, Session}
   alias Wallabidi.Remote.BiDi.Client, as: BiDiClient
   alias Wallabidi.Remote.BiDi.WebSocketClient
+  alias Wallabidi.Remote.LiveViewAware
   alias Wallabidi.Remote.Transport.BiDi
   alias Wallabidi.Remote.Transport.Protocol
 
@@ -159,6 +160,11 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
     result = check_logs!(session, fn -> BiDiClient.visit(session, url) end)
     _ = await_liveview_connected_v2(session)
     result
+  end
+
+  @impl true
+  def await_patch(%Session{} = session, opts) do
+    LiveViewAware.arm_and_await(session, Keyword.get(opts, :timeout, 5_000))
   end
 
   # Mirrors V2ChromeDriver.await_liveview_connected_v2/1 and

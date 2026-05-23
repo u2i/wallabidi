@@ -216,6 +216,11 @@ defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
   end
 
   @impl true
+  def await_patch(%Session{} = session, opts) do
+    LiveViewAware.arm_and_await(session, Keyword.get(opts, :timeout, 5_000))
+  end
+
+  @impl true
   def current_url(%Session{} = session), do: CDPClient.current_url(session)
 
   @impl true

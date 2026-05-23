@@ -77,6 +77,7 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
   end
 
   describe "await_patch (explicit)" do
+    @tag slow: 8_000
     test "standalone await_patch waits for next patch", %{session: session, live_url: url} do
       session
       |> visit("#{url}/counter")
@@ -86,9 +87,60 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
       |> await_patch()
       |> assert_has(Query.css("#count", text: "1"))
     end
+
+    # Stronger test: schedule a DELAYED broadcast (~300ms), then
+    # `await_patch()`, then read DOM via execute_script WITHOUT the
+    # assert_has retry fallback. The delay ensures the patch can't
+    # land before `await_patch` is called. If `await_patch` is a no-op,
+    # it returns immediately, the script reads stale "waiting" DOM, and
+    # the assertion fails. If `await_patch` actually blocks until the
+    # PubSub-triggered patch lands, the script reads "received".
+    #
+    # This is the exact use case the @doc example advertises:
+    # "Wait for a PubSub-triggered update."
+    test "await_patch blocks for an external (PubSub) trigger", %{
+      session: session,
+      live_url: url
+    } do
+      session = visit(session, "#{url}/pubsub")
+
+      # Wait until subscribe runs (connected mount completes).
+      assert_has(session, Query.css("#message", text: "waiting"))
+
+      # Broadcast from a different process AFTER a delay so the patch
+      # is guaranteed to arrive after `await_patch` is called.
+      test_pid = self()
+
+      spawn(fn ->
+        Process.sleep(300)
+
+        Phoenix.PubSub.broadcast(
+          Wallabidi.Integration.PubSub,
+          "pubsub_live",
+          {:new_message, "received"}
+        )
+
+        send(test_pid, :broadcast_sent)
+      end)
+
+      # await_patch should block until the LV applies the diff.
+      session = await_patch(session)
+
+      # Confirm the broadcast actually fired by now (sanity).
+      assert_received :broadcast_sent
+
+      # Read DOM SYNCHRONOUSLY — no retry. If await_patch returned
+      # before the patch was applied, this sees "waiting".
+      execute_script(
+        session,
+        "return document.getElementById('message').textContent",
+        fn value -> assert value == "received" end
+      )
+    end
   end
 
   describe "async LiveView updates" do
+    @tag slow: 8_000
     test "await_patch catches async result after start_async", %{session: session, live_url: url} do
       session
       |> visit("#{url}/async")
