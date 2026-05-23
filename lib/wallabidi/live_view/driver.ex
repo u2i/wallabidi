@@ -83,6 +83,12 @@ defmodule Wallabidi.LiveView.Driver do
 
   # --- Navigation ---
 
+  # In-process LV renders are synchronous — every interaction returns
+  # with the post-event DOM already applied. There's nothing to wait
+  # for, so `await_patch` is a no-op.
+  @impl true
+  def await_patch(_session, _opts), do: :ok
+
   @impl true
   def visit(session, url) do
     # Browser.visit may pass a full URL (base_url + path). Extract just the path.

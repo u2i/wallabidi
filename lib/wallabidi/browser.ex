@@ -1870,20 +1870,18 @@ defmodule Wallabidi.Browser do
       |> assert_has(Query.css(".updated"))
   """
   @spec await_patch(session, keyword()) :: session
-  def await_patch(%Session{} = session, opts \\ []) do
-    if live_view_aware?(session) do
-      timeout = Keyword.get(opts, :timeout, 5_000)
-
-      case Wallabidi.Remote.LiveViewAware.prepare_patch(session) do
-        :prepared -> Wallabidi.Remote.LiveViewAware.await_patch(session, timeout)
-        :no_liveview -> :ok
-      end
-    end
-
+  def await_patch(%Session{driver: driver} = session, opts \\ []) do
+    driver.await_patch(session, opts)
     session
   end
 
-  # Any session that has a protocol adapter can run JS → LiveView-aware.
+  # Legacy predicate. The `:protocol` field is never populated by any
+  # driver, so this is permanently false — `fill_in`'s drain calc and
+  # `with_patch_await`'s patch/navigate orchestration both fall through
+  # to their else branches. Kept here to avoid spreading the cleanup
+  # beyond `await_patch/2`; see also the per-driver `click_aware`
+  # paths in the CDP/BiDi clients that already handle their own
+  # patch-awaiting.
   defp live_view_aware?(%Session{protocol: mod}) when not is_nil(mod), do: true
   defp live_view_aware?(_), do: false
 

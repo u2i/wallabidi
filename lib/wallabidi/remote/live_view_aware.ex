@@ -107,6 +107,24 @@ defmodule Wallabidi.Remote.LiveViewAware do
   end
 
   @doc """
+  One-shot: arm a fresh patch promise, then await it. Returns `:ok`
+  whether the patch arrives, the page navigates, the timer elapses,
+  or there's no LiveView on the page — callers of this helper want
+  "best-effort wait for the next patch" semantics.
+
+  Used by `Wallabidi.Browser.await_patch/2` via the driver behaviour.
+  """
+  @spec arm_and_await(Session.t(), timeout()) :: :ok
+  def arm_and_await(%Session{} = session, timeout) do
+    case prepare_patch(session) do
+      :prepared -> _ = await_patch(session, timeout)
+      :no_liveview -> :ok
+    end
+
+    :ok
+  end
+
+  @doc """
   Waits until no LiveView patch has arrived for `idle_ms` ms, or the
   overall `timeout` elapses. Used after `fill_in` where multiple
   phx-change events fire and we want to wait for the final one.
