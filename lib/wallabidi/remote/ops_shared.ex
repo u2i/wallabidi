@@ -30,6 +30,19 @@ defmodule Wallabidi.Remote.OpsShared do
 
   alias Wallabidi.{Element, Session}
 
+  @xpath_polyfill_path Path.join(:code.priv_dir(:wallabidi), "cdp/wgxpath.install.js")
+  @external_resource @xpath_polyfill_path
+  @xpath_polyfill if File.exists?(@xpath_polyfill_path),
+                    do: File.read!(@xpath_polyfill_path) <> "\nwgxpath.install(window);",
+                    else: ""
+
+  @doc false
+  # Returns the wgxpath polyfill JS bundle. Lightpanda (and any other
+  # browser that doesn't ship a real `document.evaluate`) needs this
+  # injected after each page load. Callers gate this on
+  # `session.capabilities[:needs_xpath_polyfill]`.
+  def xpath_polyfill_js, do: @xpath_polyfill
+
   # Single dispatch function — the Elixir side never ships per-op JS
   # bodies; just an opcode-list. Implementations live in
   # priv/wallabidi.js as the W.run interpreter (W.text, W.attribute,
@@ -275,6 +288,46 @@ defmodule Wallabidi.Remote.OpsShared do
             unquote(__MODULE__).trivia_js("source", "document.documentElement.outerHTML")
           )
 
+      @doc """
+      Navigate the session to `url` and wait for `load`.
+
+      The host module must export `navigate/2` returning
+      `{:ok, %{loader_id: id_or_nil}} | {:error, term}`. When the
+      navigation has no loader id (same-document / cached) we skip the
+      load wait. Browsers whose JS engine lacks a real
+      `document.evaluate` (Lightpanda) ask for the polyfill via
+      `session.capabilities[:needs_xpath_polyfill] = true` and we
+      inject wgxpath after the load completes.
+      """
+      @spec visit(Session.t(), String.t(), keyword) :: :ok | {:error, term}
+      def visit(%Session{} = session, url, opts \\ []) when is_binary(url) do
+        timeout = Keyword.get(opts, :timeout, 10_000)
+
+        with {:ok, %{loader_id: loader_id}} <- navigate(session, url) do
+          result =
+            if is_binary(loader_id) do
+              case Wallabidi.Remote.Transport.Protocol.await_page_load(
+                     session,
+                     loader_id,
+                     "load",
+                     timeout
+                   ) do
+                :ok -> :ok
+                :timeout -> {:error, :timeout}
+              end
+            else
+              :ok
+            end
+
+          if result == :ok and session.capabilities[:needs_xpath_polyfill] do
+            _ = evaluate(session, unquote(__MODULE__).xpath_polyfill_js())
+            :ok
+          end
+
+          result
+        end
+      end
+
       # ----- Find elements (shared across CDP and BiDi) -----
       #
       # The orchestration is identical: build the W.run opcode list,
@@ -329,7 +382,9 @@ defmodule Wallabidi.Remote.OpsShared do
                      find_elements: 2,
                      find_elements: 3,
                      find_elements_lazy: 2,
-                     find_elements_lazy: 3
+                     find_elements_lazy: 3,
+                     visit: 2,
+                     visit: 3
     end
   end
 

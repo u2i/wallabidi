@@ -21,7 +21,6 @@ defmodule Wallabidi.Remote.CDP.Client do
   alias Wallabidi.Remote.CDP.{Commands, ResponseParser}
   alias Wallabidi.Remote.OpsShared
   alias Wallabidi.Remote.Transport.Protocol
-  alias Wallabidi.Remote.WebSocket
 
   # Pulls in shared op bodies (text/2, attribute/3, displayed/2,
   # click/2, set_value_dom/3, clear/2, send_keys_text/3, page-info
@@ -1017,61 +1016,8 @@ defmodule Wallabidi.Remote.CDP.Client do
   # current_url/1, current_path/1, page_title/1, page_source/1 —
   # provided by Wallabidi.Remote.OpsShared.
 
-  # ----- Visit (navigate + await load) -----
-
-  @doc """
-  Navigates to `url` and blocks until the page's `load` lifecycle
-  event has fired. Returns `:ok` or `{:error, :timeout}`.
-
-  Convenience over `navigate/2` + `await_page_load/4` for the common
-  "visit a URL and wait for it" case.
-
-  Same-document navigations (URL fragments) don't produce a new
-  loader_id — those return `:ok` immediately without waiting.
-  """
-  @spec visit(Session.t(), String.t(), keyword) :: :ok | {:error, term}
-  def visit(%Session{} = session, url, opts \\ []) when is_binary(url) do
-    timeout = Keyword.get(opts, :timeout, 10_000)
-
-    with {:ok, %{loader_id: loader_id}} <- navigate(session, url) do
-      result =
-        if is_binary(loader_id) do
-          case Protocol.await_page_load(session, loader_id, "load", timeout) do
-            :ok -> :ok
-            :timeout -> {:error, :timeout}
-          end
-        else
-          # Same-document nav (fragment / cached) — no loaderId, no
-          # new load cycle to await.
-          :ok
-        end
-
-      # Browsers without native XPath (Lightpanda) need wgxpath injected
-      # after each load — `Page.addScriptToEvaluateOnNewDocument` runs
-      # before page scripts, but the polyfill must run AFTER document
-      # parsing to attach properly.
-      if result == :ok and session.capabilities[:needs_xpath_polyfill] do
-        inject_xpath_polyfill(session)
-      end
-
-      result
-    end
-  end
-
-  @xpath_polyfill_path Path.join(:code.priv_dir(:wallabidi), "cdp/wgxpath.install.js")
-  @external_resource @xpath_polyfill_path
-  @xpath_polyfill if File.exists?(@xpath_polyfill_path),
-                    do: File.read!(@xpath_polyfill_path) <> "\nwgxpath.install(window);",
-                    else: ""
-
-  defp inject_xpath_polyfill(%Session{} = session) do
-    cdp_send(session, "Runtime.evaluate", %{
-      expression: @xpath_polyfill,
-      returnByValue: true
-    })
-
-    :ok
-  end
+  # visit/3 — provided by Wallabidi.Remote.OpsShared (uses our
+  # navigate/2 plus the shared xpath-polyfill post-load hook).
 
   # ----- Runtime.evaluate -----
 
@@ -1426,69 +1372,10 @@ defmodule Wallabidi.Remote.CDP.Client do
     end
   end
 
-  # ----- Dialog handling (Page.javascriptDialogOpening) -----
-
-  @doc """
-  Spawn an inner action that opens a JavaScript dialog
-  (`alert/confirm/prompt`), then accept or dismiss it. Mirrors
-  `Wallabidi.ChromeCDP.handle_dialog/4`.
-
-  `fun` must be the action that triggers the dialog (e.g. clicking
-  the button that calls `alert(...)`). It runs concurrently with the
-  dialog handler, since clicking the button blocks until the dialog
-  is dismissed.
-
-  Returns the dialog's message (the string passed to alert/confirm/prompt).
-  """
-  @spec handle_dialog(Session.t(), (Session.t() -> any), boolean, String.t() | nil) :: String.t()
-  def handle_dialog(%Session{} = session, fun, accept, prompt_text \\ nil) do
-    caller = self()
-
-    # Subscribe BEFORE the action so the dialog event isn't missed.
-    # Page domain must be enabled for the event to fire.
-    _ = cdp_send(session, "Page.enable", %{})
-
-    handler =
-      spawn(fn ->
-        # Subscribe directly at the WebSocket level so the event is
-        # routed straight to this handler — Session normally
-        # consumes events itself, but for one-shot dialog handling we
-        # don't need its routing.
-        ctx = session.browsing_context || :global
-        :ok = WebSocket.subscribe(session.bidi_pid, "Page.javascriptDialogOpening", ctx, self())
-
-        receive do
-          {:v2_event, "Page.javascriptDialogOpening", event} ->
-            msg = get_in(event, ["params", "message"]) || ""
-            default = get_in(event, ["params", "defaultPrompt"])
-            effective_text = prompt_text || default
-
-            params = %{accept: accept}
-
-            params =
-              if is_binary(effective_text),
-                do: Map.put(params, :promptText, effective_text),
-                else: params
-
-            _ = cdp_send(session, "Page.handleJavaScriptDialog", params)
-            send(caller, {:dialog_handled, msg})
-        after
-          10_000 -> send(caller, {:dialog_handled, ""})
-        end
-      end)
-
-    fun.(session)
-
-    message =
-      receive do
-        {:dialog_handled, msg} -> msg
-      after
-        10_000 -> ""
-      end
-
-    _ = handler
-    message
-  end
+  # ----- Dialog handling -----
+  #
+  # Dialog flow lives in Wallabidi.Remote.Dialogs.ChromeCDP (which uses
+  # Wallabidi.Remote.Dialogs.Flow for the protocol-agnostic orchestration).
 
   @doc """
   Is the element checked (checkbox / radio) or selected (option)?

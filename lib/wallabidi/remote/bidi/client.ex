@@ -16,7 +16,7 @@ defmodule Wallabidi.Remote.BiDi.Client do
   @behaviour Wallabidi.Remote.WireProtocol
 
   alias Wallabidi.Element
-  alias Wallabidi.Remote.BiDi.{Commands, ResponseParser, WebSocketClient}
+  alias Wallabidi.Remote.BiDi.{Commands, ResponseParser}
   alias Wallabidi.Remote.Bootstrap
   alias Wallabidi.Remote.OpsShared
   alias Wallabidi.Remote.Transport.Protocol
@@ -71,26 +71,7 @@ defmodule Wallabidi.Remote.BiDi.Client do
     end
   end
 
-  @doc """
-  Navigate and wait for the page to finish loading.
-  """
-  @spec visit(Session.t(), String.t(), keyword) :: :ok | {:error, term}
-  def visit(%Session{} = session, url, opts \\ []) when is_binary(url) do
-    timeout = Keyword.get(opts, :timeout, 10_000)
-
-    with {:ok, %{loader_id: nav}} <- navigate(session, url) do
-      if is_binary(nav) do
-        case Protocol.await_page_load(session, nav, "load", timeout) do
-          :ok -> :ok
-          :timeout -> {:error, :timeout}
-        end
-      else
-        # Same-document or cached navigation — no nav id, no load
-        # event to wait on.
-        :ok
-      end
-    end
-  end
+  # visit/3 — provided by Wallabidi.Remote.OpsShared (uses our navigate/2).
 
   # ----- Script evaluation -----
 
@@ -1243,101 +1224,8 @@ defmodule Wallabidi.Remote.BiDi.Client do
 
   # ----- Dialog handling -----
   #
-  # BiDi: subscribe to `browsingContext.userPromptOpened`, fire an
-  # action that triggers the dialog, catch the event in a spawned
-  # handler, send `browsingContext.handleUserPrompt` to accept or
-  # dismiss. Returns the dialog's message string.
-  #
-  # The handler runs in a separate process so that `fun.(session)`
-  # can block without deadlocking — some BiDi implementations don't
-  # return the click response until the dialog is handled.
-
-  @spec accept_alert(Session.t(), (Session.t() -> any)) :: String.t()
-  def accept_alert(%Session{} = session, fun), do: handle_dialog(session, fun, true)
-
-  @spec dismiss_alert(Session.t(), (Session.t() -> any)) :: String.t()
-  def dismiss_alert(%Session{} = session, fun), do: handle_dialog(session, fun, true)
-
-  @spec accept_confirm(Session.t(), (Session.t() -> any)) :: String.t()
-  def accept_confirm(%Session{} = session, fun), do: handle_dialog(session, fun, true)
-
-  @spec dismiss_confirm(Session.t(), (Session.t() -> any)) :: String.t()
-  def dismiss_confirm(%Session{} = session, fun), do: handle_dialog(session, fun, false)
-
-  @spec accept_prompt(Session.t(), String.t() | nil, (Session.t() -> any)) :: String.t()
-  def accept_prompt(%Session{} = session, nil, fun), do: handle_dialog(session, fun, true)
-
-  def accept_prompt(%Session{} = session, input, fun) when is_binary(input),
-    do: handle_dialog(session, fun, true, input)
-
-  @spec dismiss_prompt(Session.t(), (Session.t() -> any)) :: String.t()
-  def dismiss_prompt(%Session{} = session, fun), do: handle_dialog(session, fun, false)
-
-  defp handle_dialog(
-         %Session{bidi_pid: ws_pid, browsing_context: ctx} = session,
-         fun,
-         accept,
-         user_text \\ nil
-       ) do
-    caller = self()
-
-    # Subscribe at the BiDi protocol level once — chromium-bidi makes
-    # this idempotent. Scope to the session's browsing context so a
-    # sibling test's dialog can't land in our handler.
-    {sub_method, sub_params} =
-      Commands.subscribe(["browsingContext.userPromptOpened"], [ctx])
-
-    WebSocketClient.send_command(ws_pid, sub_method, sub_params)
-
-    # Spawn a handler so fun.(session) can block on a click that
-    # only returns once the dialog is handled. Sync via :ready so
-    # the WSC subscription is in place BEFORE we trigger the click —
-    # otherwise the event can arrive before the handler subscribes
-    # and Chrome auto-dismisses the unhandled prompt.
-    self_pid = self()
-
-    handler =
-      spawn_link(fn ->
-        WebSocketClient.subscribe(ws_pid, "browsingContext.userPromptOpened", self(), ctx)
-        send(self_pid, {:ready, self()})
-
-        {message, default_value} =
-          receive do
-            {:bidi_event, "browsingContext.userPromptOpened", event} ->
-              msg = get_in(event, ["params", "message"]) || ""
-              default = get_in(event, ["params", "defaultValue"])
-              {msg, default}
-          after
-            5_000 -> {"", nil}
-          end
-
-        effective_text = user_text || default_value
-        {m, p} = Commands.handle_user_prompt(ctx, accept, effective_text)
-        WebSocketClient.send_command(ws_pid, m, p) |> ResponseParser.check_error()
-
-        send(caller, {:dialog_handled, message})
-      end)
-
-    receive do
-      {:ready, ^handler} -> :ok
-    after
-      1_000 -> :ok
-    end
-
-    # Trigger the dialog.
-    fun.(session)
-
-    message =
-      receive do
-        {:dialog_handled, msg} -> msg
-      after
-        10_000 -> ""
-      end
-
-    Process.unlink(handler)
-
-    message
-  end
+  # Dialog flow lives in Wallabidi.Remote.Dialogs.ChromeBiDi (which uses
+  # Wallabidi.Remote.Dialogs.Flow for the protocol-agnostic orchestration).
 
   @doc """
   Window viewport size. BiDi's native call is `get_viewport/1`;
