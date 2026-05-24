@@ -14,6 +14,7 @@ defmodule Wallabidi.Remote.Transport.BiDi.SessionActor do
 
   alias Wallabidi.Remote.BiDi.WebSocketClient
   alias Wallabidi.Remote.Transport.Common
+  alias Wallabidi.Remote.Wire
 
   defstruct [
     :ws_pid,
@@ -273,41 +274,8 @@ defmodule Wallabidi.Remote.Transport.BiDi.SessionActor do
   # ----- Inbound -----
 
   @impl true
-  def handle_info({:bidi_event, "browsingContext.load", event}, state) do
-    nav = get_in(event, ["params", "navigation"])
-
-    if is_binary(nav) do
-      {:noreply, record_load(state, nav, "load")}
-    else
-      {:noreply, state}
-    end
-  end
-
-  def handle_info({:bidi_event, "browsingContext.domContentLoaded", event}, state) do
-    nav = get_in(event, ["params", "navigation"])
-
-    if is_binary(nav) do
-      {:noreply, record_load(state, nav, "DOMContentLoaded")}
-    else
-      {:noreply, state}
-    end
-  end
-
-  def handle_info({:bidi_event, "script.message", event}, state) do
-    params = Map.get(event, "params", %{})
-
-    if params["channel"] == "__wallabidi" do
-      payload = get_in(params, ["data", "value"]) || ""
-      {:noreply, Common.route_bootstrap_payload(state, payload)}
-    else
-      {:noreply, state}
-    end
-  end
-
-  def handle_info({:bidi_event, _method, _event}, state) do
-    # log.entryAdded, browsingContext.userPromptOpened, etc. — not
-    # handled at the transport level; consumers can subscribe directly.
-    {:noreply, state}
+  def handle_info({:bidi_event, method, event}, state) do
+    {:noreply, Wire.BiDi.handle_event(state, method, event)}
   end
 
   def handle_info({:find_timeout, query_id}, state) do
@@ -390,35 +358,6 @@ defmodule Wallabidi.Remote.Transport.BiDi.SessionActor do
   end
 
   defp normalize_params(other), do: other
-
-  # Decode a __wallabidi channel payload (JSON-stringified by the
-  # bootstrap) and dispatch to find_waiters or page_ready_waiter.
-  # Format mirrors the legacy SessionProcess decoder so the bootstrap
-  # JS doesn't need a BiDi-specific variant.
-  # Wake any waiter whose (navigation_id, milestone) matches — or
-  # whose loader is the `:any` wildcard (await_next_page_load).
-  # If no waiter is registered, buffer the milestone so a later
-  # caller sees it immediately.
-  defp record_load(state, nav, name) do
-    {matching, rest} =
-      Enum.split_with(state.load_waiters, fn {_from, lid, n, _ref} ->
-        (lid == nav or lid == :any) and n == name
-      end)
-
-    case matching do
-      [] ->
-        inner = Map.put(Map.get(state.loads, nav, %{}), name, true)
-        %{state | loads: Map.put(state.loads, nav, inner)}
-
-      _ ->
-        Enum.each(matching, fn {from, _, _, ref} ->
-          Process.cancel_timer(ref)
-          GenServer.reply(from, :ok)
-        end)
-
-        %{state | load_waiters: rest}
-    end
-  end
 
   # After consuming a buffered (nav, milestone), drop it so a future
   # caller for the same pair has to wait for a fresh event.

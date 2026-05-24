@@ -22,6 +22,7 @@ defmodule Wallabidi.Remote.Transport.PerSession.Actor do
   require Logger
 
   alias Wallabidi.Remote.Transport.Common
+  alias Wallabidi.Remote.Wire
 
   defstruct [
     # ----- Connection state (was WebSocket) -----
@@ -370,7 +371,7 @@ defmodule Wallabidi.Remote.Transport.PerSession.Actor do
         deliver_response(state, id, response)
 
       {:ok, %{"method" => method} = event} ->
-        handle_event(state, method, event)
+        Wire.CDP.handle_event(state, method, event)
 
       {:error, _} ->
         Logger.warning("PerSession.Actor invalid JSON: #{inspect(String.slice(text, 0, 200))}")
@@ -399,84 +400,6 @@ defmodule Wallabidi.Remote.Transport.PerSession.Actor do
         GenServer.reply(from, parse_response(response))
         %{state | pending_calls: pending}
     end
-  end
-
-  # ----- Event handling -----
-
-  defp handle_event(state, "Page.lifecycleEvent", event) do
-    params = Map.get(event, "params", %{})
-    loader_id = params["loaderId"]
-    name = params["name"]
-
-    if is_binary(loader_id) and name in ["load", "DOMContentLoaded"] do
-      state = buffer_load(state, loader_id, name)
-      wake_load_waiters(state, loader_id, name)
-    else
-      state
-    end
-  end
-
-  defp handle_event(state, "Runtime.bindingCalled", event) do
-    params = Map.get(event, "params", %{})
-
-    if params["name"] == "__wallabidi" and is_binary(params["payload"]) do
-      Common.route_bootstrap_payload(state, params["payload"])
-    else
-      state
-    end
-  end
-
-  defp handle_event(state, "Runtime.executionContextCreated", event) do
-    ctx = get_in(event, ["params", "context"]) || %{}
-    aux = Map.get(ctx, "auxData", %{})
-    context_id = ctx["id"]
-    frame_id = aux["frameId"]
-
-    if is_integer(context_id) and is_binary(frame_id) do
-      %{state | frame_contexts: Map.put(state.frame_contexts, frame_id, context_id)}
-    else
-      state
-    end
-  end
-
-  defp handle_event(state, "Runtime.executionContextDestroyed", event) do
-    destroyed = get_in(event, ["params", "executionContextId"])
-
-    if is_integer(destroyed) do
-      contexts =
-        state.frame_contexts
-        |> Enum.reject(fn {_frame_id, ctx_id} -> ctx_id == destroyed end)
-        |> Map.new()
-
-      %{state | frame_contexts: contexts}
-    else
-      state
-    end
-  end
-
-  defp handle_event(state, _method, _event), do: state
-
-  # ----- Helpers (was Session helpers) -----
-
-  defp buffer_load(state, loader_id, name) do
-    loads = Map.update(state.loads, loader_id, %{name => true}, &Map.put(&1, name, true))
-    %{state | loads: loads}
-  end
-
-  defp wake_load_waiters(state, loader_id, name) do
-    {ready, pending} =
-      Enum.split_with(state.load_waiters, fn
-        {_from, ^loader_id, ^name, _ref} -> true
-        {_from, :any, ^name, _ref} -> true
-        _ -> false
-      end)
-
-    Enum.each(ready, fn {from, _l, _n, ref} ->
-      Process.cancel_timer(ref)
-      GenServer.reply(from, :ok)
-    end)
-
-    %{state | load_waiters: pending}
   end
 
   # ----- Wire frame send -----
