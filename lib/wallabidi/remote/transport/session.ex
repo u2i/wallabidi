@@ -54,6 +54,13 @@ defmodule Wallabidi.Remote.Transport.Session do
     # await_page_ready_after BLOCKs until a different pageId arrives.
     last_page_id: nil,
     page_ready_waiter: nil,
+    # Set to true when the bootstrap reports a `nav_pending` (LV
+    # `live_redirect`/`redirect` in a phx_reply). Signals to a waiting
+    # `await_page_ready_after` that a transition is in flight and the
+    # timeout should be extended — the destination's bootstrap will
+    # eventually fire page_ready, just possibly later than the caller's
+    # default budget allows. Cleared once consumed.
+    nav_pending: false,
     # Frame stack. Empty list = root frame (`document`); nested entries
     # represent each `focus_frame` push. Each entry is the frame's
     # `executionContextId` (CDP-assigned int) so subsequent JS evals

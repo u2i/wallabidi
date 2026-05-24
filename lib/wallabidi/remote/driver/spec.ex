@@ -20,17 +20,9 @@ defmodule Wallabidi.Remote.Driver.Spec do
     # (CDP synthesizeScrollGesture / BiDi JS scrollBy / Lightpanda no-op)
     # that don't justify their own behaviour. Function of (element, dx, dy).
     :touch_scroll,
-    # ChromeCDP fallback: poll current_url after a patch-classified click
-    # timeout to ride out a slow LiveView handle_event. Only ChromeCDP
-    # sets this true today.
-    patch_url_fallback?: false,
     # Wrap visit/click in check_logs! to drain console + exception events
     # into JSError raises. Both Chrome drivers set true; Lightpanda false.
-    log_check_interactions?: false,
-    # Additionally wrap simple accessors (current_url, page_title) in
-    # check_logs!. Only ChromeBiDi does this today — ChromeCDP doesn't.
-    # Marked separately so we don't silently change ChromeCDP's behaviour.
-    log_check_accessors?: false
+    log_check_interactions?: false
   ]
 
   @type t :: %__MODULE__{
@@ -41,8 +33,6 @@ defmodule Wallabidi.Remote.Driver.Spec do
           frames: module,
           touch_scroll:
             (Wallabidi.Element.t(), number, number -> {:ok, nil} | {:error, term}) | nil,
-          patch_url_fallback?: boolean,
-          log_check_interactions?: boolean,
-          log_check_accessors?: boolean
+          log_check_interactions?: boolean
         }
 end

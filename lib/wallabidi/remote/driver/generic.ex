@@ -171,16 +171,7 @@ defmodule Wallabidi.Remote.Driver.Generic do
     do: Orchestrator.set_value(spec(element), element, value)
 
   def clear(%Element{} = element), do: Orchestrator.clear(spec(element), element)
-
-  def clear(%Element{} = element, opts) do
-    # Per-driver opt: some drivers (ChromeBiDi) consume the opts; CDP
-    # drivers ignore. The spec carries a flag if needed; for now always
-    # call the bare clear so behaviour matches the CDP impls. If
-    # ChromeBiDi's silent path needs the opts, we add a Spec.clear_with_opts?
-    # flag later.
-    _ = opts
-    Orchestrator.clear(spec(element), element)
-  end
+  def clear(%Element{} = element, opts), do: Orchestrator.clear(spec(element), element, opts)
 
   def find_elements(parent, query), do: Orchestrator.find_elements(spec(parent), parent, query)
 

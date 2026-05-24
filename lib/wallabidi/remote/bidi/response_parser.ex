@@ -171,8 +171,11 @@ defmodule Wallabidi.Remote.BiDi.ResponseParser do
   @doc """
   Extracts the screenshot data from a captureScreenshot response.
   """
-  def extract_screenshot(%{"data" => data}) do
-    {:ok, :base64.decode(data)}
+  def extract_screenshot(%{"data" => data}) when is_binary(data) do
+    case Base.decode64(data) do
+      {:ok, binary} -> {:ok, binary}
+      :error -> {:error, :no_screenshot_data}
+    end
   end
 
   def extract_screenshot(other), do: {:error, {:unexpected_screenshot_response, other}}
@@ -180,21 +183,8 @@ defmodule Wallabidi.Remote.BiDi.ResponseParser do
   @doc """
   Extracts cookies from a getCookies response.
   """
-  def extract_cookies(%{"cookies" => cookies}) do
-    normalized =
-      Enum.map(cookies, fn cookie ->
-        %{
-          "name" => cookie["name"],
-          "value" => Map.get(cookie["value"] || %{}, "value", ""),
-          "domain" => cookie["domain"],
-          "path" => cookie["path"],
-          "secure" => cookie["secure"],
-          "httpOnly" => cookie["httpOnly"],
-          "expiry" => cookie["expiry"]
-        }
-      end)
-
-    {:ok, normalized}
+  def extract_cookies(%{"cookies" => cookies}) when is_list(cookies) do
+    {:ok, Enum.map(cookies, &Wallabidi.Remote.Cookies.normalize_returned_cookie/1)}
   end
 
   def extract_cookies(other), do: {:error, {:unexpected_cookies_response, other}}

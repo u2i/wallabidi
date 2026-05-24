@@ -288,6 +288,89 @@ defmodule Wallabidi.Remote.OpsShared do
             unquote(__MODULE__).trivia_js("source", "document.documentElement.outerHTML")
           )
 
+      @doc "True when the session's current URL is a known blank URL."
+      @spec blank_page?(Session.t()) :: boolean
+      def blank_page?(%Session{} = session) do
+        case current_url(session) do
+          {:ok, url} -> url in ["data:,", "about:blank", ""]
+          _ -> false
+        end
+      end
+
+      @doc """
+      Set a file input's value via the DataTransfer + File trick.
+
+      Browsers reject `el.value = "/path"` on file inputs for security
+      reasons; this fabricates an empty `File` and assigns it via
+      `DataTransfer`. Tests only inspect `.value` (which the browser
+      exposes as `C:\\fakepath\\<basename>`), so file *contents* are
+      irrelevant. When `path` doesn't exist on disk, no-ops to match
+      the legacy contract.
+      """
+      @spec set_file_input_via_data_transfer(Session.t(), Element.t(), String.t()) ::
+              {:ok, nil} | {:error, term}
+      def set_file_input_via_data_transfer(%Session{} = session, %Element{} = element, path)
+          when is_binary(path) do
+        if File.exists?(path) do
+          case call_on_element(
+                 session,
+                 element,
+                 """
+                 function(p) {
+                   var dt = new DataTransfer();
+                   var name = p.split('/').pop() || p.split('\\\\').pop();
+                   var f = new File([''], name, {type: 'application/octet-stream'});
+                   dt.items.add(f);
+                   this.files = dt.files;
+                   this.dispatchEvent(new Event('change', {bubbles: true}));
+                   return null;
+                 }
+                 """,
+                 [path]
+               ) do
+            {:ok, _} -> {:ok, nil}
+            err -> err
+          end
+        else
+          {:ok, nil}
+        end
+      end
+
+      @doc "Element width/height in CSS pixels via getBoundingClientRect."
+      @spec element_size(Element.t()) :: {:ok, {number, number}} | {:error, term}
+      def element_size(%Element{} = element) do
+        case call_on_element(Element.root_session(element), element, unquote(@dispatch_fn), [
+               [["rect", "size"]]
+             ]) do
+          {:ok, [w, h]} -> {:ok, {w, h}}
+          err -> err
+        end
+      end
+
+      @doc "Element top-left position in CSS pixels."
+      @spec element_location(Element.t()) :: {:ok, {number, number}} | {:error, term}
+      def element_location(%Element{} = element) do
+        case call_on_element(Element.root_session(element), element, unquote(@dispatch_fn), [
+               [["rect", "position"]]
+             ]) do
+          {:ok, [x, y]} -> {:ok, {x, y}}
+          err -> err
+        end
+      end
+
+      @doc """
+      Is the element checked (checkbox/radio) or selected (option)?
+      Routes through the bootstrap so the DOM property is the source
+      of truth (the `selected` attribute may not reflect later state).
+      """
+      @spec selected(Session.t(), Element.t()) :: {:ok, boolean} | {:error, term}
+      def selected(%Session{} = session, %Element{} = element) do
+        case call_on_element(session, element, unquote(@dispatch_fn), [[["is_selected"]]]) do
+          {:ok, v} -> {:ok, v == true}
+          err -> err
+        end
+      end
+
       @doc """
       Navigate the session to `url` and wait for `load`.
 

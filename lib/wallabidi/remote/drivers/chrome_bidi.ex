@@ -28,9 +28,7 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
     windows: Windows.ChromeBiDi,
     frames: Frames.ChromeBiDi,
     touch_scroll: &__MODULE__.touch_scroll_impl/3,
-    patch_url_fallback?: false,
-    log_check_interactions?: true,
-    log_check_accessors?: true
+    log_check_interactions?: true
   }
 
   @doc false
@@ -175,12 +173,6 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
 
   def send_keys(%Wallabidi.Element{} = element, keys),
     do: Wallabidi.Remote.Driver.Generic.send_keys(element, keys)
-
-  # ChromeBiDi's clear/2 with opts: BiDiClient.clear/3 actually consumes
-  # the opts (CDP drivers ignore them).
-  def clear(%Wallabidi.Element{} = element, opts) do
-    BiDiClient.clear(Wallabidi.Element.root_session(element), element, opts)
-  end
 
   defdelegate parse_log(log), to: Wallabidi.Remote.Chrome.Logger
 end

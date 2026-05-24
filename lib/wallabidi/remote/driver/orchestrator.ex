@@ -47,8 +47,10 @@ defmodule Wallabidi.Remote.Driver.Orchestrator do
 
   @doc """
   Click an element. Consults `spec.browser.click_strategy/0` for the
-  flow shape, wraps in log-check when `spec.log_check_interactions?`,
-  and respects `spec.patch_url_fallback?` for patch-classified timeouts.
+  flow shape, wraps in log-check when `spec.log_check_interactions?`.
+  Patch-classified timeouts fall through silently — the bootstrap's
+  `nav_pending` signal extends the page_ready wait when an LV redirect
+  is in flight, so no caller polling is needed.
   """
   @spec click(Spec.t(), Element.t()) :: {:ok, term} | {:error, term}
   def click(%Spec{} = spec, %Element{} = element) do
@@ -59,12 +61,10 @@ defmodule Wallabidi.Remote.Driver.Orchestrator do
     end)
   end
 
-  @doc "Current URL of the session. Log-checked when the driver opts in via `log_check_accessors?`."
+  @doc "Current URL of the session — bare delegation, no log-check."
   @spec current_url(Spec.t(), Session.t()) :: {:ok, String.t()} | {:error, term}
   def current_url(%Spec{} = spec, %Session{} = session) do
-    maybe_log_check(spec.log_check_accessors?, session, fn ->
-      spec.wire_protocol.current_url(session)
-    end)
+    spec.wire_protocol.current_url(session)
   end
 
   @doc "Current path of the session — bare delegation, no log-check."
@@ -79,12 +79,10 @@ defmodule Wallabidi.Remote.Driver.Orchestrator do
     spec.wire_protocol.page_source(session)
   end
 
-  @doc "<title> of the session. Log-checked when the driver opts in via `log_check_accessors?`."
+  @doc "<title> of the session — bare delegation, no log-check."
   @spec page_title(Spec.t(), Session.t()) :: {:ok, String.t()} | {:error, term}
   def page_title(%Spec{} = spec, %Session{} = session) do
-    maybe_log_check(spec.log_check_accessors?, session, fn ->
-      spec.wire_protocol.page_title(session)
-    end)
+    spec.wire_protocol.page_title(session)
   end
 
   @doc """
@@ -108,11 +106,11 @@ defmodule Wallabidi.Remote.Driver.Orchestrator do
   @spec cookies(Spec.t(), Session.t()) :: {:ok, list(map)} | {:error, term}
   def cookies(%Spec{} = spec, %Session{} = session), do: spec.wire_protocol.cookies(session)
 
-  @doc "Set a cookie. Normalises `{:ok, _}` from the underlying RPC to `{:ok, nil}`."
+  @doc "Set a cookie."
   @spec set_cookie(Spec.t(), Session.t(), String.t(), String.t()) ::
           {:ok, nil} | {:error, term}
   def set_cookie(%Spec{} = spec, %Session{} = session, name, value) do
-    spec.wire_protocol.set_cookie(session, name, value) |> normalise_cookie_result()
+    spec.wire_protocol.set_cookie(session, name, value)
   end
 
   @doc "Set a cookie with attributes."
@@ -120,11 +118,7 @@ defmodule Wallabidi.Remote.Driver.Orchestrator do
           {:ok, nil} | {:error, term}
   def set_cookie(%Spec{} = spec, %Session{} = session, name, value, attrs) do
     spec.wire_protocol.set_cookie(session, name, value, Map.new(attrs))
-    |> normalise_cookie_result()
   end
-
-  defp normalise_cookie_result({:ok, _}), do: {:ok, nil}
-  defp normalise_cookie_result(other), do: other
 
   @doc """
   Window viewport size. Normalises the wire shape (atom keys) to the
@@ -187,10 +181,14 @@ defmodule Wallabidi.Remote.Driver.Orchestrator do
     spec.wire_protocol.set_value(Element.root_session(element), element, value)
   end
 
-  @doc "Clear an input/textarea."
-  @spec clear(Spec.t(), Element.t()) :: {:ok, nil} | {:error, term}
-  def clear(%Spec{} = spec, %Element{} = element) do
-    spec.wire_protocol.clear(Element.root_session(element), element)
+  @doc """
+  Clear an input/textarea. Opts: `:silent` (default `true`) — suppress
+  the intermediate `input`/`change` events so callers that follow with
+  a fill don't fire `phx-change` for the empty state.
+  """
+  @spec clear(Spec.t(), Element.t(), keyword) :: {:ok, nil} | {:error, term}
+  def clear(%Spec{} = spec, %Element{} = element, opts \\ []) do
+    spec.wire_protocol.clear(Element.root_session(element), element, opts)
   end
 
   @doc "Find elements matching the query."
@@ -267,17 +265,12 @@ defmodule Wallabidi.Remote.Driver.Orchestrator do
             # explicitly catch the error.
             raise_navigation_timeout(spec, session, 5_000)
 
-          {:ok, "patch", :timeout} ->
-            # Patch-classified timeout: caller's assert_has retries will
-            # take it from here. ChromeCDP additionally polls current_url
-            # to ride out a slow LV handle_event before returning.
-            if spec.patch_url_fallback? do
-              _ = await_url_change_or_load(spec, session, 10_000)
-            end
-
-            {:ok, nil}
-
           {:ok, _classification, :timeout} ->
+            # Patch-classified timeouts (and any other) fall through
+            # silently — the page_ready signal will arm an extended
+            # timeout if the bootstrap sees a `nav_pending` (LV
+            # `live_redirect`/`redirect` payload), so callers' assert_has
+            # retries take it from here without us polling current_url.
             {:ok, nil}
 
           err ->
@@ -300,31 +293,5 @@ defmodule Wallabidi.Remote.Driver.Orchestrator do
       page_state: :unknown,
       page_state_history: []
     }
-  end
-
-  defp await_url_change_or_load(%Spec{} = spec, %Session{} = session, timeout_ms) do
-    pre_url =
-      case spec.wire_protocol.current_url(session) do
-        {:ok, url} -> url
-        _ -> nil
-      end
-
-    deadline = System.monotonic_time(:millisecond) + timeout_ms
-    poll_url(spec, session, pre_url, deadline)
-  end
-
-  defp poll_url(%Spec{} = spec, session, pre_url, deadline) do
-    if System.monotonic_time(:millisecond) >= deadline do
-      :timeout
-    else
-      case spec.wire_protocol.current_url(session) do
-        {:ok, url} when url != pre_url and url != "" ->
-          :ok
-
-        _ ->
-          Process.sleep(50)
-          poll_url(spec, session, pre_url, deadline)
-      end
-    end
   end
 end

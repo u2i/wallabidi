@@ -103,13 +103,25 @@ defmodule Wallabidi.Remote.Transport.Common do
   """
   @spec await_page_ready_after(map(), term() | nil, non_neg_integer(), GenServer.from()) ::
           {:reply, :ok, map()} | {:noreply, map()}
+  # When bootstrap reported a `nav_pending` (LV `live_redirect`/`redirect`
+  # in a phx_reply), extend the timeout — the destination's mount may
+  # take longer than the caller's default budget. The bootstrap fires
+  # page_ready once the new pageId is established, so we still wake
+  # event-driven; the longer timeout is just a safer upper bound. 10s
+  # matches Browser's :max_wait_time default for assert_has retries.
+  @nav_pending_timeout 10_000
+
   def await_page_ready_after(state, pre_page_id, timeout_ms, from) do
     if pre_page_id != nil and state.last_page_id != nil and
          state.last_page_id != pre_page_id do
       {:reply, :ok, state}
     else
-      timer_ref = Process.send_after(self(), {:page_ready_timeout, from}, timeout_ms)
-      {:noreply, %{state | page_ready_waiter: {from, pre_page_id, timer_ref}}}
+      effective_timeout =
+        if state.nav_pending, do: max(timeout_ms, @nav_pending_timeout), else: timeout_ms
+
+      timer_ref = Process.send_after(self(), {:page_ready_timeout, from}, effective_timeout)
+
+      {:noreply, %{state | page_ready_waiter: {from, pre_page_id, timer_ref}, nav_pending: false}}
     end
   end
 
@@ -257,6 +269,20 @@ defmodule Wallabidi.Remote.Transport.Common do
 
       {:ok, %{"type" => "page_ready", "pageId" => page_id}} ->
         update_last_page_id(state, page_id)
+
+      {:ok, %{"type" => "nav_pending"}} ->
+        case state.page_ready_waiter do
+          {from, pre, old_ref} ->
+            Process.cancel_timer(old_ref)
+
+            new_ref =
+              Process.send_after(self(), {:page_ready_timeout, from}, @nav_pending_timeout)
+
+            %{state | page_ready_waiter: {from, pre, new_ref}, nav_pending: false}
+
+          nil ->
+            %{state | nav_pending: true}
+        end
 
       _ ->
         state

@@ -129,12 +129,14 @@ defmodule Wallabidi.Remote.CDP.Client do
 
   @doc """
   Navigates the session's target to `url`. Returns
-  `{:ok, %{loader_id: ..., frame_id: ...}}` on a successful nav.
+  `{:ok, %{loader_id: id_or_nil}}` on a successful nav — the loader id
+  is the correlation key the caller passes to
+  `Transport.Protocol.await_page_load/4`.
 
   Note: this is a blocking *send* — it returns once Chrome has
   acknowledged the navigation request, NOT once the page has finished
-  loading. To wait for `loadEventFired`, layer
-  `await_page_load/2` (TBA) on top.
+  loading. To wait for `loadEventFired`, layer `await_page_load/4`
+  on top (or use the higher-level `visit/3` from `OpsShared`).
 
   Errors:
     * `{:error, {:navigate_failed, reason}}` for protocol-level errors
@@ -142,20 +144,197 @@ defmodule Wallabidi.Remote.CDP.Client do
     * `{:error, term}` for transport/timeouts
   """
   @spec navigate(Session.t(), String.t()) ::
-          {:ok, %{loader_id: String.t() | nil, frame_id: String.t() | nil}}
-          | {:error, term}
+          {:ok, %{loader_id: String.t() | nil}} | {:error, term}
   def navigate(%Session{} = session, url) when is_binary(url) do
     case cdp_send(session, "Page.navigate", %{url: url}) do
       {:ok, %{"errorText" => msg}} when is_binary(msg) and msg != "" ->
         {:error, {:navigate_failed, msg}}
 
       {:ok, result} when is_map(result) ->
-        {:ok, %{loader_id: result["loaderId"], frame_id: result["frameId"]}}
+        {:ok, %{loader_id: result["loaderId"]}}
 
       error ->
         error
     end
   end
+
+  # ----- Runtime.evaluate -----
+
+  @doc """
+  Runs a JS expression in the page's main realm and returns the
+  serialised value. Equivalent to `Runtime.evaluate` with
+  `returnByValue: true`.
+
+  Examples:
+
+      iex> evaluate(session, "1 + 1")
+      {:ok, 2}
+
+      iex> evaluate(session, "document.title")
+      {:ok, "Wallabidi Test"}
+  """
+  @spec evaluate(Session.t(), String.t()) :: {:ok, term} | {:error, term}
+  def evaluate(%Session{} = session, expression) when is_binary(expression) do
+    evaluate_raw(session, expression)
+  end
+
+  @doc """
+  Like `evaluate/2` but threads `args` into the script via
+  `arguments[]`. Wraps the body so `return X` and `arguments[0]`
+  references work like the user-facing `execute_script` API expects.
+
+  When the script has no `return`/`arguments` references, this still
+  works — but a bare expression like `"2 + 2"` evaluates inside a
+  function with no return statement (yielding `undefined`). Callers
+  who want plain expression evaluation should use `evaluate/2`.
+  """
+  @spec evaluate(Session.t(), String.t(), list) :: {:ok, term} | {:error, term}
+  def evaluate(%Session{} = session, expression, args)
+      when is_binary(expression) and is_list(args) do
+    case encode_script_args(args) do
+      {:elements, cdp_args} ->
+        # Args contain WebDriver-encoded element references — pass them
+        # through as real CDP objectIds via Runtime.callFunctionOn so
+        # the script's `arguments[n]` is a live Element, not a JSON
+        # blob. callFunctionOn needs an objectId, so use globalThis.
+        evaluate_with_element_args(session, expression, cdp_args)
+
+      {:no_elements, _} ->
+        if needs_wrap?(expression, args) do
+          args_json = Jason.encode!(args)
+          wrapped = "(function(){#{expression}}).apply(this, #{args_json})"
+          evaluate_raw(session, wrapped)
+        else
+          evaluate_raw(session, expression)
+        end
+    end
+  end
+
+  @web_element_identifier "element-6066-11e4-a52e-4f735466cecf"
+
+  defp encode_script_args(args) do
+    has_element? =
+      Enum.any?(args, fn
+        %{@web_element_identifier => _} -> true
+        _ -> false
+      end)
+
+    if has_element? do
+      cdp_args =
+        Enum.map(args, fn
+          %{@web_element_identifier => id} -> %{objectId: id}
+          v -> %{value: v}
+        end)
+
+      {:elements, cdp_args}
+    else
+      {:no_elements, args}
+    end
+  end
+
+  defp evaluate_with_element_args(%Session{} = session, expression, cdp_args) do
+    # Wrap the script body in a function so `arguments[n]` and bare
+    # `return X` work — same shape as the no-element path.
+    wrapped = "function() { #{expression} }"
+
+    with {:ok, eval_result} <-
+           cdp_send(session, "Runtime.evaluate", %{
+             expression: "globalThis",
+             returnByValue: false
+           }),
+         {:ok, global_id} when is_binary(global_id) <-
+           ResponseParser.extract_object_id({:ok, eval_result}) do
+      result =
+        cdp_send(session, "Runtime.callFunctionOn", %{
+          objectId: global_id,
+          functionDeclaration: wrapped,
+          arguments: cdp_args,
+          returnByValue: true
+        })
+
+      _ = cdp_send(session, "Runtime.releaseObject", %{objectId: global_id})
+
+      case result do
+        {:ok, %{"result" => %{"value" => v}}} -> {:ok, v}
+        {:ok, %{"result" => %{"type" => "undefined"}}} -> {:ok, nil}
+        {:ok, %{"exceptionDetails" => details}} -> {:error, {:js_exception, details}}
+        other -> other
+      end
+    end
+  end
+
+  # If the script uses `return`/`arguments`, wrap. Otherwise treat as
+  # an expression so `execute_script(s, "2+2", [])` returns 4 like the
+  # legacy CDPClient.evaluate path.
+  defp needs_wrap?(_expression, args) when args != [], do: true
+
+  defp needs_wrap?(expression, []) do
+    # Conservative match: require space/semicolon after `return` and
+    # `[` after `arguments` so identifier prefixes like `return_value`
+    # or `arguments_list` don't trigger spurious wrapping.
+    String.contains?(expression, "return ") or
+      String.contains?(expression, "return;") or
+      String.contains?(expression, "arguments[")
+  end
+
+  @doc """
+  Async-script semantics: the script's last argument is a callback that
+  resolves the awaited promise. Mirrors WebDriver's
+  `Execute Async Script` so test code like
+  `arguments[arguments.length - 1](value)` works.
+  """
+  @spec evaluate_async(Session.t(), String.t(), list) :: {:ok, term} | {:error, term}
+  def evaluate_async(%Session{} = session, expression, args)
+      when is_binary(expression) and is_list(args) do
+    args_json = Jason.encode!(args)
+
+    wrapped = """
+    new Promise(function(__resolve, __reject) {
+      try {
+        (function() {
+          var __args = #{args_json}.concat([__resolve]);
+          (function() { #{expression} }).apply(this, __args);
+        })();
+      } catch (e) { __reject(e); }
+    })
+    """
+
+    params =
+      case Protocol.current_context_id(session) do
+        nil ->
+          %{expression: wrapped, returnByValue: true, awaitPromise: true}
+
+        ctx ->
+          %{expression: wrapped, returnByValue: true, awaitPromise: true, contextId: ctx}
+      end
+
+    case cdp_send(session, "Runtime.evaluate", params) do
+      {:ok, %{"result" => %{"value" => value}}} -> {:ok, value}
+      {:ok, %{"result" => %{"type" => "undefined"}}} -> {:ok, nil}
+      {:ok, %{"exceptionDetails" => details}} -> {:error, {:js_exception, details}}
+      {:ok, _} = ok -> ok
+      error -> error
+    end
+  end
+
+  defp evaluate_raw(%Session{} = session, expression) do
+    params =
+      case Protocol.current_context_id(session) do
+        nil -> %{expression: expression, returnByValue: true}
+        ctx -> %{expression: expression, returnByValue: true, contextId: ctx}
+      end
+
+    case cdp_send(session, "Runtime.evaluate", params) do
+      {:ok, %{"result" => %{"value" => value}}} -> {:ok, value}
+      {:ok, %{"result" => %{"type" => "undefined"}}} -> {:ok, nil}
+      {:ok, %{"exceptionDetails" => details}} -> {:error, {:js_exception, details}}
+      {:ok, _} = ok -> ok
+      error -> error
+    end
+  end
+
+  # element_size/1, element_location/1, selected/2, blank_page?/1 —
+  # provided by Wallabidi.Remote.OpsShared.
 
   # ----- Element-scoped operations -----
 
@@ -423,37 +602,16 @@ defmodule Wallabidi.Remote.CDP.Client do
       # 'C:\\fakepath\\<basename>' which is what Wallabidi tests
       # check for. File contents aren't read.
       {:error, {-31_998, "UnknownMethod"}} ->
-        set_file_input_via_data_transfer(session, element, paths)
+        # Lightpanda fallback — first path only (Lightpanda is single-file
+        # by convention; empty list means caller filtered out all paths
+        # and we should no-op).
+        case paths do
+          [] -> {:ok, nil}
+          [path | _] -> set_file_input_via_data_transfer(session, element, path)
+        end
 
       {:error, _} = err ->
         err
-    end
-  end
-
-  defp set_file_input_via_data_transfer(_session, _element, []) do
-    # No valid paths — WebDriver contract is to no-op.
-    {:ok, nil}
-  end
-
-  defp set_file_input_via_data_transfer(session, element, [path | _]) do
-    case call_on_element(
-           session,
-           element,
-           """
-           function(p) {
-             var dt = new DataTransfer();
-             var name = p.split('/').pop() || p.split('\\\\').pop();
-             var f = new File([''], name, {type: 'application/octet-stream'});
-             dt.items.add(f);
-             this.files = dt.files;
-             this.dispatchEvent(new Event('change', {bubbles: true}));
-             return null;
-           }
-           """,
-           [path]
-         ) do
-      {:ok, _} -> {:ok, nil}
-      err -> err
     end
   end
 
@@ -674,209 +832,6 @@ defmodule Wallabidi.Remote.CDP.Client do
     )
   end
 
-  # ----- Frame switching -----
-
-  @doc """
-  Enables CDP's Page domain (already done by enable_page_lifecycle_events)
-  AND subscribes to Runtime execution-context events so Session can
-  track the frameId → executionContextId mapping needed by
-  focus_frame_by_id/2.
-
-  Idempotent. Best to call once at session bootstrap, after
-  install_bootstrap/1.
-  """
-  @spec enable_frame_tracking(Session.t()) :: :ok | {:error, term}
-  def enable_frame_tracking(%Session{} = session) do
-    with :ok <- Protocol.subscribe(session, "Runtime.executionContextCreated") do
-      Protocol.subscribe(session, "Runtime.executionContextDestroyed")
-    end
-  end
-
-  @doc """
-  Push a frame's `executionContextId` (resolved from its `frameId`)
-  onto the focus stack. Subsequent JS evaluations target this frame.
-
-  Returns `:ok` on success, `{:error, :unknown_frame}` if no
-  execution context has been observed for `frame_id` yet — typically
-  because the frame hasn't loaded.
-  """
-  @spec focus_frame_by_id(Session.t(), String.t()) :: :ok | {:error, term}
-  def focus_frame_by_id(%Session{} = session, frame_id) when is_binary(frame_id) do
-    case Protocol.lookup_frame_context(session, frame_id) do
-      nil ->
-        {:error, :unknown_frame}
-
-      context_id when is_integer(context_id) ->
-        Protocol.push_frame(session, context_id)
-        :ok
-    end
-  end
-
-  @doc "Pops the top frame off the focus stack (no-op at root)."
-  @spec focus_parent_frame(Session.t()) :: :ok
-  def focus_parent_frame(%Session{} = session) do
-    Protocol.pop_frame(session)
-    :ok
-  end
-
-  # ----- Cookies -----
-
-  @doc """
-  Returns the cookies visible to the current page.
-  """
-  @spec cookies(Session.t()) :: {:ok, [map]} | {:error, term}
-  def cookies(%Session{} = session) do
-    case cdp_send(session, "Network.getCookies", %{}) do
-      {:ok, %{"cookies" => cookies}} when is_list(cookies) ->
-        {:ok, Enum.map(cookies, &normalize_cookie/1)}
-
-      {:ok, _} ->
-        {:ok, []}
-
-      error ->
-        error
-    end
-  end
-
-  # CDP returns `expires`, WebDriver tests assert `expiry`.
-  defp normalize_cookie(cookie) do
-    case Map.pop(cookie, "expires") do
-      {nil, c} -> c
-      {-1, c} -> c
-      {expires, c} -> Map.put(c, "expiry", trunc(expires))
-    end
-  end
-
-  @doc """
-  Sets a cookie. `attrs` may include any standard CDP `setCookie`
-  fields (`url`, `domain`, `path`, `expires`, `secure`, `httpOnly`,
-  `sameSite`); a `:url` is helpful when you don't have a known domain
-  and just want the cookie scoped to the current page.
-  """
-  @spec set_cookie(Session.t(), String.t(), String.t(), map) ::
-          {:ok, true | false} | {:error, term}
-  def set_cookie(%Session{} = session, name, value, attrs \\ %{})
-      when is_binary(name) and is_binary(value) do
-    # Network.setCookie requires either `url` or `domain` — pad in the
-    # current URL when callers haven't supplied one. Also translate
-    # WebDriver-style `:expiry` → CDP's `:expires`.
-    attrs = Map.new(attrs)
-
-    attrs =
-      case Map.pop(attrs, :expiry) do
-        {nil, m} -> m
-        {expiry, m} -> Map.put_new(m, :expires, expiry)
-      end
-
-    attrs =
-      if Map.has_key?(attrs, :url) or Map.has_key?(attrs, "url") or
-           Map.has_key?(attrs, :domain) or Map.has_key?(attrs, "domain") do
-        attrs
-      else
-        case current_url(session) do
-          {:ok, url} when is_binary(url) and url != "" -> Map.put(attrs, :url, url)
-          _ -> attrs
-        end
-      end
-
-    params =
-      attrs
-      |> Map.put(:name, name)
-      |> Map.put(:value, value)
-
-    case cdp_send(session, "Network.setCookie", params) do
-      {:ok, %{"success" => true}} -> {:ok, true}
-      {:ok, %{"success" => false}} -> {:ok, false}
-      {:ok, _} -> {:ok, true}
-      error -> error
-    end
-  end
-
-  # ----- Screenshot + window size -----
-
-  @doc """
-  Captures a PNG screenshot of the current page (viewport).
-  Returns the raw binary (not base64).
-  """
-  @spec take_screenshot(Session.t()) :: {:ok, binary} | {:error, term}
-  def take_screenshot(%Session{} = session) do
-    case cdp_send(session, "Page.captureScreenshot", %{format: "png"}) do
-      {:ok, %{"data" => data}} when is_binary(data) ->
-        Base.decode64(data)
-
-      {:ok, _} ->
-        {:error, :no_screenshot_data}
-
-      error ->
-        error
-    end
-  end
-
-  @doc "Returns the current viewport size as `{:ok, %{width: w, height: h}}`."
-  @spec get_window_size(Session.t()) ::
-          {:ok, %{width: non_neg_integer, height: non_neg_integer}} | {:error, term}
-  def get_window_size(%Session{} = session) do
-    # Prefer a previously-stashed `window.__wallabidi_window_size`
-    # (set by set_window_size below) — `Emulation.setDeviceMetricsOverride`
-    # is a no-op on engines without a real layout pass (Lightpanda),
-    # so the JS override is the only source of truth there.
-    js =
-      "(window.__w && window.__w.run([['get_window_size']])) || " <>
-        "JSON.stringify(window.__wallabidi_window_size || " <>
-        "{width: window.innerWidth, height: window.innerHeight})"
-
-    case evaluate(session, js) do
-      {:ok, json} when is_binary(json) ->
-        case Jason.decode(json) do
-          {:ok, %{"width" => w, "height" => h}} -> {:ok, %{width: w, height: h}}
-          _ -> {:error, :bad_size_response}
-        end
-
-      error ->
-        error
-    end
-  end
-
-  @doc """
-  Resizes the viewport (and optionally the device) via
-  `Emulation.setDeviceMetricsOverride`. Pass 0 for `device_scale_factor`
-  / `mobile` to use defaults.
-  """
-  @spec set_window_size(Session.t(), non_neg_integer, non_neg_integer) ::
-          {:ok, nil} | {:error, term}
-  def set_window_size(%Session{} = session, width, height)
-      when is_integer(width) and is_integer(height) do
-    _ =
-      cdp_send(session, "Emulation.setDeviceMetricsOverride", %{
-        width: width,
-        height: height,
-        deviceScaleFactor: 0,
-        mobile: false
-      })
-
-    # Mirror the legacy fallback: stash the requested size as a JS
-    # global on the current page AND queue it onto every future
-    # document so it persists across navigations. Engines that don't
-    # implement Emulation (Lightpanda) read this from
-    # get_window_size/1.
-    # Use the centralised W.setWindowSize when available, fall back to
-    # the raw global write — handles the case where this is called on a
-    # page that booted before W was installed.
-    set_js =
-      "if (window.__w) window.__w.run([['set_window_size', #{width}, #{height}]]); " <>
-        "else window.__wallabidi_window_size = {width: #{width}, height: #{height}};"
-
-    _ = cdp_send(session, "Runtime.evaluate", %{expression: set_js, returnByValue: true})
-
-    # The bootstrap doesn't necessarily exist when an early addScript
-    # runs, so the preload form uses the raw global to be safe in
-    # either case.
-    persist_js = "window.__wallabidi_window_size = {width: #{width}, height: #{height}};"
-    _ = cdp_send(session, "Page.addScriptToEvaluateOnNewDocument", %{source: persist_js})
-
-    {:ok, nil}
-  end
-
   # ----- Element finding -----
   #
   # `find_elements/3` and `find_elements_lazy/3` come from OpsShared.
@@ -1011,207 +966,7 @@ defmodule Wallabidi.Remote.CDP.Client do
     end
   end
 
-  # ----- Page introspection -----
-  #
-  # current_url/1, current_path/1, page_title/1, page_source/1 —
-  # provided by Wallabidi.Remote.OpsShared.
-
-  # visit/3 — provided by Wallabidi.Remote.OpsShared (uses our
-  # navigate/2 plus the shared xpath-polyfill post-load hook).
-
-  # ----- Runtime.evaluate -----
-
-  @doc """
-  Runs a JS expression in the page's main realm and returns the
-  serialised value. Equivalent to `Runtime.evaluate` with
-  `returnByValue: true`.
-
-  Examples:
-
-      iex> evaluate(session, "1 + 1")
-      {:ok, 2}
-
-      iex> evaluate(session, "document.title")
-      {:ok, "Wallabidi Test"}
-  """
-  @spec evaluate(Session.t(), String.t()) :: {:ok, term} | {:error, term}
-  def evaluate(%Session{} = session, expression) when is_binary(expression) do
-    evaluate_raw(session, expression)
-  end
-
-  @doc """
-  Like `evaluate/2` but threads `args` into the script via
-  `arguments[]`. Wraps the body so `return X` and `arguments[0]`
-  references work like the user-facing `execute_script` API expects.
-
-  When the script has no `return`/`arguments` references, this still
-  works — but a bare expression like `"2 + 2"` evaluates inside a
-  function with no return statement (yielding `undefined`). Callers
-  who want plain expression evaluation should use `evaluate/2`.
-  """
-  @spec evaluate(Session.t(), String.t(), list) :: {:ok, term} | {:error, term}
-  def evaluate(%Session{} = session, expression, args)
-      when is_binary(expression) and is_list(args) do
-    case encode_script_args(args) do
-      {:elements, cdp_args} ->
-        # Args contain WebDriver-encoded element references — pass them
-        # through as real CDP objectIds via Runtime.callFunctionOn so
-        # the script's `arguments[n]` is a live Element, not a JSON
-        # blob. callFunctionOn needs an objectId, so use globalThis.
-        evaluate_with_element_args(session, expression, cdp_args)
-
-      {:no_elements, _} ->
-        if needs_wrap?(expression, args) do
-          args_json = Jason.encode!(args)
-          wrapped = "(function(){#{expression}}).apply(this, #{args_json})"
-          evaluate_raw(session, wrapped)
-        else
-          evaluate_raw(session, expression)
-        end
-    end
-  end
-
-  @web_element_identifier "element-6066-11e4-a52e-4f735466cecf"
-
-  defp encode_script_args(args) do
-    has_element? =
-      Enum.any?(args, fn
-        %{@web_element_identifier => _} -> true
-        _ -> false
-      end)
-
-    if has_element? do
-      cdp_args =
-        Enum.map(args, fn
-          %{@web_element_identifier => id} -> %{objectId: id}
-          v -> %{value: v}
-        end)
-
-      {:elements, cdp_args}
-    else
-      {:no_elements, args}
-    end
-  end
-
-  defp evaluate_with_element_args(%Session{} = session, expression, cdp_args) do
-    # Wrap the script body in a function so `arguments[n]` and bare
-    # `return X` work — same shape as the no-element path.
-    wrapped = "function() { #{expression} }"
-
-    with {:ok, eval_result} <-
-           cdp_send(session, "Runtime.evaluate", %{
-             expression: "globalThis",
-             returnByValue: false
-           }),
-         {:ok, global_id} when is_binary(global_id) <-
-           ResponseParser.extract_object_id({:ok, eval_result}) do
-      result =
-        cdp_send(session, "Runtime.callFunctionOn", %{
-          objectId: global_id,
-          functionDeclaration: wrapped,
-          arguments: cdp_args,
-          returnByValue: true
-        })
-
-      _ = cdp_send(session, "Runtime.releaseObject", %{objectId: global_id})
-
-      case result do
-        {:ok, %{"result" => %{"value" => v}}} -> {:ok, v}
-        {:ok, %{"result" => %{"type" => "undefined"}}} -> {:ok, nil}
-        {:ok, %{"exceptionDetails" => details}} -> {:error, {:js_exception, details}}
-        other -> other
-      end
-    end
-  end
-
-  # If the script uses `return`/`arguments`, wrap. Otherwise treat as
-  # an expression so `execute_script(s, "2+2", [])` returns 4 like the
-  # legacy CDPClient.evaluate path.
-  defp needs_wrap?(_expression, args) when args != [], do: true
-
-  defp needs_wrap?(expression, []) do
-    String.contains?(expression, "return") or String.contains?(expression, "arguments")
-  end
-
-  @doc """
-  Async-script semantics: the script's last argument is a callback that
-  resolves the awaited promise. Mirrors WebDriver's
-  `Execute Async Script` so test code like
-  `arguments[arguments.length - 1](value)` works.
-  """
-  @spec evaluate_async(Session.t(), String.t(), list) :: {:ok, term} | {:error, term}
-  def evaluate_async(%Session{} = session, expression, args) when is_binary(expression) do
-    args = args || []
-    args_json = Jason.encode!(args)
-
-    wrapped = """
-    new Promise(function(__resolve, __reject) {
-      try {
-        (function() {
-          var __args = #{args_json}.concat([__resolve]);
-          (function() { #{expression} }).apply(this, __args);
-        })();
-      } catch (e) { __reject(e); }
-    })
-    """
-
-    params =
-      case Protocol.current_context_id(session) do
-        nil ->
-          %{expression: wrapped, returnByValue: true, awaitPromise: true}
-
-        ctx ->
-          %{expression: wrapped, returnByValue: true, awaitPromise: true, contextId: ctx}
-      end
-
-    case cdp_send(session, "Runtime.evaluate", params) do
-      {:ok, %{"result" => %{"value" => value}}} -> {:ok, value}
-      {:ok, %{"result" => %{"type" => "undefined"}}} -> {:ok, nil}
-      {:ok, %{"exceptionDetails" => details}} -> {:error, {:js_exception, details}}
-      {:ok, _} = ok -> ok
-      error -> error
-    end
-  end
-
-  defp evaluate_raw(%Session{} = session, expression) do
-    params =
-      case Protocol.current_context_id(session) do
-        nil -> %{expression: expression, returnByValue: true}
-        ctx -> %{expression: expression, returnByValue: true, contextId: ctx}
-      end
-
-    case cdp_send(session, "Runtime.evaluate", params) do
-      {:ok, %{"result" => %{"value" => value}}} -> {:ok, value}
-      {:ok, %{"result" => %{"type" => "undefined"}}} -> {:ok, nil}
-      {:ok, %{"exceptionDetails" => details}} -> {:error, {:js_exception, details}}
-      {:ok, _} = ok -> ok
-      error -> error
-    end
-  end
-
   # ----- Element geometry -----
-
-  @doc "Element width/height in CSS pixels via getBoundingClientRect."
-  @spec element_size(Element.t()) :: {:ok, {number, number}} | {:error, term}
-  def element_size(%Element{} = element) do
-    case call_on_element(Element.root_session(element), element, OpsShared.dispatch_fn(), [
-           [["rect", "size"]]
-         ]) do
-      {:ok, [w, h]} -> {:ok, {w, h}}
-      err -> err
-    end
-  end
-
-  @doc "Element top-left position in CSS pixels."
-  @spec element_location(Element.t()) :: {:ok, {number, number}} | {:error, term}
-  def element_location(%Element{} = element) do
-    case call_on_element(Element.root_session(element), element, OpsShared.dispatch_fn(), [
-           [["rect", "position"]]
-         ]) do
-      {:ok, [x, y]} -> {:ok, {x, y}}
-      err -> err
-    end
-  end
 
   defp element_center(%Element{} = element) do
     case call_on_element(Element.root_session(element), element, OpsShared.dispatch_fn(), [
@@ -1363,36 +1118,220 @@ defmodule Wallabidi.Remote.CDP.Client do
   defp mouse_button(:right), do: "right"
   defp mouse_button(other), do: to_string(other)
 
-  @doc "True when the page is on a known blank URL (about:blank, data:,)."
-  @spec blank_page?(Session.t()) :: boolean
-  def blank_page?(%Session{} = session) do
-    case current_url(session) do
-      {:ok, url} -> url in ["data:,", "about:blank", ""]
-      _ -> false
+  # ----- Cookies -----
+
+  @doc """
+  Returns the cookies visible to the current page.
+  """
+  @spec cookies(Session.t()) :: {:ok, [map]} | {:error, term}
+  def cookies(%Session{} = session) do
+    case cdp_send(session, "Network.getCookies", %{}) do
+      {:ok, %{"cookies" => cookies}} when is_list(cookies) ->
+        {:ok, Enum.map(cookies, &Wallabidi.Remote.Cookies.normalize_returned_cookie/1)}
+
+      {:ok, _} ->
+        {:ok, []}
+
+      error ->
+        error
     end
   end
+
+  @doc """
+  Sets a cookie. `attrs` may include any standard CDP `setCookie`
+  fields (`url`, `domain`, `path`, `expires`, `secure`, `httpOnly`,
+  `sameSite`); a `:url` is helpful when you don't have a known domain
+  and just want the cookie scoped to the current page.
+  """
+  @spec set_cookie(Session.t(), String.t(), String.t(), map) ::
+          {:ok, nil} | {:error, term}
+  def set_cookie(%Session{} = session, name, value, attrs \\ %{})
+      when is_binary(name) and is_binary(value) do
+    # Network.setCookie requires either `url` or `domain` — pad in the
+    # current URL when callers haven't supplied one. Also translate
+    # WebDriver-style `:expiry` → CDP's `:expires`.
+    attrs = Map.new(attrs)
+
+    attrs =
+      case Map.pop(attrs, :expiry) do
+        {nil, m} -> m
+        {expiry, m} -> Map.put_new(m, :expires, expiry)
+      end
+
+    attrs =
+      case Wallabidi.Remote.Cookies.same_site(attrs, :pascal) do
+        nil ->
+          attrs
+
+        v ->
+          attrs
+          |> Map.drop([:sameSite, "sameSite", :same_site, "same_site"])
+          |> Map.put(:sameSite, v)
+      end
+
+    attrs =
+      if Map.has_key?(attrs, :url) or Map.has_key?(attrs, "url") or
+           Map.has_key?(attrs, :domain) or Map.has_key?(attrs, "domain") do
+        attrs
+      else
+        case current_url(session) do
+          {:ok, url} when is_binary(url) and url != "" -> Map.put(attrs, :url, url)
+          _ -> attrs
+        end
+      end
+
+    params =
+      attrs
+      |> Map.put(:name, name)
+      |> Map.put(:value, value)
+
+    case cdp_send(session, "Network.setCookie", params) do
+      {:ok, %{"success" => false}} -> {:error, :set_cookie_failed}
+      {:ok, _} -> {:ok, nil}
+      error -> error
+    end
+  end
+
+  # ----- Screenshot + window size -----
+
+  @doc """
+  Captures a PNG screenshot of the current page (viewport).
+  Returns the raw binary (not base64).
+  """
+  @spec take_screenshot(Session.t()) :: {:ok, binary} | {:error, term}
+  def take_screenshot(%Session{} = session) do
+    case cdp_send(session, "Page.captureScreenshot", %{format: "png"}) do
+      {:ok, %{"data" => data}} when is_binary(data) ->
+        Base.decode64(data)
+
+      {:ok, _} ->
+        {:error, :no_screenshot_data}
+
+      error ->
+        error
+    end
+  end
+
+  @doc "Returns the current viewport size as `{:ok, %{width: w, height: h}}`."
+  @spec get_window_size(Session.t()) ::
+          {:ok, %{width: non_neg_integer, height: non_neg_integer}} | {:error, term}
+  def get_window_size(%Session{} = session) do
+    # Prefer a previously-stashed `window.__wallabidi_window_size`
+    # (set by set_window_size below) — `Emulation.setDeviceMetricsOverride`
+    # is a no-op on engines without a real layout pass (Lightpanda),
+    # so the JS override is the only source of truth there.
+    js =
+      "(window.__w && window.__w.run([['get_window_size']])) || " <>
+        "JSON.stringify(window.__wallabidi_window_size || " <>
+        "{width: window.innerWidth, height: window.innerHeight})"
+
+    case evaluate(session, js) do
+      {:ok, json} when is_binary(json) ->
+        case Jason.decode(json) do
+          {:ok, %{"width" => w, "height" => h}} -> {:ok, %{width: w, height: h}}
+          _ -> {:error, :bad_size_response}
+        end
+
+      error ->
+        error
+    end
+  end
+
+  @doc """
+  Resizes the viewport (and optionally the device) via
+  `Emulation.setDeviceMetricsOverride`. Pass 0 for `device_scale_factor`
+  / `mobile` to use defaults.
+  """
+  @spec set_window_size(Session.t(), non_neg_integer, non_neg_integer) ::
+          {:ok, nil} | {:error, term}
+  def set_window_size(%Session{} = session, width, height)
+      when is_integer(width) and is_integer(height) do
+    _ =
+      cdp_send(session, "Emulation.setDeviceMetricsOverride", %{
+        width: width,
+        height: height,
+        deviceScaleFactor: 0,
+        mobile: false
+      })
+
+    # Mirror the legacy fallback: stash the requested size as a JS
+    # global on the current page AND queue it onto every future
+    # document so it persists across navigations. Engines that don't
+    # implement Emulation (Lightpanda) read this from
+    # get_window_size/1.
+    # Use the centralised W.setWindowSize when available, fall back to
+    # the raw global write — handles the case where this is called on a
+    # page that booted before W was installed.
+    set_js =
+      "if (window.__w) window.__w.run([['set_window_size', #{width}, #{height}]]); " <>
+        "else window.__wallabidi_window_size = {width: #{width}, height: #{height}};"
+
+    _ = cdp_send(session, "Runtime.evaluate", %{expression: set_js, returnByValue: true})
+
+    # The bootstrap doesn't necessarily exist when an early addScript
+    # runs, so the preload form uses the raw global to be safe in
+    # either case.
+    persist_js = "window.__wallabidi_window_size = {width: #{width}, height: #{height}};"
+    _ = cdp_send(session, "Page.addScriptToEvaluateOnNewDocument", %{source: persist_js})
+
+    {:ok, nil}
+  end
+
+  # ----- Frame switching -----
+
+  @doc """
+  Enables CDP's Page domain (already done by enable_page_lifecycle_events)
+  AND subscribes to Runtime execution-context events so Session can
+  track the frameId → executionContextId mapping needed by
+  focus_frame_by_id/2.
+
+  Idempotent. Best to call once at session bootstrap, after
+  install_bootstrap/1.
+  """
+  @spec enable_frame_tracking(Session.t()) :: :ok | {:error, term}
+  def enable_frame_tracking(%Session{} = session) do
+    with :ok <- Protocol.subscribe(session, "Runtime.executionContextCreated") do
+      Protocol.subscribe(session, "Runtime.executionContextDestroyed")
+    end
+  end
+
+  @doc """
+  Push a frame's `executionContextId` (resolved from its `frameId`)
+  onto the focus stack. Subsequent JS evaluations target this frame.
+
+  Returns `:ok` on success, `{:error, :unknown_frame}` if no
+  execution context has been observed for `frame_id` yet — typically
+  because the frame hasn't loaded.
+  """
+  @spec focus_frame_by_id(Session.t(), String.t()) :: :ok | {:error, term}
+  def focus_frame_by_id(%Session{} = session, frame_id) when is_binary(frame_id) do
+    case Protocol.lookup_frame_context(session, frame_id) do
+      nil ->
+        {:error, :unknown_frame}
+
+      context_id when is_integer(context_id) ->
+        Protocol.push_frame(session, context_id)
+        :ok
+    end
+  end
+
+  @doc "Pops the top frame off the focus stack (no-op at root)."
+  @spec focus_parent_frame(Session.t()) :: :ok
+  def focus_parent_frame(%Session{} = session) do
+    Protocol.pop_frame(session)
+    :ok
+  end
+
+  # ----- Page introspection -----
+  #
+  # current_url/1, current_path/1, page_title/1, page_source/1 —
+  # provided by Wallabidi.Remote.OpsShared.
+
+  # visit/3 — provided by Wallabidi.Remote.OpsShared (uses our
+  # navigate/2 plus the shared xpath-polyfill post-load hook).
 
   # ----- Dialog handling -----
   #
   # Dialog flow lives in Wallabidi.Remote.Dialogs.ChromeCDP (which uses
   # Wallabidi.Remote.Dialogs.Flow for the protocol-agnostic orchestration).
-
-  @doc """
-  Is the element checked (checkbox / radio) or selected (option)?
-  Routes through the bootstrap dispatch helper so the DOM property is
-  the source of truth (the `selected` attribute may not reflect later
-  state changes).
-  """
-  @spec selected(Session.t(), Element.t()) :: {:ok, boolean} | {:error, term}
-  def selected(%Session{} = session, %Element{} = element) do
-    case call_on_element(
-           session,
-           element,
-           OpsShared.dispatch_fn(),
-           [[["is_selected"]]]
-         ) do
-      {:ok, v} -> {:ok, v == true}
-      err -> err
-    end
-  end
 end

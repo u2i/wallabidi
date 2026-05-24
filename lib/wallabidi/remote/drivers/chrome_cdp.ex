@@ -32,9 +32,7 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
     windows: Windows.ChromeCDP,
     frames: Frames.ChromeCDP,
     touch_scroll: &__MODULE__.touch_scroll_impl/3,
-    patch_url_fallback?: true,
-    log_check_interactions?: true,
-    log_check_accessors?: false
+    log_check_interactions?: true
   }
 
   @doc false

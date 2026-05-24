@@ -36,7 +36,10 @@ defmodule Wallabidi.Remote.Transport.BiDi.SessionActor do
     last_page_id: nil,
     # `{from, pre_page_id, timer_ref}` when someone's awaiting a
     # page_ready transition; `nil` otherwise.
-    page_ready_waiter: nil
+    page_ready_waiter: nil,
+    # Set true when bootstrap sees an LV `live_redirect`/`redirect` —
+    # used by Common.await_page_ready_after to extend the timeout.
+    nav_pending: false
   ]
 
   # ----- Public API -----

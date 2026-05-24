@@ -26,9 +26,7 @@ defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
     windows: Windows.Single,
     frames: Frames.Unsupported,
     touch_scroll: nil,
-    patch_url_fallback?: false,
-    log_check_interactions?: false,
-    log_check_accessors?: false
+    log_check_interactions?: false
   }
 
   @doc false

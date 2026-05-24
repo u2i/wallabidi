@@ -836,6 +836,28 @@ function installLvHook() {
         W.check();
         bumpPageId('onPatchEnd');
       };
+      // Watch the socket wire for live_redirect / redirect payloads —
+      // these arrive in the click's phx_reply BEFORE the destination
+      // mount completes. Firing a `nav_pending` message lets the
+      // Elixir side extend its page_ready timeout for the in-flight
+      // navigation, avoiding the need to poll current_url.
+      var sock = ls.socket;
+      if (sock && typeof sock.decode === 'function' && !sock.__wallabidiDecodeHooked) {
+        var origDecode = sock.decode.bind(sock);
+        sock.decode = function(raw, cb) {
+          return origDecode(raw, function(msg) {
+            try {
+              var p = msg && msg.payload && msg.payload.response;
+              if (p && (p.live_redirect || p.redirect)) {
+                var info = p.live_redirect || p.redirect;
+                send({type: 'nav_pending', to: info.to || null, kind: info.kind || (p.redirect ? 'hard' : 'push')});
+              }
+            } catch(e) {}
+            return cb(msg);
+          });
+        };
+        sock.__wallabidiDecodeHooked = true;
+      }
       W.lvHooked = true;
       transition('HookInstalled');
       return true;
