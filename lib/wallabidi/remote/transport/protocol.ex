@@ -38,8 +38,6 @@ defmodule Wallabidi.Remote.Transport.Protocol do
   #     fires `__wallabidi(...)` for that query id.
   #   * `{:register_find, query_id, timeout_ms}` → reserves a
   #     find-waiter slot before the JS that fires the binding runs.
-  #   * `:get_page_id` → returns the most recent pageId or nil.
-  #   * `:get_page_state` → returns `{state_atom, history_list}`.
   #   * `:current_context_id` → returns the focused frame's
   #     executionContextId (or nil for root).
   #   * `{:push_frame, context_id}` / `:pop_frame` /
@@ -119,13 +117,6 @@ defmodule Wallabidi.Remote.Transport.Protocol do
     :exit, _ -> :timeout
   end
 
-  @spec get_page_id(Session.t()) :: String.t() | nil
-  def get_page_id(%Session{pid: pid}) when is_pid(pid) do
-    GenServer.call(pid, :get_page_id)
-  catch
-    :exit, _ -> nil
-  end
-
   @spec await_page_ready_after(Session.t(), String.t() | nil, timeout) :: :ok | :timeout
   def await_page_ready_after(%Session{pid: pid}, pre_page_id, timeout_ms \\ 5_000) do
     GenServer.call(pid, {:await_page_ready_after, pre_page_id, timeout_ms}, timeout_ms + 2_000)
@@ -197,13 +188,6 @@ defmodule Wallabidi.Remote.Transport.Protocol do
   end
 
   def sync_barrier(_), do: :ok
-
-  @spec get_page_state(Session.t()) :: {atom, list}
-  def get_page_state(%Session{pid: pid}) when is_pid(pid) do
-    GenServer.call(pid, :get_page_state)
-  catch
-    :exit, _ -> {:lv_ready, []}
-  end
 
   @spec stop(Session.t()) :: :ok
   def stop(%Session{pid: pid}) when is_pid(pid) do

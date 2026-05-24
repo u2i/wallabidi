@@ -21,6 +21,8 @@ defmodule Wallabidi.Remote.Transport.PerSession.Actor do
   use GenServer
   require Logger
 
+  alias Wallabidi.Remote.Transport.Common
+
   defstruct [
     # ----- Connection state (was WebSocket) -----
     :conn,
@@ -196,69 +198,36 @@ defmodule Wallabidi.Remote.Transport.PerSession.Actor do
     {:reply, :ok, state}
   end
 
-  def handle_call(:get_page_state, _from, state) do
-    {:reply, {:lv_ready, []}, state}
-  end
-
   def handle_call({:register_find, query_id, timeout_ms}, _from, state) do
-    timeout_ref = Process.send_after(self(), {:find_timeout, query_id}, timeout_ms)
-    waiters = Map.put(state.find_waiters, query_id, {:pending, timeout_ref, nil})
-    {:reply, :ok, %{state | find_waiters: waiters}}
+    {:reply, :ok, Common.register_find(state, query_id, timeout_ms)}
   end
 
   def handle_call({:await_find_result, query_id}, from, state) do
-    case Map.get(state.find_waiters, query_id) do
-      {:resolved, result} ->
-        waiters = Map.delete(state.find_waiters, query_id)
-        {:reply, result, %{state | find_waiters: waiters}}
-
-      {:pending, timeout_ref, nil} ->
-        waiters = Map.put(state.find_waiters, query_id, {:pending, timeout_ref, from})
-        {:noreply, %{state | find_waiters: waiters}}
-
-      nil ->
-        {:reply, {:timeout, 0}, state}
-    end
-  end
-
-  def handle_call(:get_page_id, _from, state) do
-    {:reply, state.last_page_id, state}
+    Common.await_find_result(state, query_id, from)
   end
 
   def handle_call({:await_page_ready_after, pre_page_id, timeout_ms}, from, state) do
-    if pre_page_id != nil and state.last_page_id != nil and
-         state.last_page_id != pre_page_id do
-      {:reply, :ok, state}
-    else
-      timer_ref = Process.send_after(self(), {:page_ready_timeout, from}, timeout_ms)
-      {:noreply, %{state | page_ready_waiter: {from, pre_page_id, timer_ref}}}
-    end
+    Common.await_page_ready_after(state, pre_page_id, timeout_ms, from)
   end
 
   def handle_call(:current_context_id, _from, state) do
-    {:reply, List.first(state.frame_stack), state}
+    {:reply, Common.current_context_id(state), state}
   end
 
   def handle_call({:push_frame, context_id}, _from, state) do
-    {:reply, :ok, %{state | frame_stack: [context_id | state.frame_stack]}}
+    {:reply, :ok, Common.push_frame(state, context_id)}
   end
 
   def handle_call(:pop_frame, _from, state) do
-    new_stack =
-      case state.frame_stack do
-        [] -> []
-        [_ | rest] -> rest
-      end
-
-    {:reply, :ok, %{state | frame_stack: new_stack}}
+    {:reply, :ok, Common.pop_frame(state)}
   end
 
   def handle_call({:record_frame_context, frame_id, context_id}, _from, state) do
-    {:reply, :ok, %{state | frame_contexts: Map.put(state.frame_contexts, frame_id, context_id)}}
+    {:reply, :ok, Common.record_frame_context(state, frame_id, context_id)}
   end
 
   def handle_call({:lookup_frame_context, frame_id}, _from, state) do
-    {:reply, Map.get(state.frame_contexts, frame_id), state}
+    {:reply, Common.lookup_frame_context(state, frame_id), state}
   end
 
   @impl true
@@ -315,32 +284,11 @@ defmodule Wallabidi.Remote.Transport.PerSession.Actor do
   end
 
   defp handle_internal_message({:page_ready_timeout, from}, state) do
-    case state.page_ready_waiter do
-      {^from, _pre, _ref} ->
-        GenServer.reply(from, :timeout)
-        {:noreply, %{state | page_ready_waiter: nil}}
-
-      _ ->
-        {:noreply, state}
-    end
+    {:noreply, Common.handle_page_ready_timeout(state, from)}
   end
 
   defp handle_internal_message({:find_timeout, query_id}, state) do
-    case Map.get(state.find_waiters, query_id) do
-      nil ->
-        {:noreply, state}
-
-      {:resolved, _} ->
-        # Already resolved — keep the entry; await_find_result will pop it.
-        {:noreply, state}
-
-      {:pending, _ref, nil} ->
-        {:noreply, %{state | find_waiters: Map.delete(state.find_waiters, query_id)}}
-
-      {:pending, _ref, from} ->
-        GenServer.reply(from, {:timeout, 0})
-        {:noreply, %{state | find_waiters: Map.delete(state.find_waiters, query_id)}}
-    end
+    {:noreply, Common.handle_find_timeout(state, query_id)}
   end
 
   defp handle_internal_message({:DOWN, ref, :process, _pid, _reason}, %{owner_ref: ref} = state) do
@@ -472,7 +420,7 @@ defmodule Wallabidi.Remote.Transport.PerSession.Actor do
     params = Map.get(event, "params", %{})
 
     if params["name"] == "__wallabidi" and is_binary(params["payload"]) do
-      route_binding_payload(state, params["payload"])
+      Common.route_bootstrap_payload(state, params["payload"])
     else
       state
     end
@@ -513,58 +461,6 @@ defmodule Wallabidi.Remote.Transport.PerSession.Actor do
   defp buffer_load(state, loader_id, name) do
     loads = Map.update(state.loads, loader_id, %{name => true}, &Map.put(&1, name, true))
     %{state | loads: loads}
-  end
-
-  defp route_binding_payload(state, payload) do
-    case Jason.decode(payload) do
-      {:ok, %{"id" => query_id, "error" => err}} when is_binary(err) ->
-        resolve_find(state, query_id, {:error, :invalid_selector})
-
-      {:ok, %{"id" => query_id, "count" => count} = msg} ->
-        resolve_find(state, query_id, {:ok, count, msg["meta"]})
-
-      {:ok, %{"type" => "page_ready", "pageId" => page_id}} ->
-        update_last_page_id(state, page_id)
-
-      _ ->
-        state
-    end
-  end
-
-  defp update_last_page_id(state, page_id) do
-    state = %{state | last_page_id: page_id}
-    wake_page_ready_waiter(state, page_id)
-  end
-
-  defp wake_page_ready_waiter(state, page_id) do
-    case state.page_ready_waiter do
-      {from, pre_page_id, timer_ref} when pre_page_id != page_id ->
-        Process.cancel_timer(timer_ref)
-        GenServer.reply(from, :ok)
-        %{state | page_ready_waiter: nil}
-
-      _ ->
-        state
-    end
-  end
-
-  defp resolve_find(state, query_id, result) do
-    case Map.get(state.find_waiters, query_id) do
-      nil ->
-        state
-
-      {:pending, timeout_ref, nil} ->
-        Process.cancel_timer(timeout_ref)
-        %{state | find_waiters: Map.put(state.find_waiters, query_id, {:resolved, result})}
-
-      {:pending, timeout_ref, from} ->
-        Process.cancel_timer(timeout_ref)
-        GenServer.reply(from, result)
-        %{state | find_waiters: Map.delete(state.find_waiters, query_id)}
-
-      {:resolved, _} ->
-        state
-    end
   end
 
   defp wake_load_waiters(state, loader_id, name) do
