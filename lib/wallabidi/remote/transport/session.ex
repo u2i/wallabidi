@@ -19,6 +19,7 @@ defmodule Wallabidi.Remote.Transport.Session do
 
   alias Wallabidi.Remote.Transport.Common
   alias Wallabidi.Remote.WebSocket
+  alias Wallabidi.Remote.Wire
 
   defstruct [
     :session,
@@ -526,72 +527,8 @@ defmodule Wallabidi.Remote.Transport.Session do
     end
   end
 
-  def handle_info({:v2_event, "Page.lifecycleEvent", event}, state) do
-    params = Map.get(event, "params", %{})
-    loader_id = params["loaderId"]
-    name = params["name"]
-
-    if is_binary(loader_id) and name in ["load", "DOMContentLoaded"] do
-      state = buffer_load(state, loader_id, name)
-      state = wake_load_waiters(state, loader_id, name)
-      {:noreply, state}
-    else
-      {:noreply, state}
-    end
-  end
-
-  def handle_info({:v2_event, "Runtime.bindingCalled", event}, state) do
-    params = Map.get(event, "params", %{})
-
-    if params["name"] == "__wallabidi" and is_binary(params["payload"]) do
-      {:noreply, Common.route_bootstrap_payload(state, params["payload"])}
-    else
-      {:noreply, state}
-    end
-  end
-
-  def handle_info({:v2_event, "Runtime.executionContextCreated", event}, state) do
-    # Chrome assigns a fresh executionContextId for each frame's main
-    # JS realm. Record `auxData.frameId → contextId` so focus_frame
-    # can resolve a frame element to its execution context.
-    ctx = get_in(event, ["params", "context"]) || %{}
-    aux = Map.get(ctx, "auxData", %{})
-    context_id = ctx["id"]
-    frame_id = aux["frameId"]
-
-    state =
-      if is_integer(context_id) and is_binary(frame_id) do
-        %{state | frame_contexts: Map.put(state.frame_contexts, frame_id, context_id)}
-      else
-        state
-      end
-
-    {:noreply, state}
-  end
-
-  def handle_info({:v2_event, "Runtime.executionContextDestroyed", event}, state) do
-    # Drop the destroyed contextId from frame_contexts. This prevents
-    # focus_frame from handing out stale contexts after a navigation.
-    destroyed = get_in(event, ["params", "executionContextId"])
-
-    state =
-      if is_integer(destroyed) do
-        contexts =
-          state.frame_contexts
-          |> Enum.reject(fn {_frame_id, ctx_id} -> ctx_id == destroyed end)
-          |> Map.new()
-
-        %{state | frame_contexts: contexts}
-      else
-        state
-      end
-
-    {:noreply, state}
-  end
-
-  def handle_info({:v2_event, _method, _event}, state) do
-    # Routes for other event types land here as we migrate them.
-    {:noreply, state}
+  def handle_info({:v2_event, method, event}, state) do
+    {:noreply, Wire.CDP.handle_event(state, method, event)}
   end
 
   def handle_info({:load_timeout, from}, state) do
@@ -639,32 +576,4 @@ defmodule Wallabidi.Remote.Transport.Session do
   end
 
   def terminate(_reason, _state), do: :ok
-
-  # ----- Helpers -----
-
-  defp buffer_load(state, loader_id, name) do
-    loads =
-      Map.update(state.loads, loader_id, %{name => true}, &Map.put(&1, name, true))
-
-    %{state | loads: loads}
-  end
-
-  defp wake_load_waiters(state, loader_id, name) do
-    {ready, pending} =
-      Enum.split_with(state.load_waiters, fn
-        # Specific loader_id match.
-        {_from, ^loader_id, ^name, _ref} -> true
-        # Wildcard waiter from await_next_page_load — woken by any
-        # matching milestone regardless of loader_id.
-        {_from, :any, ^name, _ref} -> true
-        _ -> false
-      end)
-
-    Enum.each(ready, fn {from, _l, _n, ref} ->
-      Process.cancel_timer(ref)
-      GenServer.reply(from, :ok)
-    end)
-
-    %{state | load_waiters: pending}
-  end
 end
