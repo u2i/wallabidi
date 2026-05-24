@@ -28,9 +28,21 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
   alias Wallabidi.{Element, Session}
   alias Wallabidi.Remote.BiDi.Client, as: BiDiClient
   alias Wallabidi.Remote.BiDi.WebSocketClient
+  alias Wallabidi.Remote.Browser
+  alias Wallabidi.Remote.Driver.{Orchestrator, Spec}
   alias Wallabidi.Remote.LiveViewAware
   alias Wallabidi.Remote.Transport.BiDi
   alias Wallabidi.Remote.Transport.Protocol
+  alias Wallabidi.Remote.WireProtocol
+
+  @driver_spec %Spec{
+    browser: Browser.Chrome,
+    wire_protocol: WireProtocol.BiDi,
+    patch_url_fallback?: false
+  }
+
+  @doc false
+  def driver_spec, do: @driver_spec
 
   # ----- Driver supervisor -----
 
@@ -226,49 +238,7 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
   # ----- Element-scoped callbacks -----
 
   @impl true
-  def click(%Element{} = element) do
-    session = Element.root_session(element)
-
-    check_logs!(session, fn ->
-      case BiDiClient.click_aware_with_classification(session, element) do
-        {:ok, _classification, :ready} ->
-          {:ok, nil}
-
-        {:ok, "navigate", :timeout} ->
-          # data-phx-link=redirect / JS.navigate-classified clicks raise
-          # NavigationTimeoutError on page_ready timeout — those tests
-          # explicitly catch the error.
-          raise_navigation_timeout(session, 5_000)
-
-        {:ok, "full_page", :timeout} ->
-          raise_navigation_timeout(session, 5_000)
-
-        {:ok, _classification, :timeout} ->
-          # patch / none — silent fallback. Caller's assert_has retries
-          # handle the slow case via max_wait_time polling.
-          {:ok, nil}
-
-        err ->
-          err
-      end
-    end)
-  end
-
-  defp raise_navigation_timeout(%Session{} = session, timeout_ms) do
-    post =
-      case BiDiClient.current_url(session) do
-        {:ok, url} -> url
-        _ -> nil
-      end
-
-    raise Wallabidi.NavigationTimeoutError, %{
-      from: nil,
-      to: post,
-      timeout_ms: timeout_ms,
-      page_state: :unknown,
-      page_state_history: []
-    }
-  end
+  def click(%Element{} = element), do: Orchestrator.click(@driver_spec, element)
 
   @impl true
   def text(%Element{} = element) do

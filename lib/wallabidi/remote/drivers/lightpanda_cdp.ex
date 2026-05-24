@@ -14,11 +14,23 @@ defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
   @behaviour Wallabidi.Driver
 
   alias Wallabidi.{Element, Session}
+  alias Wallabidi.Remote.Browser
   alias Wallabidi.Remote.CDP.Client, as: CDPClient
+  alias Wallabidi.Remote.Driver.{Orchestrator, Spec}
   alias Wallabidi.Remote.Drivers.CDP.Shared, as: CDPShared
   alias Wallabidi.Remote.LiveViewAware
   alias Wallabidi.Remote.Transport
   alias Wallabidi.Remote.Transport.Protocol
+  alias Wallabidi.Remote.WireProtocol
+
+  @driver_spec %Spec{
+    browser: Browser.Lightpanda,
+    wire_protocol: WireProtocol.CDP,
+    patch_url_fallback?: false
+  }
+
+  @doc false
+  def driver_spec, do: @driver_spec
 
   # ----- Driver supervisor —
   #
@@ -250,9 +262,7 @@ defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
   # ----- Element-scoped callbacks (`session` derived via parent chain) -----
 
   @impl true
-  def click(%Element{} = element) do
-    CDPClient.click(Element.root_session(element), element)
-  end
+  def click(%Element{} = element), do: Orchestrator.click(@driver_spec, element)
 
   @impl true
   defdelegate text(element), to: CDPShared

@@ -21,14 +21,26 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
   @behaviour Wallabidi.Driver
 
   alias Wallabidi.{DependencyError, Element, Metadata, Session}
+  alias Wallabidi.Remote.Browser
   alias Wallabidi.Remote.CDP.Client, as: CDPClient
   alias Wallabidi.Remote.Chrome.Server, as: ChromeServer
   alias Wallabidi.Remote.Chrome.SharedConnection
+  alias Wallabidi.Remote.Driver.{Orchestrator, Spec}
   alias Wallabidi.Remote.Drivers.CDP.Shared, as: CDPShared
   alias Wallabidi.Remote.LiveViewAware
+  alias Wallabidi.Remote.WireProtocol
   alias Wallabidi.Remote.{Transport, WebSocket}
   alias Wallabidi.Remote.Transport.Protocol
   import Wallabidi.Driver.LogChecker
+
+  @driver_spec %Spec{
+    browser: Browser.Chrome,
+    wire_protocol: WireProtocol.CDP,
+    patch_url_fallback?: true
+  }
+
+  @doc false
+  def driver_spec, do: @driver_spec
 
   @base_user_agent "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 " <>
                      "(KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36"
@@ -189,92 +201,7 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
   defdelegate set_window_size(parent, w, h), to: CDPShared
 
   @impl true
-  def click(%Element{} = element) do
-    session = Element.root_session(element)
-
-    check_logs!(session, fn ->
-      # click_aware does pre_page_id capture + classify + click + page_ready
-      # await. For non-navigating clicks classification is "none" and the
-      # await is skipped.
-      case CDPClient.click_aware_with_classification(session, element) do
-        {:ok, _classification, :ready} ->
-          {:ok, nil}
-
-        {:ok, "navigate", :timeout} ->
-          # data-phx-link=redirect / JS.navigate-classified clicks raise
-          # NavigationTimeoutError on page_ready timeout — those tests
-          # explicitly catch the error.
-          raise_navigation_timeout(session, 5_000)
-
-        {:ok, "full_page", :timeout} ->
-          raise_navigation_timeout(session, 5_000)
-
-        {:ok, "patch", :timeout} ->
-          # Legacy patch-classified timeout silently falls through
-          # (caller's assert_has retries do the work) — but only AFTER
-          # awaiting the LV server's ack of the click event, which
-          # closes the slow-handle_event race. doesn't have an LV
-          # ack channel, but we can do the next-best thing: poll
-          # `current_url` for a transition, plus another page_ready
-          # window of equal length. Closes SlowDestMount.
-          _ = await_url_change_or_load(session, 10_000)
-          {:ok, nil}
-
-        {:ok, _classification, :timeout} ->
-          # Other classifications — silent fallback.
-          {:ok, nil}
-
-        err ->
-          err
-      end
-    end)
-  end
-
-  # Block until current URL differs from the URL captured here, or
-  # until a Page lifecycle "load" event fires, or `timeout_ms`
-  # elapses. Used as a fallback after a patch-classified timeout
-  # when the LV server may still be processing handle_event.
-  defp await_url_change_or_load(%Session{} = session, timeout_ms) do
-    pre_url =
-      case CDPClient.current_url(session) do
-        {:ok, url} -> url
-        _ -> nil
-      end
-
-    deadline = System.monotonic_time(:millisecond) + timeout_ms
-    poll_url(session, pre_url, deadline)
-  end
-
-  defp poll_url(session, pre_url, deadline) do
-    if System.monotonic_time(:millisecond) >= deadline do
-      :timeout
-    else
-      case CDPClient.current_url(session) do
-        {:ok, url} when url != pre_url and url != "" ->
-          :ok
-
-        _ ->
-          Process.sleep(50)
-          poll_url(session, pre_url, deadline)
-      end
-    end
-  end
-
-  defp raise_navigation_timeout(session, timeout_ms) do
-    post =
-      case CDPClient.current_url(session) do
-        {:ok, url} -> url
-        _ -> nil
-      end
-
-    raise Wallabidi.NavigationTimeoutError, %{
-      from: nil,
-      to: post,
-      timeout_ms: timeout_ms,
-      page_state: :unknown,
-      page_state_history: []
-    }
-  end
+  def click(%Element{} = element), do: Orchestrator.click(@driver_spec, element)
 
   @impl true
   defdelegate text(element), to: CDPShared
