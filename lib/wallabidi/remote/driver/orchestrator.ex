@@ -122,7 +122,7 @@ defmodule Wallabidi.Remote.Driver.Orchestrator do
 
   @doc """
   Window viewport size. Normalises the wire shape (atom keys) to the
-  string-keyed map the Wallaby Driver contract expects.
+  string-keyed map the `Wallabidi.Driver` contract expects.
   """
   @spec get_window_size(Spec.t(), Session.t() | Element.t()) ::
           {:ok, %{required(String.t()) => integer}} | {:error, term}

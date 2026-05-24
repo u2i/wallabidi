@@ -18,7 +18,7 @@ defmodule Wallabidi.Remote.Driver.Generic do
   #   * `end_session/1`   — vendor-specific teardown.
   #
   # `start_session` is the only place that knows which Spec applies to
-  # this driver. After it returns, the session is "generic" — Wallaby
+  # this driver. After it returns, the session is "generic" — Wallabidi
   # internals call `Generic.click(elem)`, `Generic.visit(s, url)`, etc.,
   # and we route via `spec(element_or_session)`.
 

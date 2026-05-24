@@ -57,7 +57,7 @@ defmodule Wallabidi.Remote.CDP.Ops do
   end
 
   @doc """
-  Build filters from a Wallaby Query struct.
+  Apply filters from a `Wallabidi.Query` to an in-progress ops pipeline.
   """
   def from_query(%__MODULE__{} = o, query) do
     o =
@@ -81,12 +81,12 @@ defmodule Wallabidi.Remote.CDP.Ops do
   end
 
   @doc """
-  Build a complete opcode sequence directly from a Wallaby Query.
+  Build a complete opcode sequence from a `Wallabidi.Query`.
   Validates and compiles the query and applies all filters.
 
   Returns `{:ok, ops, query}` or `{:error, reason}`.
   """
-  def from_wallaby(parent, %Wallabidi.Query{} = query) do
+  def compile_query(parent, %Wallabidi.Query{} = query) do
     with {:ok, validated} <- Wallabidi.Query.validate(query) do
       {type, selector} = Wallabidi.Query.compile(validated)
 

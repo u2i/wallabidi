@@ -2,7 +2,7 @@ defmodule Wallabidi.Integration.Browser.ButtonDownTest do
   use Wallabidi.Integration.SessionCase, async: true
   @moduletag :browser
   # See ButtonUpTest: two refute-visible checks per test legitimately
-  # burn max_wait_time per Wallaby contract.
+  # burn max_wait_time per Wallabidi contract.
   @moduletag slow: 15_000
   import Wallabidi.Browser
 

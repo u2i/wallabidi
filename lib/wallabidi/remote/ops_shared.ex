@@ -505,7 +505,7 @@ defmodule Wallabidi.Remote.OpsShared do
     timeout = Keyword.get(opts, :timeout, 5_000)
     count = Wallabidi.Query.count(query)
 
-    with {:ok, ops, _validated} <- Ops.from_wallaby(parent, query) do
+    with {:ok, ops, _validated} <- Ops.compile_query(parent, query) do
       query_id = "v2-q-#{System.unique_integer([:positive])}"
       ops_json = Jason.encode!(ops.ops)
       count_js = if is_integer(count), do: Integer.to_string(count), else: "null"

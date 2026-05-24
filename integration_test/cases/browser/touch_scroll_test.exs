@@ -2,7 +2,7 @@ defmodule Wallabidi.Integration.Browser.TouchScrollTest do
   use Wallabidi.Integration.SessionCase, async: true
   @moduletag :browser
   # `refute Helpers.displayed_in_viewport?(...)` legitimately waits
-  # the full max_wait_time per Wallaby contract.
+  # the full max_wait_time per Wallabidi contract.
   @moduletag slow: 15_000
   alias Wallabidi.Integration.Helpers
 

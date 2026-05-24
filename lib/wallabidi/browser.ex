@@ -1671,7 +1671,7 @@ defmodule Wallabidi.Browser do
     session = get_session(parent)
     lazy? = Keyword.get(opts, :lazy, false)
 
-    with {:ok, _ops, validated} <- Ops.from_wallaby(parent, query) do
+    with {:ok, _ops, validated} <- Ops.compile_query(parent, query) do
       timeout = query_timeout(validated)
 
       result =
