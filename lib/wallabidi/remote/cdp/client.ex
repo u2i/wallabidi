@@ -18,8 +18,8 @@ defmodule Wallabidi.Remote.CDP.Client do
   @behaviour Wallabidi.Remote.WireProtocol
 
   alias Wallabidi.{Element, Session}
-  alias Wallabidi.Remote.{Bootstrap, OpsShared}
-  alias Wallabidi.Remote.CDP.{Commands, Ops, ResponseParser}
+  alias Wallabidi.Remote.CDP.{Commands, ResponseParser}
+  alias Wallabidi.Remote.OpsShared
   alias Wallabidi.Remote.Transport.Protocol
   alias Wallabidi.Remote.WebSocket
 
@@ -879,93 +879,18 @@ defmodule Wallabidi.Remote.CDP.Client do
   end
 
   # ----- Element finding -----
+  #
+  # `find_elements/3` and `find_elements_lazy/3` come from OpsShared.
+  # CDP-specific primitives below are called by OpsShared.do_find_elements
+  # via the host-module passthrough.
 
-  @doc """
-  Find elements matching a Wallabidi.Query.
-
-  `parent` is either a `Session` (search from `document`) or an
-  `Element` (search within that element's subtree). Element-scoped
-  searches use the bootstrap's `root_js="this"` form, which compiles
-  to `callFunctionOn(parent.objectId)` so the query runs against the
-  parent in its own realm.
-
-  Uses the existing browser-side bootstrap (`window.__w`) and
-  `Bootstrap.register_js/4` to push-register a query. When the
-  bootstrap fires `__wallabidi(...)` with the matching query id,
-  Session resolves the waiter; we then fetch real CDP `objectId`s
-  for the matched elements via `Runtime.getProperties` against the
-  stored `window.__w.queries[id].elements` array.
-
-  Returns `{:ok, [%Wallabidi.Element{}]}` with real `handle`
-  fields populated.
-  """
-  @spec find_elements(Session.t() | Element.t(), Wallabidi.Query.t(), keyword) ::
-          {:ok, [Element.t()]} | {:error, term}
-  def find_elements(parent, %Wallabidi.Query{} = query, opts \\ []) do
-    do_find_elements(parent, query, opts, :eager)
-  end
-
-  @doc """
-  Like `find_elements/3` but skips the ref-fetch round-trip: each
-  returned `Element` carries `handle: {:lazy, ops, index}`
-  instead of a V8 objectId. The element op's interpreter
-  (`call_on_element/5`) recognizes the lazy form and re-runs the
-  query inside `W.run` to reach the element on each call.
-
-  Use only when the caller will discard the elements after a few ops
-  (Browser.text/2, attr/3, has_value?/3, etc.). For find/2 returning
-  user-visible elements, use the eager `find_elements/3`.
-  """
-  @spec find_elements_lazy(Session.t() | Element.t(), Wallabidi.Query.t(), keyword) ::
-          {:ok, [Element.t()]} | {:error, term}
-  def find_elements_lazy(parent, %Wallabidi.Query{} = query, opts \\ []) do
-    do_find_elements(parent, query, opts, :lazy)
-  end
-
-  defp do_find_elements(parent, %Wallabidi.Query{} = query, opts, mode) do
-    session = Element.root_session(parent)
-    timeout = Keyword.get(opts, :timeout, 5_000)
-    count = Wallabidi.Query.count(query)
-
-    with {:ok, ops, _validated} <- Ops.from_wallaby(parent, query) do
-      query_id = "v2-q-#{System.unique_integer([:positive])}"
-      ops_json = Jason.encode!(ops.ops)
-      count_js = if is_integer(count), do: Integer.to_string(count), else: "null"
-      root_js = if ops.parent_id, do: "this", else: "null"
-      register_js = Bootstrap.register_js(query_id, ops_json, count_js, root_js)
-
-      :ok = Protocol.register_find(session, query_id, timeout)
-      cast_register(session, ops.parent_id, register_js)
-
-      case Protocol.await_find_result(session, query_id, timeout) do
-        {:ok, found, _meta} when found > 0 ->
-          case mode do
-            :lazy -> {:ok, lazy_elements(parent, ops.ops, found)}
-            :eager -> fetch_element_refs(session, query_id, found)
-          end
-
-        {:ok, _, _} ->
-          {:ok, []}
-
-        {:error, :invalid_selector} ->
-          {:error, :invalid_selector}
-
-        {:timeout, _} ->
-          # Push didn't fire (count-shape mismatch, etc). Do a final
-          # sync exec so callers like Browser.find can see the *actual*
-          # element count for error messaging ("but 5"). Mirrors the
-          # legacy CDPClient.find_elements_ops timeout fallback.
-          final_sync_exec(session, ops_json, ops.parent_id)
-      end
-    end
-  end
-
+  @doc false
   # Fire-and-forget the query-register IIFE. Two shapes: scoped to a
   # parent element via callFunctionOn (this = parent), or document-
   # scope via Runtime.evaluate (with the current iframe's context id
   # threaded through). CDP serializes commands per session so
   # subsequent ops still observe this register's effect.
-  defp cast_register(%Session{} = session, nil, register_js) do
+  def cast_register(%Session{} = session, nil, register_js) do
     base = %{expression: register_js, returnByValue: true}
 
     params =
@@ -977,8 +902,8 @@ defmodule Wallabidi.Remote.CDP.Client do
     cdp_cast(session, "Runtime.evaluate", params)
   end
 
-  defp cast_register(%Session{} = session, parent_object_id, register_js)
-       when is_binary(parent_object_id) do
+  def cast_register(%Session{} = session, parent_object_id, register_js)
+      when is_binary(parent_object_id) do
     cdp_cast(session, "Runtime.callFunctionOn", %{
       objectId: parent_object_id,
       functionDeclaration: "function() { #{register_js} }",
@@ -986,29 +911,8 @@ defmodule Wallabidi.Remote.CDP.Client do
     })
   end
 
-  defp lazy_elements(parent, ops, count) do
-    # If the find was scoped to a parent Element (vs. a Session), the
-    # ops list assumes `this` is the parent during query. Capture the
-    # parent's objectId so the lazy dispatch can rebind it on
-    # re-resolution. Document-scoped finds carry nil here.
-    parent_id = parent_object_id(parent)
-    session = Element.root_session(parent)
-
-    Enum.map(0..(count - 1), fn idx ->
-      %Element{
-        handle: {:lazy, ops, idx, parent_id},
-        parent: session,
-        driver: session.driver,
-        url: session.session_url,
-        session_url: session.session_url
-      }
-    end)
-  end
-
-  defp parent_object_id(%Element{handle: id}) when is_binary(id), do: id
-  defp parent_object_id(_), do: nil
-
-  defp final_sync_exec(%Session{} = session, ops_json, parent_id) do
+  @doc false
+  def final_sync_exec(%Session{} = session, ops_json, parent_id) do
     # When the original query was scoped to a parent element, run the
     # final exec via callFunctionOn so `this` is the parent — keeping
     # the scoping intent intact. Document scope passes null root so
@@ -1063,11 +967,12 @@ defmodule Wallabidi.Remote.CDP.Client do
     end
   end
 
+  @doc false
   # After the bootstrap reports the count, look up the matched
   # elements array by query_id and walk it via Runtime.getProperties
   # to extract real CDP objectIds. Falls back to count-shaped
   # placeholder elements if the array is gone (page navigated, etc.).
-  defp fetch_element_refs(%Session{} = session, query_id, found_count) do
+  def fetch_element_refs(%Session{} = session, query_id, found_count) do
     id_js = Jason.encode!(query_id)
     grab_js = "window.__w.queries[#{id_js}].elements"
 

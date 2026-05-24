@@ -275,6 +275,37 @@ defmodule Wallabidi.Remote.OpsShared do
             unquote(__MODULE__).trivia_js("source", "document.documentElement.outerHTML")
           )
 
+      # ----- Find elements (shared across CDP and BiDi) -----
+      #
+      # The orchestration is identical: build the W.run opcode list,
+      # encode + register the query, fire the parent-scoped IIFE, await
+      # the bootstrap push, and either fetch refs eagerly or return
+      # lazy handles. The protocol-specific bits (`cast_register/3`,
+      # `fetch_element_refs/3`, `final_sync_exec/3`) are exported by
+      # each client.
+
+      @doc """
+      Find elements matching `query`. Eager mode: each returned
+      Element carries a concrete protocol-specific ref (V8 objectId
+      for CDP, shared id for BiDi).
+      """
+      @spec find_elements(Session.t() | Element.t(), Wallabidi.Query.t(), keyword) ::
+              {:ok, [Element.t()]} | {:error, term}
+      def find_elements(parent, %Wallabidi.Query{} = query, opts \\ []) do
+        unquote(__MODULE__).do_find_elements(__MODULE__, parent, query, opts, :eager)
+      end
+
+      @doc """
+      Like `find_elements/3` but returns lazy-handle Elements that
+      re-resolve via W.run on each call. Use when the elements will
+      be consumed by a handful of ops and discarded.
+      """
+      @spec find_elements_lazy(Session.t() | Element.t(), Wallabidi.Query.t(), keyword) ::
+              {:ok, [Element.t()]} | {:error, term}
+      def find_elements_lazy(parent, %Wallabidi.Query{} = query, opts \\ []) do
+        unquote(__MODULE__).do_find_elements(__MODULE__, parent, query, opts, :lazy)
+      end
+
       defoverridable text: 2,
                      attribute: 3,
                      displayed: 2,
@@ -294,7 +325,96 @@ defmodule Wallabidi.Remote.OpsShared do
                      current_url: 1,
                      current_path: 1,
                      page_title: 1,
-                     page_source: 1
+                     page_source: 1,
+                     find_elements: 2,
+                     find_elements: 3,
+                     find_elements_lazy: 2,
+                     find_elements_lazy: 3
     end
   end
+
+  # ----- Shared find_elements implementation -----
+  #
+  # `do_find_elements/5` is the protocol-agnostic orchestration of the
+  # query-register + bootstrap-push + await + ref-fetch / lazy-handle
+  # flow. The calling client module supplies three protocol-specific
+  # primitives via its module atom:
+  #
+  #   * `client.cast_register(session, parent_id, register_js)` — fire
+  #     the query-register IIFE either at document scope or scoped to
+  #     a parent element (`this` bound to it).
+  #   * `client.fetch_element_refs(session, query_id, found_count)` —
+  #     pull the materialised element refs back from the page.
+  #   * `client.final_sync_exec(session, ops_json, parent_id)` —
+  #     run W.run synchronously for the count-shape-mismatch fallback
+  #     so callers see the actual element count for error messaging.
+
+  alias Wallabidi.Remote.Bootstrap
+  alias Wallabidi.Remote.CDP.Ops
+  alias Wallabidi.Remote.Transport.Protocol
+
+  @doc false
+  @spec do_find_elements(
+          module,
+          Session.t() | Element.t(),
+          Wallabidi.Query.t(),
+          keyword,
+          :eager | :lazy
+        ) ::
+          {:ok, [Element.t()]} | {:error, term}
+  def do_find_elements(client, parent, %Wallabidi.Query{} = query, opts, mode) do
+    session = Element.root_session(parent)
+    timeout = Keyword.get(opts, :timeout, 5_000)
+    count = Wallabidi.Query.count(query)
+
+    with {:ok, ops, _validated} <- Ops.from_wallaby(parent, query) do
+      query_id = "v2-q-#{System.unique_integer([:positive])}"
+      ops_json = Jason.encode!(ops.ops)
+      count_js = if is_integer(count), do: Integer.to_string(count), else: "null"
+      root_js = if ops.parent_id, do: "this", else: "null"
+      register_js = Bootstrap.register_js(query_id, ops_json, count_js, root_js)
+
+      :ok = Protocol.register_find(session, query_id, timeout)
+      client.cast_register(session, ops.parent_id, register_js)
+
+      case Protocol.await_find_result(session, query_id, timeout) do
+        {:ok, found, _meta} when found > 0 ->
+          case mode do
+            :lazy -> {:ok, lazy_elements(parent, ops.ops, found)}
+            :eager -> client.fetch_element_refs(session, query_id, found)
+          end
+
+        {:ok, _, _} ->
+          {:ok, []}
+
+        {:error, :invalid_selector} ->
+          {:error, :invalid_selector}
+
+        {:timeout, _} ->
+          # Push didn't fire (count-shape mismatch — e.g. query asked
+          # for exactly 1 but page has 2). Run W.run synchronously so
+          # callers see the actual element count for error messaging.
+          client.final_sync_exec(session, ops_json, ops.parent_id)
+      end
+    end
+  end
+
+  @doc false
+  def lazy_elements(parent, ops, count) do
+    parent_id = parent_object_id(parent)
+    session = Element.root_session(parent)
+
+    Enum.map(0..(count - 1), fn idx ->
+      %Element{
+        handle: {:lazy, ops, idx, parent_id},
+        parent: session,
+        driver: session.driver,
+        url: session.session_url,
+        session_url: session.session_url
+      }
+    end)
+  end
+
+  defp parent_object_id(%Element{handle: id}) when is_binary(id), do: id
+  defp parent_object_id(_), do: nil
 end

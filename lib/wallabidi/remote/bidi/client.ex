@@ -18,7 +18,6 @@ defmodule Wallabidi.Remote.BiDi.Client do
   alias Wallabidi.Element
   alias Wallabidi.Remote.BiDi.{Commands, ResponseParser, WebSocketClient}
   alias Wallabidi.Remote.Bootstrap
-  alias Wallabidi.Remote.CDP.Ops
   alias Wallabidi.Remote.OpsShared
   alias Wallabidi.Remote.Transport.Protocol
   alias Wallabidi.Session
@@ -1042,88 +1041,13 @@ defmodule Wallabidi.Remote.BiDi.Client do
   end
 
   # ----- Element finding -----
+  #
+  # `find_elements/3` and `find_elements_lazy/3` come from OpsShared.
+  # BiDi-specific primitives below are called by OpsShared.do_find_elements
+  # via the host-module passthrough.
 
-  @doc """
-  Push-based find. The bootstrap channel signals `{id, count}` once
-  the query resolves, then we fetch the element refs as sharedIds
-  via `script.callFunction` with `resultOwnership: "root"`.
-  """
-  @spec find_elements(Session.t() | Element.t(), Wallabidi.Query.t(), keyword) ::
-          {:ok, [Element.t()]} | {:error, term}
-  def find_elements(parent, %Wallabidi.Query{} = query, opts \\ []) do
-    do_find_elements(parent, query, opts, :eager)
-  end
-
-  @doc """
-  BiDi twin of CDPClient.find_elements_lazy/3 — returns Elements with
-  `handle: {:lazy, ops, index}` instead of fetching sharedIds.
-  """
-  @spec find_elements_lazy(Session.t() | Element.t(), Wallabidi.Query.t(), keyword) ::
-          {:ok, [Element.t()]} | {:error, term}
-  def find_elements_lazy(parent, %Wallabidi.Query{} = query, opts \\ []) do
-    do_find_elements(parent, query, opts, :lazy)
-  end
-
-  defp do_find_elements(parent, %Wallabidi.Query{} = query, opts, mode) do
-    session = Element.root_session(parent)
-    timeout = Keyword.get(opts, :timeout, 5_000)
-    count = Wallabidi.Query.count(query)
-
-    with {:ok, ops, _validated} <- Ops.from_wallaby(parent, query) do
-      query_id = "v2-q-#{System.unique_integer([:positive])}"
-      ops_json = Jason.encode!(ops.ops)
-      count_js = if is_integer(count), do: Integer.to_string(count), else: "null"
-      root_js = if ops.parent_id, do: "this", else: "null"
-      register_js = Bootstrap.register_js(query_id, ops_json, count_js, root_js)
-
-      :ok = Protocol.register_find(session, query_id, timeout)
-
-      # Fire the bootstrap. Same shape as CDP find: scope to the parent
-      # element via `this`, or run at document scope.
-      cast_register(session, ops.parent_id, register_js)
-
-      case Protocol.await_find_result(session, query_id, timeout) do
-        {:ok, found, _meta} when found > 0 ->
-          case mode do
-            :lazy -> {:ok, lazy_elements(parent, ops.ops, found)}
-            :eager -> fetch_element_refs(session, query_id, found)
-          end
-
-        {:ok, _, _} ->
-          {:ok, []}
-
-        {:error, :invalid_selector} ->
-          {:error, :invalid_selector}
-
-        {:timeout, _} ->
-          # Push didn't fire (count-shape mismatch — query asked for
-          # exactly 1 but page has 2, etc). Run W.run synchronously
-          # so callers see the *actual* element count for error
-          # messaging ("but found 2"). Mirrors CDPClient.final_sync_exec.
-          final_sync_exec(session, ops_json, ops.parent_id)
-      end
-    end
-  end
-
-  defp lazy_elements(parent, ops, count) do
-    parent_id = parent_object_id(parent)
-    session = Element.root_session(parent)
-
-    Enum.map(0..(count - 1), fn idx ->
-      %Element{
-        handle: {:lazy, ops, idx, parent_id},
-        parent: session,
-        driver: session.driver,
-        url: session.session_url,
-        session_url: session.session_url
-      }
-    end)
-  end
-
-  defp parent_object_id(%Element{handle: id}) when is_binary(id), do: id
-  defp parent_object_id(_), do: nil
-
-  defp final_sync_exec(%Session{} = session, ops_json, parent_object_id) do
+  @doc false
+  def final_sync_exec(%Session{} = session, ops_json, parent_object_id) do
     ctx = ctx(session)
     # Return BOTH elements and the error string. When window.__w is
     # available we use its full opcode interpreter (handles visibility,
@@ -1223,7 +1147,8 @@ defmodule Wallabidi.Remote.BiDi.Client do
     end)
   end
 
-  defp cast_register(%Session{} = session, nil, register_js) do
+  @doc false
+  def cast_register(%Session{} = session, nil, register_js) do
     Protocol.cdp_cast(
       session,
       "script.callFunction",
@@ -1236,8 +1161,8 @@ defmodule Wallabidi.Remote.BiDi.Client do
     )
   end
 
-  defp cast_register(%Session{} = session, parent_object_id, register_js)
-       when is_binary(parent_object_id) do
+  def cast_register(%Session{} = session, parent_object_id, register_js)
+      when is_binary(parent_object_id) do
     Protocol.cdp_cast(
       session,
       "script.callFunction",
@@ -1251,10 +1176,11 @@ defmodule Wallabidi.Remote.BiDi.Client do
     )
   end
 
+  @doc false
   # Fetch the resolved query's element list as an array of sharedIds.
   # `resultOwnership: "root"` keeps node references alive on the
   # remote side so we can hold them past this call.
-  defp fetch_element_refs(%Session{} = session, query_id, found_count) do
+  def fetch_element_refs(%Session{} = session, query_id, found_count) do
     ctx = ctx(session)
     id_js = Jason.encode!(query_id)
 
