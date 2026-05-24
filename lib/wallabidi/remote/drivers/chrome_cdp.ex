@@ -28,9 +28,9 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
   alias Wallabidi.Remote.Driver.{Orchestrator, Spec}
   alias Wallabidi.Remote.Drivers.CDP.Shared, as: CDPShared
   alias Wallabidi.Remote.LiveViewAware
-  alias Wallabidi.Remote.WireProtocol
   alias Wallabidi.Remote.{Transport, WebSocket}
   alias Wallabidi.Remote.Transport.Protocol
+  alias Wallabidi.Remote.WireProtocol
   import Wallabidi.Driver.LogChecker
 
   @driver_spec %Spec{
