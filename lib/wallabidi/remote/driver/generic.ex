@@ -209,7 +209,8 @@ defmodule Wallabidi.Remote.Driver.Generic do
     send_keys(session, [key])
   end
 
-  def send_keys(%Element{} = element, keys), do: Orchestrator.send_keys(spec(element), element, keys)
+  def send_keys(%Element{} = element, keys),
+    do: Orchestrator.send_keys(spec(element), element, keys)
 
   def selected(%Element{} = element), do: Orchestrator.selected(spec(element), element)
 
@@ -254,8 +255,10 @@ defmodule Wallabidi.Remote.Driver.Generic do
 
   def hover(%Element{} = element), do: Orchestrator.hover(spec(element), element)
   def tap(%Element{} = element), do: Orchestrator.tap(spec(element), element)
+
   def touch_down(parent, target, x, y),
     do: Orchestrator.touch_down(spec(parent), parent, target, x, y)
+
   def touch_up(parent), do: Orchestrator.touch_up(spec(parent), parent)
   def touch_move(parent, x, y), do: Orchestrator.touch_move(spec(parent), parent, x, y)
 
@@ -276,11 +279,15 @@ defmodule Wallabidi.Remote.Driver.Generic do
   def double_click(parent), do: Orchestrator.double_click(spec(parent), parent)
   def button_down(parent, button), do: Orchestrator.button_down(spec(parent), parent, button)
   def button_up(parent, button), do: Orchestrator.button_up(spec(parent), parent, button)
+
   def move_mouse_by(parent, x_offset, y_offset),
     do: Orchestrator.move_mouse_by(spec(parent), parent, x_offset, y_offset)
+
   def element_size(%Element{} = element), do: Orchestrator.element_size(spec(element), element)
+
   def element_location(%Element{} = element),
     do: Orchestrator.element_location(spec(element), element)
+
   def blank_page?(%Session{} = session), do: Orchestrator.blank_page?(spec(session), session)
 
   # ----- Log parsing -----

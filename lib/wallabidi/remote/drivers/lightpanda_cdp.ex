@@ -201,6 +201,7 @@ defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
   # Session-scoped send_keys: not supported by Lightpanda's input
   # synthesis. Element-scoped works via the Generic delegate.
   def send_keys(%Session{}, _keys), do: {:error, :not_implemented}
+
   def send_keys(%Element{} = element, keys),
     do: Wallabidi.Remote.Driver.Generic.send_keys(element, keys)
 end
