@@ -11,7 +11,7 @@ defmodule Wallabidi.Session do
           server: pid | :none | module,
           screenshots: list,
           driver: module,
-          driver_spec: Wallabidi.Remote.Driver.Spec.t() | nil,
+          driver_spec: struct() | nil,
           capabilities: map(),
           bidi_pid: pid() | nil,
           browsing_context: String.t() | nil,

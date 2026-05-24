@@ -78,7 +78,7 @@ fuse into one Promise on the page side:
 
 Each fused op exists because the Elixir side has no decisions to make
 between the steps. The fusion happens in `priv/wallabidi.js`; the
-Elixir entry points (in `Wallabidi.Remote.OpsShared`) just ship the
+Elixir entry points (in <code>Wallabidi.Remote.OpsShared</code>) just ship the
 opcode and `await_promise: true`.
 
 ## Lazy elements
@@ -127,8 +127,8 @@ browser supports.
                Context A)   Context B)   Context C)
 ```
 
-One `Wallabidi.Remote.WebSocket` GenServer per BEAM holds the WS to
-Chrome (via `Wallabidi.Remote.Chrome.SharedConnection`). Sessions
+One `Remote.WebSocket` GenServer per BEAM holds the WS to
+Chrome (via <code>Wallabidi.Remote.Chrome.SharedConnection</code>). Sessions
 multiplex over that one socket using CDP's flat-session protocol —
 each session has its own `BrowserContext` + `Target`, and CDP frames
 carry a `sessionId` field that routes responses/events to the right
@@ -215,7 +215,7 @@ stays alive across sessions.
 ## Concurrency model
 
 One Chrome process per BEAM. Sessions multiplex over a single
-`Wallabidi.Remote.WebSocket` via CDP's flat-session-id, with each
+`Remote.WebSocket` via CDP's flat-session-id, with each
 session isolated by its own BrowserContext. This is the
 Playwright-default shape: amortize browser startup across the BEAM
 lifetime, throw away contexts cheaply per test.
@@ -296,24 +296,24 @@ process count.
 
 **Internals (in order of how deep you go)**
 
-- `Wallabidi.Remote.OpsShared` — the using-module macro that gives
+- <code>Wallabidi.Remote.OpsShared</code> — the using-module macro that gives
   CDP and BiDi clients identical W.run dispatch wrappers for element
   ops (text, attribute, click, fill_in, classify, set_checked,
   await_value, await_text, …).
-- `Wallabidi.Remote.CDP.Client` / `Wallabidi.Remote.BiDi.Client` —
+- <code>Wallabidi.Remote.CDP.Client</code> / <code>Wallabidi.Remote.BiDi.Client</code> —
   protocol-specific clients. Hold `call_on_element/5` (which
   recognizes lazy refs), `find_elements/3` / `find_elements_lazy/3`,
   `click_aware`, frame-switching, geometry, cookies, screenshots.
-- `Wallabidi.Remote.LiveViewAware` — thin BEAM-side adapter for the
+- <code>Wallabidi.Remote.LiveViewAware</code> — thin BEAM-side adapter for the
   LV-aware document-scope ops (prepare_patch, await_patch, await_ack,
   await_selector, live_view_connected).
-- `Wallabidi.Remote.Bootstrap` — bakes `priv/wallabidi.js` into the
+- <code>Wallabidi.Remote.Bootstrap</code> — bakes `priv/wallabidi.js` into the
   BEAM and produces the CDP/BiDi install forms.
 - `priv/wallabidi.js` — the page-side bootstrap. Defines `W.run`, the
   fused ops, the find-pipeline result push, and the `onPatchEnd` +
   `MutationObserver` hooks.
-- `Wallabidi.Remote.Transport.Session` — per-session GenServer that
+- <code>Wallabidi.Remote.Transport.Session</code> — per-session GenServer that
   owns the wire layer for one session (whichever transport shape
   the driver picked).
-- `Wallabidi.Remote.WebSocket` — the Mint WebSocket actor. Shared
+- `Remote.WebSocket` — the Mint WebSocket actor. Shared
   across sessions on Chrome CDP; per-session on BiDi and Lightpanda.
