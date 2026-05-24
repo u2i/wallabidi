@@ -181,6 +181,63 @@ defmodule Wallabidi.Remote.Transport.Common do
     Map.get(state.frame_contexts, frame_id)
   end
 
+  # ----- Load waiters (CDP Page.lifecycleEvent / BiDi browsingContext.load) -----
+
+  @doc """
+  Buffers a navigation milestone in `state.loads` AND wakes any matching
+  load waiter — the CDP buffer-and-wake semantics where milestones persist
+  for the lifetime of the loader_id.
+
+  Used by `Wire.CDP` for `Page.lifecycleEvent`. BiDi has different
+  semantics (`record_load_or_wake_once/3`).
+  """
+  @spec record_load_milestone(map(), term(), String.t()) :: map()
+  def record_load_milestone(state, loader_id, name) do
+    loads = Map.update(state.loads, loader_id, %{name => true}, &Map.put(&1, name, true))
+    state = %{state | loads: loads}
+
+    {ready, pending} =
+      Enum.split_with(state.load_waiters, fn
+        {_from, ^loader_id, ^name, _ref} -> true
+        {_from, :any, ^name, _ref} -> true
+        _ -> false
+      end)
+
+    Enum.each(ready, fn {from, _l, _n, ref} ->
+      Process.cancel_timer(ref)
+      GenServer.reply(from, :ok)
+    end)
+
+    %{state | load_waiters: pending}
+  end
+
+  @doc """
+  BiDi load-event semantics: if a matching waiter exists, wake it; otherwise
+  buffer the milestone for a later `await_page_load` (which then consumes
+  and drops it). Distinct from `record_load_milestone/3` — see comment there.
+  """
+  @spec record_load_or_wake_once(map(), term(), String.t()) :: map()
+  def record_load_or_wake_once(state, loader_id, name) do
+    {matching, rest} =
+      Enum.split_with(state.load_waiters, fn {_from, lid, n, _ref} ->
+        (lid == loader_id or lid == :any) and n == name
+      end)
+
+    case matching do
+      [] ->
+        inner = Map.put(Map.get(state.loads, loader_id, %{}), name, true)
+        %{state | loads: Map.put(state.loads, loader_id, inner)}
+
+      _ ->
+        Enum.each(matching, fn {from, _, _, ref} ->
+          Process.cancel_timer(ref)
+          GenServer.reply(from, :ok)
+        end)
+
+        %{state | load_waiters: rest}
+    end
+  end
+
   # ----- Bootstrap channel payload routing -----
 
   @doc """
