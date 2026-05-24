@@ -108,6 +108,7 @@ defmodule Wallabidi.Remote.WireProtocol.CDP do
   @impl true
   def move_mouse_by(parent, x_offset, y_offset),
     do: CDPClient.move_mouse_by(parent, x_offset, y_offset)
+
   @impl true
   def element_size(element), do: CDPClient.element_size(element)
   @impl true

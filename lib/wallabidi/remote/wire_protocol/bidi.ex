@@ -110,6 +110,7 @@ defmodule Wallabidi.Remote.WireProtocol.BiDi do
   @impl true
   def move_mouse_by(parent, x_offset, y_offset),
     do: BiDiClient.move_mouse_by(parent, x_offset, y_offset)
+
   @impl true
   def element_size(element), do: BiDiClient.element_size(element)
   @impl true

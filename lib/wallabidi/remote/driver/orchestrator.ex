@@ -5,10 +5,13 @@ defmodule Wallabidi.Remote.Driver.Orchestrator do
   #
   # Each function takes the spec + the same args the Driver-behaviour
   # callback would, and consults the spec's dimension modules
-  # (`spec.browser`, `spec.wire_protocol`) for the variable bits.
+  # (`spec.browser`, `spec.wire_protocol`) and cross-cutting flags
+  # (`spec.log_check_interactions?`, etc.) for the variable bits.
   #
-  # SPIKE SCOPE: only `click/2`. If this works without leakage we'll
-  # grow the orchestrator to absorb the other Driver callbacks.
+  # Owns the flow for ~30 Driver callbacks across all 3 drivers
+  # (ChromeCDP / ChromeBiDi / LightpandaCDP). Per-driver vendor bits
+  # — start_session, dialogs, window/frame management — stay in the
+  # driver module.
 
   import Wallabidi.Driver.LogChecker
 
@@ -226,7 +229,10 @@ defmodule Wallabidi.Remote.Driver.Orchestrator do
       do: spec.wire_protocol.click_at_cursor(parent, button)
 
   def double_click(%Spec{} = spec, parent), do: spec.wire_protocol.double_click(parent)
-  def button_down(%Spec{} = spec, parent, button), do: spec.wire_protocol.button_down(parent, button)
+
+  def button_down(%Spec{} = spec, parent, button),
+    do: spec.wire_protocol.button_down(parent, button)
+
   def button_up(%Spec{} = spec, parent, button), do: spec.wire_protocol.button_up(parent, button)
 
   def move_mouse_by(%Spec{} = spec, parent, x_offset, y_offset),

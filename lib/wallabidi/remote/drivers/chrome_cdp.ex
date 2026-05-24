@@ -179,7 +179,8 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
     do: Orchestrator.set_cookie(@driver_spec, session, name, value, attrs)
 
   @impl true
-  def take_screenshot(%Session{} = session), do: Orchestrator.take_screenshot(@driver_spec, session)
+  def take_screenshot(%Session{} = session),
+    do: Orchestrator.take_screenshot(@driver_spec, session)
 
   def take_screenshot(%Element{} = element),
     do: Orchestrator.take_screenshot(@driver_spec, element)
@@ -242,8 +243,10 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
 
   def hover(%Element{} = element), do: Orchestrator.hover(@driver_spec, element)
   def tap(%Element{} = element), do: Orchestrator.tap(@driver_spec, element)
+
   def touch_down(parent, target, x, y),
     do: Orchestrator.touch_down(@driver_spec, parent, target, x, y)
+
   def touch_up(parent), do: Orchestrator.touch_up(@driver_spec, parent)
   def touch_move(parent, x, y), do: Orchestrator.touch_move(@driver_spec, parent, x, y)
 
@@ -273,11 +276,15 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
   def double_click(parent), do: Orchestrator.double_click(@driver_spec, parent)
   def button_down(parent, button), do: Orchestrator.button_down(@driver_spec, parent, button)
   def button_up(parent, button), do: Orchestrator.button_up(@driver_spec, parent, button)
+
   def move_mouse_by(parent, x_offset, y_offset),
     do: Orchestrator.move_mouse_by(@driver_spec, parent, x_offset, y_offset)
+
   def element_size(%Element{} = element), do: Orchestrator.element_size(@driver_spec, element)
+
   def element_location(%Element{} = element),
     do: Orchestrator.element_location(@driver_spec, element)
+
   def blank_page?(%Session{} = session), do: Orchestrator.blank_page?(@driver_spec, session)
 
   # LogChecker calls driver.parse_log/1 on each drained log entry —

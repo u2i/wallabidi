@@ -272,6 +272,7 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
     do: Orchestrator.move_mouse_by(@driver_spec, parent, x_offset, y_offset)
 
   def element_size(%Element{} = element), do: Orchestrator.element_size(@driver_spec, element)
+
   def element_location(%Element{} = element),
     do: Orchestrator.element_location(@driver_spec, element)
 
@@ -297,7 +298,8 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
     do: Orchestrator.set_cookie(@driver_spec, session, name, value, attrs)
 
   @impl true
-  def take_screenshot(%Session{} = session), do: Orchestrator.take_screenshot(@driver_spec, session)
+  def take_screenshot(%Session{} = session),
+    do: Orchestrator.take_screenshot(@driver_spec, session)
 
   def take_screenshot(%Element{} = element),
     do: Orchestrator.take_screenshot(@driver_spec, element)
@@ -442,5 +444,4 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
   defp current_ctx(%Session{id: id, browsing_context: root}) do
     Process.get({:wallabidi_bidi_v2_frame, id}, root)
   end
-
 end
