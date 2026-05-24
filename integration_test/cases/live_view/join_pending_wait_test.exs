@@ -18,7 +18,7 @@ defmodule Wallabidi.Integration.LiveView.JoinPendingWaitTest do
 
   # The fake page has no real LV, so `await_page_ready_after` waits its
   # full 5s after the click. Structural to the test, not a regression.
-  @tag slow: 18_000
+  @tag slow: 25_000
   test "click waits for liveSocket.main.joinPending to flip false", %{session: session} do
     session = visit(session, @base <> "/join-pending")
 
