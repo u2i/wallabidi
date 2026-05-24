@@ -2,7 +2,7 @@ defmodule Wallabidi.Mixfile do
   use Mix.Project
 
   @source_url "https://github.com/u2i/wallabidi"
-  @version "0.4.0-rc.0"
+  @version "0.4.0-rc.1"
   @maintainers ["Tom Clarke"]
 
   def project do
@@ -111,6 +111,10 @@ defmodule Wallabidi.Mixfile do
         "priv/cdp",
         "priv/perf-matrix.svg",
         "priv/run_command.sh",
+        # Bootstrap reads these at compile time via @external_resource
+        # — they must be in the tarball so the consumer's compile sees them.
+        "priv/wallabidi.js",
+        "priv/wallabidi.min.js",
         "priv/bidi-server/package.json",
         "priv/bidi-server/package-lock.json",
         "priv/bidi-server/run.mjs"

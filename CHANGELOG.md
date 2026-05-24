@@ -1,5 +1,14 @@
 # Changelog
 
+## Wallabidi 0.4.0-rc.1 (2026-05-24)
+
+* `priv/wallabidi.js` + `priv/wallabidi.min.js` are now included in
+  the Hex tarball. They were accidentally excluded in 0.4.0-rc.0
+  when the `package.files` list was tightened to keep
+  `priv/bidi-server/node_modules` out. The Bootstrap module reads
+  them at consumer compile time via `@external_resource`, so without
+  them the package fails to compile.
+
 ## Wallabidi 0.4.0-rc.0 (2026-05-24)
 
 The Driver decomposition + CDP/BiDi convergence release.
