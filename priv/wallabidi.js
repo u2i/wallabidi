@@ -486,60 +486,6 @@ W.awaitAck = function(target, timeoutMs) {
   });
 };
 
-// Resolve when a CSS selector matches in the live DOM, using
-// MutationObserver + onPatchEnd hooks. opts.text adds a text-includes
-// constraint. Resolves 'navigated' if the page navigates mid-wait.
-W.awaitSelector = function(selector, opts) {
-  opts = opts || {};
-  var text = opts.text || null;
-  var timeoutMs = opts.timeoutMs || 200;
-
-  function matches() {
-    if (!text) return !!document.querySelector(selector);
-    var els = document.querySelectorAll(selector);
-    for (var i = 0; i < els.length; i++) {
-      if (els[i].textContent.indexOf(text) !== -1) return true;
-    }
-    return false;
-  }
-
-  if (matches()) return Promise.resolve(true);
-
-  return new Promise(function(resolve) {
-    var timer = setTimeout(function() { cleanup(); resolve(false); }, timeoutMs);
-    var restorePatchEnd = wrapPatchEnd(function() {
-      if (matches()) { cleanup(); resolve(true); }
-    });
-    var observer = new MutationObserver(function() {
-      requestAnimationFrame(function() {
-        if (matches()) { cleanup(); resolve(true); }
-      });
-    });
-    observer.observe(document.body, {
-      childList: true, subtree: true,
-      attributes: true, characterData: true
-    });
-
-    var startUrl = window.location.href;
-    function onNav() { cleanup(); resolve('navigated'); }
-    window.addEventListener('beforeunload', onNav, {once: true});
-    var navCheck = setInterval(function() {
-      if (window.location.href !== startUrl) {
-        requestAnimationFrame(function() {
-          if (matches()) { cleanup(); resolve(true); }
-          else { cleanup(); resolve('navigated'); }
-        });
-      }
-    }, 50);
-    function cleanup() {
-      clearTimeout(timer);
-      clearInterval(navCheck);
-      observer.disconnect();
-      window.removeEventListener('beforeunload', onNav);
-      restorePatchEnd();
-    }
-  });
-};
 
 W.liveViewConnected = function() {
   var ls = window.liveSocket;
@@ -732,7 +678,6 @@ W.run = function(ops, target) {
         case 'await_patch':         value = W.awaitPatch(op[1]); break;
         case 'drain_patches':       value = W.drainPatches(op[1]); break;
         case 'await_ack':           value = W.awaitAck(op[1], op[2]); break;
-        case 'await_selector':      value = W.awaitSelector(op[1], op[2]); break;
         case 'live_view_connected': value = W.liveViewConnected(); break;
         case 'await_lv_connected':  value = W.awaitLiveViewConnected(op[1], op[2]); break;
         case 'url':                 value = W.url(); break;

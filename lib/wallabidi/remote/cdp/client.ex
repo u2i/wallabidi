@@ -927,7 +927,7 @@ defmodule Wallabidi.Remote.CDP.Client do
     timeout = Keyword.get(opts, :timeout, 5_000)
     count = Wallabidi.Query.count(query)
 
-    with {:ok, ops, _validated} <- Ops.from_wallaby(parent, query, nil) do
+    with {:ok, ops, _validated} <- Ops.from_wallaby(parent, query) do
       query_id = "v2-q-#{System.unique_integer([:positive])}"
       ops_json = Jason.encode!(ops.ops)
       count_js = if is_integer(count), do: Integer.to_string(count), else: "null"

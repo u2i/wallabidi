@@ -4,92 +4,8 @@ defmodule Wallabidi.Remote.BiDi.Commands do
 
   # Browsing Context commands
 
-  def navigate(context, url) do
-    {"browsingContext.navigate", %{context: context, url: url, wait: "interactive"}}
-  end
-
-  def get_tree(opts \\ %{}) do
-    {"browsingContext.getTree", opts}
-  end
-
-  def create_context(type, opts \\ %{}) when type in ["tab", "window"] do
-    {"browsingContext.create", Map.merge(%{type: type}, opts)}
-  end
-
-  def create_user_context(opts \\ %{}) do
-    {"browser.createUserContext", opts}
-  end
-
-  def remove_user_context(user_context_id) do
-    {"browser.removeUserContext", %{userContext: user_context_id}}
-  end
-
   def capture_screenshot(context) do
     {"browsingContext.captureScreenshot", %{context: context}}
-  end
-
-  def close_context(context) do
-    {"browsingContext.close", %{context: context}}
-  end
-
-  def activate(context) do
-    {"browsingContext.activate", %{context: context}}
-  end
-
-  def locate_nodes(context, locator) do
-    {"browsingContext.locateNodes", %{context: context, locator: locator}}
-  end
-
-  def locate_nodes(context, locator, start_nodes) do
-    {"browsingContext.locateNodes",
-     %{context: context, locator: locator, startNodes: start_nodes}}
-  end
-
-  # Script commands
-
-  def evaluate(context, expression, opts \\ %{}) do
-    params =
-      Map.merge(
-        %{
-          expression: expression,
-          target: %{context: context},
-          awaitPromise: Map.get(opts, :await_promise, false),
-          resultOwnership: "root"
-        },
-        Map.drop(opts, [:await_promise])
-      )
-
-    {"script.evaluate", params}
-  end
-
-  def call_function(context, function_declaration, arguments \\ [], opts \\ %{}) do
-    params =
-      Map.merge(
-        %{
-          functionDeclaration: function_declaration,
-          arguments: arguments,
-          target: %{context: context},
-          awaitPromise: Map.get(opts, :await_promise, false),
-          resultOwnership: "root"
-        },
-        Map.drop(opts, [:await_promise])
-      )
-
-    {"script.callFunction", params}
-  end
-
-  # Preload script commands
-
-  def add_preload_script(function_declaration, arguments \\ []) do
-    {"script.addPreloadScript",
-     %{
-       functionDeclaration: function_declaration,
-       arguments: arguments
-     }}
-  end
-
-  def remove_preload_script(script_id) do
-    {"script.removePreloadScript", %{script: script_id}}
   end
 
   # Dialog commands
@@ -121,41 +37,6 @@ defmodule Wallabidi.Remote.BiDi.Commands do
     {"session.subscribe", params}
   end
 
-  # Network commands
-
-  def add_intercept(url_pattern, phases \\ ["beforeRequestSent"]) do
-    {"network.addIntercept",
-     %{
-       phases: phases,
-       urlPatterns: [%{type: "pattern", pattern: url_pattern}]
-     }}
-  end
-
-  def continue_request(request_id, opts \\ %{}) do
-    params =
-      %{request: request_id}
-      |> maybe_merge(:headers, opts[:headers])
-
-    {"network.continueRequest", params}
-  end
-
-  def provide_response(request_id, opts \\ %{}) do
-    params =
-      %{request: request_id}
-      |> maybe_merge(:statusCode, opts[:status])
-      |> maybe_merge(:headers, opts[:headers])
-      |> maybe_merge(:body, encode_body(opts[:body]))
-
-    {"network.provideResponse", params}
-  end
-
-  defp maybe_merge(map, _key, nil), do: map
-  defp maybe_merge(map, key, value), do: Map.put(map, key, value)
-
-  defp encode_body(nil), do: nil
-  defp encode_body(body) when is_binary(body), do: %{type: "string", value: body}
-  defp encode_body(body), do: body
-
   # Storage commands
 
   def get_cookies(opts \\ %{}) do
@@ -164,27 +45,6 @@ defmodule Wallabidi.Remote.BiDi.Commands do
 
   def set_cookie(cookie, opts \\ %{}) do
     {"storage.setCookie", Map.merge(%{cookie: cookie}, opts)}
-  end
-
-  # Helper: Build a pointer click action sequence for an element
-  def pointer_click_actions(element_shared_id) do
-    [
-      %{
-        type: "pointer",
-        id: "mouse",
-        parameters: %{pointerType: "mouse"},
-        actions: [
-          %{
-            type: "pointerMove",
-            origin: %{type: "element", element: %{sharedId: element_shared_id}},
-            x: 0,
-            y: 0
-          },
-          %{type: "pointerDown", button: 0},
-          %{type: "pointerUp", button: 0}
-        ]
-      }
-    ]
   end
 
   # Helper: Build key actions for typing text
@@ -328,24 +188,6 @@ defmodule Wallabidi.Remote.BiDi.Commands do
     ]
   end
 
-  def pointer_move_to_element_actions(element_shared_id, x_offset, y_offset) do
-    [
-      %{
-        type: "pointer",
-        id: "mouse",
-        parameters: %{pointerType: "mouse"},
-        actions: [
-          %{
-            type: "pointerMove",
-            origin: %{type: "element", element: %{sharedId: element_shared_id}},
-            x: x_offset,
-            y: y_offset
-          }
-        ]
-      }
-    ]
-  end
-
   # Helper: Build touch action sequences
   def touch_down_actions(x, y) do
     [
@@ -402,27 +244,6 @@ defmodule Wallabidi.Remote.BiDi.Commands do
         parameters: %{pointerType: "touch"},
         actions: [
           %{type: "pointerMove", origin: "viewport", x: x, y: y}
-        ]
-      }
-    ]
-  end
-
-  def touch_scroll_element_actions(element_shared_id, x_offset, y_offset) do
-    [
-      %{
-        type: "pointer",
-        id: "finger",
-        parameters: %{pointerType: "touch"},
-        actions: [
-          %{
-            type: "pointerMove",
-            origin: %{type: "element", element: %{sharedId: element_shared_id}},
-            x: 0,
-            y: 0
-          },
-          %{type: "pointerDown", button: 0},
-          %{type: "pointerMove", origin: "pointer", x: x_offset, y: y_offset, duration: 200},
-          %{type: "pointerUp", button: 0}
         ]
       }
     ]

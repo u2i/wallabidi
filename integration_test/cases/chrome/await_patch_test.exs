@@ -226,7 +226,7 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
       session = visit(session, "#{url}/nav-source")
       {:ok, pre_url} = Wallabidi.Remote.Protocol.current_url(session)
       execute_script(session, "document.getElementById('go-to-dest').click()")
-      Wallabidi.SessionProcess.await_next_page_load(session)
+      Wallabidi.Remote.Transport.Protocol.await_next_page_load(session)
       Wallabidi.Remote.LiveViewAware.await_liveview_connected(session, pre_url: pre_url)
 
       execute_script(

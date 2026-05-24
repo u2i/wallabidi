@@ -56,31 +56,6 @@ defmodule Wallabidi.Remote.CDP.Ops do
     %{o | ops: o.ops ++ [["selected", val]]}
   end
 
-  def classify(%__MODULE__{} = o, interaction) do
-    %{o | ops: o.ops ++ [["classify_first", to_string(interaction)]]}
-  end
-
-  def prepare_patch(%__MODULE__{} = o) do
-    %{o | ops: o.ops ++ [["prepare_patch_filter"]]}
-  end
-
-  def click(%__MODULE__{} = o) do
-    %{o | ops: o.ops ++ [["click_first"]]}
-  end
-
-  @doc """
-  Returns `true` if any op has side effects (click, prepare_patch).
-  Side-effect ops mean the result must be captured before the side
-  effect fires (to avoid stale context on navigation).
-  """
-  def has_side_effects?(%__MODULE__{ops: ops}) do
-    Enum.any?(ops, fn
-      ["click_first"] -> true
-      ["prepare_patch_filter"] -> true
-      _ -> false
-    end)
-  end
-
   @doc """
   Build filters from a Wallaby Query struct.
   """
@@ -106,17 +81,12 @@ defmodule Wallabidi.Remote.CDP.Ops do
   end
 
   @doc """
-  Build a complete opcode sequence directly from a Wallaby Query + action.
-  Validates and compiles the query, applies all filters, and appends
-  action ops (classify, prepare_patch, click) based on the action type.
-
-  Actions:
-  - `nil`    — find only (for assert_has, find, has?)
-  - `:click` — classify + prepare_patch + click
+  Build a complete opcode sequence directly from a Wallaby Query.
+  Validates and compiles the query and applies all filters.
 
   Returns `{:ok, ops, query}` or `{:error, reason}`.
   """
-  def from_wallaby(parent, %Wallabidi.Query{} = query, action \\ nil) do
+  def from_wallaby(parent, %Wallabidi.Query{} = query) do
     with {:ok, validated} <- Wallabidi.Query.validate(query) do
       {type, selector} = Wallabidi.Query.compile(validated)
 
@@ -124,18 +94,6 @@ defmodule Wallabidi.Remote.CDP.Ops do
         new(parent)
         |> query(type, selector)
         |> from_query(validated)
-
-      ops =
-        case action do
-          :click ->
-            ops
-            |> classify(:click)
-            |> prepare_patch()
-            |> click()
-
-          _ ->
-            ops
-        end
 
       {:ok, ops, validated}
     end

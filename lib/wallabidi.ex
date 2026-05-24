@@ -79,9 +79,9 @@ defmodule Wallabidi do
   """
   @spec start_session([start_session_opts]) :: {:ok, Session.t()} | {:error, reason}
   def start_session(opts \\ []) do
-    # SessionProcess monitors the caller and runs cleanup in terminate/2
-    # when the caller dies, so we don't need on_exit hooks or SessionStore
-    # monitoring for crashed-test cleanup.
+    # Each Transport actor monitors its owner and runs cleanup in
+    # terminate/2 when the owner dies, so we don't need on_exit hooks
+    # or SessionStore monitoring for crashed-test cleanup.
     case resolve_driver(opts) do
       :live_view ->
         Wallabidi.LiveView.Driver.start_session(opts)

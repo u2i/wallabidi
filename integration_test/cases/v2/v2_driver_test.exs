@@ -1,11 +1,8 @@
 defmodule Wallabidi.Integration.V2.DriverTest do
   @moduledoc """
-  Exercises Wallabidi.Remote.Drivers.LightpandaCDP via the Driver behaviour itself.
-
-  Doesn't yet go through Wallabidi.Browser.* — that path has hard
-  couplings to Wallabidi.SessionProcess that V2.Session doesn't
-  satisfy. This proves the V2 stack covers the Driver behaviour
-  surface end-to-end against Lightpanda.
+  Exercises Wallabidi.Remote.Drivers.LightpandaCDP via the Driver
+  behaviour itself, bypassing Wallabidi.Browser.*. Proves the driver
+  covers the Driver behaviour surface end-to-end against Lightpanda.
   """
   use ExUnit.Case, async: false
 

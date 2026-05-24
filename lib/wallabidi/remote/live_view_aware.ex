@@ -136,68 +136,6 @@ defmodule Wallabidi.Remote.LiveViewAware do
   end
 
   @doc """
-  Waits until a CSS selector matches in the live DOM, using MutationObserver
-  (and LiveView `onPatchEnd`) for event-driven re-checking. Returns `:found`
-  as soon as the selector matches, `:not_found` on timeout, or `:navigated`
-  if the page navigated mid-wait.
-
-  This is the page-ready barrier that sits between `visit` returning and the
-  caller polling `find_elements`. It works across BiDi and CDP transports
-  because the JS is evaluated via `Protocol.eval_async` with
-  `awaitPromise: true` — the browser pushes us the answer the moment the
-  DOM matches, instead of Elixir polling via round-trip RPCs.
-
-  ## Options
-
-  - `:timeout` — max wait in ms (default: 5000)
-  - `:text`    — also require matching element's `textContent` to include this
-  - `:retries` — internal, used to bound navigation retries
-  """
-  @spec await_selector(Session.t(), String.t(), keyword()) ::
-          :found | :not_found | :navigated
-  def await_selector(%Session{} = session, css_selector, opts \\ []) do
-    # Short default: this is a fast pre-check that resolves immediately when
-    # the selector is already in the DOM (most common case after visit), or
-    # catches a mutation that arrives within a tight window (LiveView patch,
-    # JS toggle). If nothing matches within 200ms we fall through to the
-    # caller's own retry loop — which has the full max_wait_time budget.
-    timeout = Keyword.get(opts, :timeout, 200)
-    text = Keyword.get(opts, :text)
-
-    js_opts =
-      Jason.encode!(%{
-        "timeoutMs" => timeout,
-        "text" => text
-      })
-
-    js =
-      "window.__w.run([['await_selector', #{Jason.encode!(css_selector)}, #{js_opts}]])"
-
-    result =
-      case Protocol.eval_async(session, js, timeout + 1_000) do
-        {:ok, true} -> :found
-        {:ok, "navigated"} -> :navigated
-        _ -> :not_found
-      end
-
-    case result do
-      :navigated ->
-        retries = Keyword.get(opts, :retries, 0)
-
-        if retries < 2 do
-          await_liveview_connected(session)
-          opts = opts |> Keyword.put(:timeout, timeout) |> Keyword.put(:retries, retries + 1)
-          await_selector(session, css_selector, opts)
-        else
-          :not_found
-        end
-
-      other ->
-        other
-    end
-  end
-
-  @doc """
   Returns true if the session's LiveSocket is connected.
   """
   @spec live_view_connected?(Session.t()) :: boolean
