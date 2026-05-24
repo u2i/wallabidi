@@ -1,5 +1,57 @@
 # Changelog
 
+## Wallabidi 0.4.0-rc.0 (2026-05-24)
+
+The Driver decomposition + CDP/BiDi convergence release.
+
+### Behavior
+
+- **BiDi click flow simplified.** The await_patch → await_ack →
+  await_page_ready_after cascade has been removed. Both CDP and BiDi
+  now use the same single-signal wait on `page_ready`. To handle
+  slow-destination-mount scenarios that the cascade compensated for
+  with extra wall-clock, the bootstrap now emits a `nav_pending`
+  signal whenever LiveView delivers a `live_redirect` or `redirect`
+  payload in a `phx_reply`; the transport actor extends its
+  `page_ready` deadline to 10s when that signal arrives, so the click
+  waits exactly long enough for the destination's first `onPatchEnd`.
+  No polling.
+- **Cookie `sameSite` is now normalised on both clients.** Pass
+  `:sameSite | "sameSite" | :same_site | "same_site"` in any value
+  casing; CDP emits PascalCase, BiDi emits lowercase. Previously
+  BiDi silently dropped `sameSite`.
+- **`Browser.fill_in` no longer double-fires `phx-change` on CDP.**
+  The `:silent` clear opt now plumbs through to the wire on both
+  drivers. Previously CDP fired an extra empty-state `phx-change`
+  between clear and set; BiDi did not.
+- **`set_cookie` now surfaces Chrome's `success: false` as
+  `{:error, :set_cookie_failed}`** instead of silently succeeding.
+- **`hover/tap/touch_down` on BiDi now accept lazy elements**,
+  materialising on demand. Matches CDP's existing behavior.
+- **`Browser.cookies` on BiDi preserves all wire fields** (e.g.
+  `sameSite`, `partition`). Previously the BiDi response parser
+  picked a fixed subset and dropped the rest.
+
+### Internal
+
+- **Two-protocol convergence.** CDP and BiDi clients now share file
+  layout, section order, function signatures, and doc structure.
+  Shared logic lives in `Wallabidi.Remote.OpsShared` (element ops,
+  trivia accessors, file-input fallback, element geometry, selected,
+  blank_page?), `Wallabidi.Remote.Cookies` (attr lookups + sameSite
+  normalisation), and `Wallabidi.Remote.Dialogs.Flow` (protocol-
+  agnostic dialog orchestration).
+- **`patch_url_fallback?` Spec flag removed.** The `nav_pending`
+  signal supersedes the old polling-based fallback. Net result: zero
+  polling in the click path on any driver.
+- **`log_check_accessors?` Spec flag removed.** Neither driver was
+  meaningfully log-checking accessors.
+
+### Stability
+
+- Three BiDi tests tagged `:bidi_unstable` (pre-existing flakes under
+  contention; pass solo). Default `mix test.chrome.bidi` is green.
+
 ## Wallabidi 0.3.0 (2026-05-10)
 
 A large refactor + perf release. 123 commits since 0.2.14. The headline

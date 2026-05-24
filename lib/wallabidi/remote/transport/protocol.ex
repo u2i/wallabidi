@@ -119,7 +119,12 @@ defmodule Wallabidi.Remote.Transport.Protocol do
 
   @spec await_page_ready_after(Session.t(), String.t() | nil, timeout) :: :ok | :timeout
   def await_page_ready_after(%Session{pid: pid}, pre_page_id, timeout_ms \\ 5_000) do
-    GenServer.call(pid, {:await_page_ready_after, pre_page_id, timeout_ms}, timeout_ms + 2_000)
+    # The server may extend the inner timer if a `nav_pending` arrives
+    # (LV transition in flight, dest mount slow). Allow up to 12s of
+    # slack on top of the caller's budget so the GenServer.call doesn't
+    # cap the extension. The server's own timer is still the source of
+    # truth for the actual deadline.
+    GenServer.call(pid, {:await_page_ready_after, pre_page_id, timeout_ms}, timeout_ms + 12_000)
   catch
     :exit, _ -> :timeout
   end

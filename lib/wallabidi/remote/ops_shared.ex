@@ -30,6 +30,19 @@ defmodule Wallabidi.Remote.OpsShared do
 
   alias Wallabidi.{Element, Session}
 
+  @xpath_polyfill_path Path.join(:code.priv_dir(:wallabidi), "cdp/wgxpath.install.js")
+  @external_resource @xpath_polyfill_path
+  @xpath_polyfill if File.exists?(@xpath_polyfill_path),
+                    do: File.read!(@xpath_polyfill_path) <> "\nwgxpath.install(window);",
+                    else: ""
+
+  @doc false
+  # Returns the wgxpath polyfill JS bundle. Lightpanda (and any other
+  # browser that doesn't ship a real `document.evaluate`) needs this
+  # injected after each page load. Callers gate this on
+  # `session.capabilities[:needs_xpath_polyfill]`.
+  def xpath_polyfill_js, do: @xpath_polyfill
+
   # Single dispatch function — the Elixir side never ships per-op JS
   # bodies; just an opcode-list. Implementations live in
   # priv/wallabidi.js as the W.run interpreter (W.text, W.attribute,
@@ -275,6 +288,160 @@ defmodule Wallabidi.Remote.OpsShared do
             unquote(__MODULE__).trivia_js("source", "document.documentElement.outerHTML")
           )
 
+      @doc "True when the session's current URL is a known blank URL."
+      @spec blank_page?(Session.t()) :: boolean
+      def blank_page?(%Session{} = session) do
+        case current_url(session) do
+          {:ok, url} -> url in ["data:,", "about:blank", ""]
+          _ -> false
+        end
+      end
+
+      @doc """
+      Set a file input's value via the DataTransfer + File trick.
+
+      Browsers reject `el.value = "/path"` on file inputs for security
+      reasons; this fabricates an empty `File` and assigns it via
+      `DataTransfer`. Tests only inspect `.value` (which the browser
+      exposes as `C:\\fakepath\\<basename>`), so file *contents* are
+      irrelevant. When `path` doesn't exist on disk, no-ops to match
+      the legacy contract.
+      """
+      @spec set_file_input_via_data_transfer(Session.t(), Element.t(), String.t()) ::
+              {:ok, nil} | {:error, term}
+      def set_file_input_via_data_transfer(%Session{} = session, %Element{} = element, path)
+          when is_binary(path) do
+        if File.exists?(path) do
+          case call_on_element(
+                 session,
+                 element,
+                 """
+                 function(p) {
+                   var dt = new DataTransfer();
+                   var name = p.split('/').pop() || p.split('\\\\').pop();
+                   var f = new File([''], name, {type: 'application/octet-stream'});
+                   dt.items.add(f);
+                   this.files = dt.files;
+                   this.dispatchEvent(new Event('change', {bubbles: true}));
+                   return null;
+                 }
+                 """,
+                 [path]
+               ) do
+            {:ok, _} -> {:ok, nil}
+            err -> err
+          end
+        else
+          {:ok, nil}
+        end
+      end
+
+      @doc "Element width/height in CSS pixels via getBoundingClientRect."
+      @spec element_size(Element.t()) :: {:ok, {number, number}} | {:error, term}
+      def element_size(%Element{} = element) do
+        case call_on_element(Element.root_session(element), element, unquote(@dispatch_fn), [
+               [["rect", "size"]]
+             ]) do
+          {:ok, [w, h]} -> {:ok, {w, h}}
+          err -> err
+        end
+      end
+
+      @doc "Element top-left position in CSS pixels."
+      @spec element_location(Element.t()) :: {:ok, {number, number}} | {:error, term}
+      def element_location(%Element{} = element) do
+        case call_on_element(Element.root_session(element), element, unquote(@dispatch_fn), [
+               [["rect", "position"]]
+             ]) do
+          {:ok, [x, y]} -> {:ok, {x, y}}
+          err -> err
+        end
+      end
+
+      @doc """
+      Is the element checked (checkbox/radio) or selected (option)?
+      Routes through the bootstrap so the DOM property is the source
+      of truth (the `selected` attribute may not reflect later state).
+      """
+      @spec selected(Session.t(), Element.t()) :: {:ok, boolean} | {:error, term}
+      def selected(%Session{} = session, %Element{} = element) do
+        case call_on_element(session, element, unquote(@dispatch_fn), [[["is_selected"]]]) do
+          {:ok, v} -> {:ok, v == true}
+          err -> err
+        end
+      end
+
+      @doc """
+      Navigate the session to `url` and wait for `load`.
+
+      The host module must export `navigate/2` returning
+      `{:ok, %{loader_id: id_or_nil}} | {:error, term}`. When the
+      navigation has no loader id (same-document / cached) we skip the
+      load wait. Browsers whose JS engine lacks a real
+      `document.evaluate` (Lightpanda) ask for the polyfill via
+      `session.capabilities[:needs_xpath_polyfill] = true` and we
+      inject wgxpath after the load completes.
+      """
+      @spec visit(Session.t(), String.t(), keyword) :: :ok | {:error, term}
+      def visit(%Session{} = session, url, opts \\ []) when is_binary(url) do
+        timeout = Keyword.get(opts, :timeout, 10_000)
+
+        with {:ok, %{loader_id: loader_id}} <- navigate(session, url) do
+          result =
+            if is_binary(loader_id) do
+              case Wallabidi.Remote.Transport.Protocol.await_page_load(
+                     session,
+                     loader_id,
+                     "load",
+                     timeout
+                   ) do
+                :ok -> :ok
+                :timeout -> {:error, :timeout}
+              end
+            else
+              :ok
+            end
+
+          if result == :ok and session.capabilities[:needs_xpath_polyfill] do
+            _ = evaluate(session, unquote(__MODULE__).xpath_polyfill_js())
+            :ok
+          end
+
+          result
+        end
+      end
+
+      # ----- Find elements (shared across CDP and BiDi) -----
+      #
+      # The orchestration is identical: build the W.run opcode list,
+      # encode + register the query, fire the parent-scoped IIFE, await
+      # the bootstrap push, and either fetch refs eagerly or return
+      # lazy handles. The protocol-specific bits (`cast_register/3`,
+      # `fetch_element_refs/3`, `final_sync_exec/3`) are exported by
+      # each client.
+
+      @doc """
+      Find elements matching `query`. Eager mode: each returned
+      Element carries a concrete protocol-specific ref (V8 objectId
+      for CDP, shared id for BiDi).
+      """
+      @spec find_elements(Session.t() | Element.t(), Wallabidi.Query.t(), keyword) ::
+              {:ok, [Element.t()]} | {:error, term}
+      def find_elements(parent, %Wallabidi.Query{} = query, opts \\ []) do
+        unquote(__MODULE__).do_find_elements(__MODULE__, parent, query, opts, :eager)
+      end
+
+      @doc """
+      Like `find_elements/3` but returns lazy-handle Elements that
+      re-resolve via W.run on each call. Use when the elements will
+      be consumed by a handful of ops and discarded.
+      """
+      @spec find_elements_lazy(Session.t() | Element.t(), Wallabidi.Query.t(), keyword) ::
+              {:ok, [Element.t()]} | {:error, term}
+      def find_elements_lazy(parent, %Wallabidi.Query{} = query, opts \\ []) do
+        unquote(__MODULE__).do_find_elements(__MODULE__, parent, query, opts, :lazy)
+      end
+
       defoverridable text: 2,
                      attribute: 3,
                      displayed: 2,
@@ -294,7 +461,98 @@ defmodule Wallabidi.Remote.OpsShared do
                      current_url: 1,
                      current_path: 1,
                      page_title: 1,
-                     page_source: 1
+                     page_source: 1,
+                     find_elements: 2,
+                     find_elements: 3,
+                     find_elements_lazy: 2,
+                     find_elements_lazy: 3,
+                     visit: 2,
+                     visit: 3
     end
   end
+
+  # ----- Shared find_elements implementation -----
+  #
+  # `do_find_elements/5` is the protocol-agnostic orchestration of the
+  # query-register + bootstrap-push + await + ref-fetch / lazy-handle
+  # flow. The calling client module supplies three protocol-specific
+  # primitives via its module atom:
+  #
+  #   * `client.cast_register(session, parent_id, register_js)` — fire
+  #     the query-register IIFE either at document scope or scoped to
+  #     a parent element (`this` bound to it).
+  #   * `client.fetch_element_refs(session, query_id, found_count)` —
+  #     pull the materialised element refs back from the page.
+  #   * `client.final_sync_exec(session, ops_json, parent_id)` —
+  #     run W.run synchronously for the count-shape-mismatch fallback
+  #     so callers see the actual element count for error messaging.
+
+  alias Wallabidi.Remote.Bootstrap
+  alias Wallabidi.Remote.CDP.Ops
+  alias Wallabidi.Remote.Transport.Protocol
+
+  @doc false
+  @spec do_find_elements(
+          module,
+          Session.t() | Element.t(),
+          Wallabidi.Query.t(),
+          keyword,
+          :eager | :lazy
+        ) ::
+          {:ok, [Element.t()]} | {:error, term}
+  def do_find_elements(client, parent, %Wallabidi.Query{} = query, opts, mode) do
+    session = Element.root_session(parent)
+    timeout = Keyword.get(opts, :timeout, 5_000)
+    count = Wallabidi.Query.count(query)
+
+    with {:ok, ops, _validated} <- Ops.compile_query(parent, query) do
+      query_id = "v2-q-#{System.unique_integer([:positive])}"
+      ops_json = Jason.encode!(ops.ops)
+      count_js = if is_integer(count), do: Integer.to_string(count), else: "null"
+      root_js = if ops.parent_id, do: "this", else: "null"
+      register_js = Bootstrap.register_js(query_id, ops_json, count_js, root_js)
+
+      :ok = Protocol.register_find(session, query_id, timeout)
+      client.cast_register(session, ops.parent_id, register_js)
+
+      case Protocol.await_find_result(session, query_id, timeout) do
+        {:ok, found, _meta} when found > 0 ->
+          case mode do
+            :lazy -> {:ok, lazy_elements(parent, ops.ops, found)}
+            :eager -> client.fetch_element_refs(session, query_id, found)
+          end
+
+        {:ok, _, _} ->
+          {:ok, []}
+
+        {:error, :invalid_selector} ->
+          {:error, :invalid_selector}
+
+        {:timeout, _} ->
+          # Push didn't fire (count-shape mismatch — e.g. query asked
+          # for exactly 1 but page has 2). Run W.run synchronously so
+          # callers see the actual element count for error messaging.
+          client.final_sync_exec(session, ops_json, ops.parent_id)
+      end
+    end
+  end
+
+  @doc false
+  def lazy_elements(parent, ops, count) do
+    parent_id = parent_object_id(parent)
+    session = Element.root_session(parent)
+
+    Enum.map(0..(count - 1), fn idx ->
+      %Element{
+        handle: {:lazy, ops, idx, parent_id},
+        parent: session,
+        driver: session.driver,
+        url: session.session_url,
+        session_url: session.session_url
+      }
+    end)
+  end
+
+  defp parent_object_id(%Element{handle: id}) when is_binary(id), do: id
+  defp parent_object_id(_), do: nil
 end

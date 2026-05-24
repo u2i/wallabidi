@@ -43,7 +43,10 @@ defmodule Wallabidi.Remote.Transport.PerSession.Actor do
     load_waiters: [],
     find_waiters: %{},
     frame_stack: [],
-    frame_contexts: %{}
+    frame_contexts: %{},
+    # Bootstrap-reported "transition in flight" flag — extends the
+    # page_ready timeout while LV finishes the destination mount.
+    nav_pending: false
   ]
 
   # ----- Lifecycle -----

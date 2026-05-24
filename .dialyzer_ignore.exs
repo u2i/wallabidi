@@ -54,5 +54,8 @@
   ~r"remote/bidi/client\.ex.*unused_fun",
   ~r"remote/drivers/chrome_bidi\.ex.*pattern_match",
   ~r"remote/drivers/chrome_bidi\.ex.*unused_fun",
-  ~r"chrome_bidi\.ex:\d+: The test binary\(\) =:= 'nil'"
+  ~r"chrome_bidi\.ex:\d+: The test binary\(\) =:= 'nil'",
+  # Same iframe-focus narrowing, now extracted into the Frames dimension.
+  ~r"remote/frames/chrome_bidi\.ex.*pattern_match",
+  ~r"remote/frames/chrome_bidi\.ex.*unused_fun"
 ]

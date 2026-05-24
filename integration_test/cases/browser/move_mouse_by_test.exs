@@ -1,7 +1,7 @@
 defmodule Wallabidi.Integration.Browser.MoveMouseByTest do
   use Wallabidi.Integration.SessionCase, async: true
   @moduletag :browser
-  # `refute visible?(...)` waits the full max_wait_time per Wallaby
+  # `refute visible?(...)` waits the full max_wait_time per Wallabidi
   # contract.
   @moduletag slow: 10_000
   import Wallabidi.Browser

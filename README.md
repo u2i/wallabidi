@@ -125,7 +125,7 @@ All of this is installed via injected JavaScript — no changes to your `app.js`
 
 ```elixir
 # mix.exs
-{:wallabidi, "~> 0.2", runtime: false, only: :test}
+{:wallabidi, "~> 0.4.0-rc", runtime: false, only: :test}
 ```
 
 2. Find and replace in your project:
@@ -154,7 +154,7 @@ Requires Elixir 1.19+, OTP 28+, and Chrome (or Chromium). Use `mix wallabidi.ins
 
 ```elixir
 def deps do
-  [{:wallabidi, "~> 0.2", runtime: false, only: :test}]
+  [{:wallabidi, "~> 0.4.0-rc", runtime: false, only: :test}]
 end
 ```
 
@@ -261,7 +261,7 @@ Browser tests need sandbox access propagated to every server-side process the br
 # mix.exs
 {:sandbox_shim, "~> 0.1"},                                    # all envs (compile-time only)
 {:sandbox_case, "~> 0.3", only: :test},                       # test only
-{:wallabidi, "~> 0.2", only: :test, runtime: false},           # test only
+{:wallabidi, "~> 0.4.0-rc", only: :test, runtime: false},           # test only
 ```
 
 ```elixir
@@ -587,7 +587,7 @@ config :wallabidi,
   endpoint: YourAppWeb.Endpoint
 ```
 
-The default driver is `:chrome`. To use LiveView for fast local testing:
+The default driver is `:chrome_cdp`. To use LiveView for fast local testing:
 
 ```elixir
 config :wallabidi,
@@ -602,7 +602,7 @@ All options with defaults:
 config :wallabidi,
   otp_app: :your_app,              # required for Ecto sandbox
   endpoint: YourAppWeb.Endpoint,   # required for LiveView driver
-  driver: :chrome,                 # :live_view | :lightpanda | :chrome
+  driver: :chrome_cdp,             # :live_view | :lightpanda | :chrome_cdp | :chrome (BiDi)
   max_wait_time: 5_000,            # ms to wait for elements
   js_errors: true,                 # re-raise JS errors in Elixir
   js_logger: :stdio,               # IO device for console logs (nil to disable)
