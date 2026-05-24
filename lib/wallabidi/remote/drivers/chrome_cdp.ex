@@ -134,14 +134,6 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
     :ok
   end
 
-  @impl true
-  def release_server_session(%Session{} = session) do
-    ws_pid = session.bidi_pid
-    ctx_id = get_in(session.capabilities, [:browser_context_id])
-    if ws_pid && ctx_id, do: Transport.dispose_browser_context(ws_pid, ctx_id)
-    :ok
-  end
-
   # ----- Driver behaviour delegation (same shape as V2Driver) -----
 
   @impl true

@@ -1840,7 +1840,7 @@ defmodule Wallabidi.Browser do
 
         :full_page ->
           result = fun.()
-          Wallabidi.SessionProcess.await_next_page_load(session)
+          Wallabidi.Remote.Transport.Protocol.await_next_page_load(session)
           Wallabidi.Remote.LiveViewAware.await_liveview_connected(session)
           result
 
@@ -1868,7 +1868,7 @@ defmodule Wallabidi.Browser do
             result
 
           :page_navigated ->
-            Wallabidi.SessionProcess.await_next_page_load(session)
+            Wallabidi.Remote.Transport.Protocol.await_next_page_load(session)
             Wallabidi.Remote.LiveViewAware.await_liveview_connected(session)
             result
         end

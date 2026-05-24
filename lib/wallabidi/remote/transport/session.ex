@@ -7,17 +7,12 @@ defmodule Wallabidi.Remote.Transport.Session do
   #   * a pending-CDP-calls map (wire id → caller `from`) so RPCs
   #     issued via `cdp_send/3` can return synchronously
   #   * page-load buffering, find waiters, page-ready waiters,
-  #     page-state machine — all the per-session state today's
-  #     `SessionProcess` carries
+  #     page-state machine — all the per-session state
   #
   # Key property: events from the WebSocket and synchronous calls
   # from the test process arrive in ONE mailbox. FIFO ordering means
   # the test process can never observe state earlier than what was
   # implied by events the WebSocket already delivered. No barrier.
-  #
-  # This is built alongside the existing `SessionProcess` — nothing
-  # in the live code path uses it yet. We migrate one driver at a
-  # time.
 
   use GenServer
   require Logger
@@ -204,10 +199,10 @@ defmodule Wallabidi.Remote.Transport.Session do
   @doc """
   Synchronisation barrier — blocks until the session actor has
   processed every message that was already in its mailbox at the
-  moment of this call. Session technically doesn't need this (its
-  FIFO mailbox already provides ordering), but the existing
-  `Wallabidi.SessionProcess.sync_barrier/1` is hard-coded across
-  Browser and CDPClient, so we expose it here for API parity.
+  moment of this call. The single-mailbox model means callers rarely
+  need this (FIFO ordering already guarantees observability), but
+  callers that bridge external state (e.g. CDPClient at boot) keep
+  it for explicit barrier semantics.
   """
   @spec sync_barrier(Wallabidi.Session.t()) :: :ok
   def sync_barrier(%Wallabidi.Session{pid: pid}) when is_pid(pid) do
@@ -219,11 +214,10 @@ defmodule Wallabidi.Remote.Transport.Session do
   def sync_barrier(%Wallabidi.Session{}), do: :ok
 
   @doc """
-  Returns `{state, history}` for diagnostic compatibility with
-  `Wallabidi.SessionProcess.get_page_state/1`. The bootstrap state
-  machine isn't tracked here — returns a minimal `{:lv_ready, []}`
-  so callers (like `NavigationTimeoutError`) can pattern-match on
-  the shape without crashing.
+  Returns `{state, history}` for diagnostic shape compatibility. The
+  bootstrap state machine isn't tracked here — returns a minimal
+  `{:lv_ready, []}` so callers (like `NavigationTimeoutError`) can
+  pattern-match on the shape without crashing.
   """
   @spec get_page_state(Wallabidi.Session.t()) :: {atom, list}
   def get_page_state(%Wallabidi.Session{pid: pid}) when is_pid(pid) do
@@ -390,7 +384,7 @@ defmodule Wallabidi.Remote.Transport.Session do
         # Tag with this GenServer's pid so callers can find/stop it.
         # Register with SessionStore so Wallabidi.Feature can discover
         # active sessions when taking failure screenshots / sandbox
-        # cleanup. Mirrors what SessionProcess does for legacy drivers.
+        # cleanup.
         session = %{session | pid: self()}
 
         try do

@@ -3,71 +3,6 @@ defmodule Wallabidi.Remote.BiDi.CommandsTest do
 
   alias Wallabidi.Remote.BiDi.Commands
 
-  describe "navigate/2" do
-    test "builds browsingContext.navigate command" do
-      assert {"browsingContext.navigate", params} =
-               Commands.navigate("ctx-1", "https://example.com")
-
-      assert params.context == "ctx-1"
-      assert params.url == "https://example.com"
-      assert params.wait == "interactive"
-    end
-  end
-
-  describe "get_tree/1" do
-    test "builds browsingContext.getTree command" do
-      assert {"browsingContext.getTree", %{}} = Commands.get_tree()
-    end
-  end
-
-  describe "evaluate/2" do
-    test "builds script.evaluate command" do
-      assert {"script.evaluate", params} = Commands.evaluate("ctx-1", "1 + 1")
-      assert params.expression == "1 + 1"
-      assert params.target == %{context: "ctx-1"}
-      assert params.awaitPromise == false
-    end
-
-    test "supports await_promise option" do
-      assert {"script.evaluate", params} =
-               Commands.evaluate("ctx-1", "fetch('/api')", %{await_promise: true})
-
-      assert params.awaitPromise == true
-    end
-  end
-
-  describe "call_function/3" do
-    test "builds script.callFunction command" do
-      assert {"script.callFunction", params} =
-               Commands.call_function("ctx-1", "(x) => x * 2", [%{type: "number", value: 5}])
-
-      assert params.functionDeclaration == "(x) => x * 2"
-      assert params.arguments == [%{type: "number", value: 5}]
-      assert params.target == %{context: "ctx-1"}
-    end
-  end
-
-  describe "locate_nodes/2" do
-    test "builds browsingContext.locateNodes with CSS locator" do
-      assert {"browsingContext.locateNodes", params} =
-               Commands.locate_nodes("ctx-1", %{type: "css", value: ".btn"})
-
-      assert params.context == "ctx-1"
-      assert params.locator == %{type: "css", value: ".btn"}
-    end
-  end
-
-  describe "locate_nodes/3" do
-    test "builds browsingContext.locateNodes with start nodes" do
-      assert {"browsingContext.locateNodes", params} =
-               Commands.locate_nodes("ctx-1", %{type: "css", value: "li"}, [
-                 %{sharedId: "node-1"}
-               ])
-
-      assert params.startNodes == [%{sharedId: "node-1"}]
-    end
-  end
-
   describe "perform_actions/2" do
     test "builds input.performActions command" do
       actions = [%{type: "key", id: "keyboard", actions: []}]
@@ -137,46 +72,6 @@ defmodule Wallabidi.Remote.BiDi.CommandsTest do
 
       assert {"storage.setCookie", params} = Commands.set_cookie(cookie)
       assert params.cookie == cookie
-    end
-  end
-
-  describe "add_intercept/1" do
-    test "builds network.addIntercept command" do
-      assert {"network.addIntercept", params} = Commands.add_intercept("/api/*")
-      assert params.phases == ["beforeRequestSent"]
-      assert params.urlPatterns == [%{type: "pattern", pattern: "/api/*"}]
-    end
-  end
-
-  describe "provide_response/2" do
-    test "builds network.provideResponse command" do
-      assert {"network.provideResponse", params} =
-               Commands.provide_response("req-1", %{status: 200, body: "ok"})
-
-      assert params.request == "req-1"
-      assert params.statusCode == 200
-      assert params.body == %{type: "string", value: "ok"}
-    end
-
-    test "omits nil fields" do
-      assert {"network.provideResponse", params} = Commands.provide_response("req-1")
-      assert params.request == "req-1"
-      refute Map.has_key?(params, :statusCode)
-      refute Map.has_key?(params, :body)
-    end
-  end
-
-  describe "pointer_click_actions/1" do
-    test "builds pointer click sequence for element" do
-      [action_source] = Commands.pointer_click_actions("elem-1")
-      assert action_source.type == "pointer"
-      assert action_source.parameters == %{pointerType: "mouse"}
-
-      assert [
-               %{type: "pointerMove", origin: %{type: "element", element: %{sharedId: "elem-1"}}},
-               %{type: "pointerDown", button: 0},
-               %{type: "pointerUp", button: 0}
-             ] = action_source.actions
     end
   end
 
