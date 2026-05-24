@@ -35,10 +35,7 @@ defmodule Wallabidi.Remote.Dialogs.ChromeCDP do
     %Flow{
       subscribe: &subscribe/1,
       await_event: &await_event/2,
-      reply: &reply/3,
-      # CDP's subscribe is synchronous (Page.enable + WS.subscribe),
-      # so no handler-ready sync needed.
-      sync_handler_ready?: false
+      reply: &reply/3
     }
   end
 

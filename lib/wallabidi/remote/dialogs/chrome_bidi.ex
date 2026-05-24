@@ -4,8 +4,7 @@ defmodule Wallabidi.Remote.Dialogs.ChromeBiDi do
   # BiDi dialog handling. Uses `browsingContext.userPromptOpened`
   # events and `browsingContext.handleUserPrompt` to reply.
   # Orchestration lives in Dialogs.Flow; this module supplies the
-  # 3 protocol primitives + flags `sync_handler_ready?: true` because
-  # the WSC subscription is async.
+  # 3 protocol primitives.
 
   @behaviour Wallabidi.Remote.Dialogs
 
@@ -35,8 +34,7 @@ defmodule Wallabidi.Remote.Dialogs.ChromeBiDi do
     %Flow{
       subscribe: &subscribe/1,
       await_event: &await_event/2,
-      reply: &reply/3,
-      sync_handler_ready?: true
+      reply: &reply/3
     }
   end
 

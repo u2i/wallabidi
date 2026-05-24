@@ -25,21 +25,17 @@ defmodule Wallabidi.Remote.Dialogs.Flow do
   alias Wallabidi.Session
 
   @type t :: %__MODULE__{
-          # Set up the dialog-event subscription before `fun` fires.
-          # Called from the caller's process. Idempotent.
+          # Subscribe the calling process to the dialog event. Runs
+          # inside the handler so its `self()` is the handler — events
+          # route to the handler's mailbox, not the caller's.
           subscribe: (Session.t() -> any),
           # Receive the dialog event in the handler process, decode it.
           # Returns `{message, default_text}` or `{"", nil}` on timeout.
           await_event: (Session.t(), pos_integer -> {String.t(), String.t() | nil}),
           # Fire the reply RPC. Called from the handler process.
-          reply: (Session.t(), boolean, String.t() | nil -> any),
-          # If true, the caller waits for the handler to signal `:ready`
-          # before invoking `fun`. BiDi needs this because the WSC
-          # subscription is async; CDP's per-protocol subscribe is
-          # synchronous.
-          sync_handler_ready?: boolean
+          reply: (Session.t(), boolean, String.t() | nil -> any)
         }
-  defstruct subscribe: nil, await_event: nil, reply: nil, sync_handler_ready?: false
+  defstruct subscribe: nil, await_event: nil, reply: nil
 
   @doc """
   Run the dialog flow. Returns the dialog message string.
@@ -52,14 +48,14 @@ defmodule Wallabidi.Remote.Dialogs.Flow do
       when is_boolean(accept) and is_function(fun, 1) do
     caller = self()
 
-    flow.subscribe.(session)
-
     handler =
       spawn_link(fn ->
-        if flow.sync_handler_ready? do
-          flow.subscribe.(session)
-          send(caller, {:ready, self()})
-        end
+        # Subscribe from inside the handler so the WSC routes events
+        # to this pid, not the caller's. Signal :ready once the
+        # subscription has landed so the caller doesn't trigger the
+        # dialog before we're listening.
+        flow.subscribe.(session)
+        send(caller, {:ready, self()})
 
         {message, default_value} = flow.await_event.(session, 5_000)
         effective_text = prompt_text || default_value
@@ -67,12 +63,10 @@ defmodule Wallabidi.Remote.Dialogs.Flow do
         send(caller, {:dialog_handled, message})
       end)
 
-    if flow.sync_handler_ready? do
-      receive do
-        {:ready, ^handler} -> :ok
-      after
-        1_000 -> :ok
-      end
+    receive do
+      {:ready, ^handler} -> :ok
+    after
+      1_000 -> :ok
     end
 
     fun.(session)
