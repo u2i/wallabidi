@@ -1,19 +1,16 @@
 defmodule Wallabidi.Remote.WireProtocol do
   @moduledoc false
 
-  # One of the three dimensions of a driver Spec: the wire protocol
-  # (CDP vs BiDi). Owns the answers to "how do I encode/decode RPCs"
-  # questions.
+  # One of the dimensions of a driver Spec: the wire protocol
+  # (CDP vs BiDi). Documents the subset of CDPClient / BiDiClient that
+  # the Orchestrator dispatches into.
   #
-  # Implementations are thin behaviour-shaped wrappers around the
-  # existing per-protocol client modules (Wallabidi.Remote.CDP.Client,
-  # Wallabidi.Remote.BiDi.Client) — those remain the source of truth
-  # for the actual wire shapes.
-  #
-  # Eventually this should absorb / replace `Wallabidi.Remote.Protocol`
-  # (which is the existing hand-rolled `case driver do` dispatcher for
-  # eval/eval_async/current_url). For now kept separate; consolidation
-  # is a follow-up once Orchestrator absorbs more callbacks.
+  # The two existing client modules (`Wallabidi.Remote.CDP.Client` and
+  # `Wallabidi.Remote.BiDi.Client`) declare `@behaviour
+  # Wallabidi.Remote.WireProtocol` directly. There are no separate
+  # adapter modules — the callback names match the client function
+  # names exactly so the compiler can verify the contract on the
+  # actual implementations.
 
   alias Wallabidi.{Element, Session}
 
@@ -53,15 +50,15 @@ defmodule Wallabidi.Remote.WireProtocol do
   @callback set_window_size(Session.t(), integer, integer) :: {:ok, nil} | {:error, term}
 
   @doc "Evaluate JS. Returns the value."
-  @callback execute_script(Session.t(), String.t(), list) :: {:ok, term} | {:error, term}
+  @callback evaluate(Session.t(), String.t(), list) :: {:ok, term} | {:error, term}
 
   @doc "Evaluate JS that returns a promise; awaits resolution."
-  @callback execute_script_async(Session.t(), String.t(), list) :: {:ok, term} | {:error, term}
+  @callback evaluate_async(Session.t(), String.t(), list) :: {:ok, term} | {:error, term}
 
   @doc """
   Simple click RPC — no classification, no page-ready await.
   """
-  @callback simple_click(Session.t(), Element.t()) :: {:ok, term} | {:error, term}
+  @callback click(Session.t(), Element.t()) :: {:ok, term} | {:error, term}
 
   @doc """
   Classified click — captures pre_page_id, classifies the target
@@ -69,7 +66,7 @@ defmodule Wallabidi.Remote.WireProtocol do
   with a 5s timeout. Returns `{:ok, classification, :ready | :timeout}`
   or `{:error, term}`.
   """
-  @callback classified_click(Session.t(), Element.t()) ::
+  @callback click_aware_with_classification(Session.t(), Element.t()) ::
               {:ok, String.t(), :ready | :timeout} | {:error, term}
 
   @doc "Text content of an element."

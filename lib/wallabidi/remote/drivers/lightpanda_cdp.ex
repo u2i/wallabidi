@@ -10,7 +10,7 @@ defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
   use Wallabidi.Remote.Driver.Generic
 
   alias Wallabidi.{Element, Session}
-  alias Wallabidi.Remote.{Browser, WireProtocol}
+  alias Wallabidi.Remote.Browser
   alias Wallabidi.Remote.CDP.Client, as: CDPClient
   alias Wallabidi.Remote.Dialogs
   alias Wallabidi.Remote.Driver.Spec
@@ -21,7 +21,7 @@ defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
 
   @driver_spec %Spec{
     browser: Browser.Lightpanda,
-    wire_protocol: WireProtocol.CDP,
+    wire_protocol: CDPClient,
     dialogs: Dialogs.Unsupported,
     windows: Windows.Single,
     frames: Frames.Unsupported,

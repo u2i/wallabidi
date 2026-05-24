@@ -152,14 +152,14 @@ defmodule Wallabidi.Remote.Driver.Orchestrator do
   @spec execute_script(Spec.t(), Session.t(), String.t(), list | nil) ::
           {:ok, term} | {:error, term}
   def execute_script(%Spec{} = spec, %Session{} = session, script, args) do
-    spec.wire_protocol.execute_script(session, script, args || [])
+    spec.wire_protocol.evaluate(session, script, args || [])
   end
 
   @doc "Evaluate a JS expression that returns a promise; awaits resolution."
   @spec execute_script_async(Spec.t(), Session.t(), String.t(), list | nil) ::
           {:ok, term} | {:error, term}
   def execute_script_async(%Spec{} = spec, %Session{} = session, script, args) do
-    spec.wire_protocol.execute_script_async(session, script, args || [])
+    spec.wire_protocol.evaluate_async(session, script, args || [])
   end
 
   @doc "Text content of an element."
@@ -254,10 +254,10 @@ defmodule Wallabidi.Remote.Driver.Orchestrator do
   defp do_click(%Spec{browser: browser} = spec, session, element) do
     case browser.click_strategy() do
       :simple ->
-        spec.wire_protocol.simple_click(session, element)
+        spec.wire_protocol.click(session, element)
 
       :classified ->
-        case spec.wire_protocol.classified_click(session, element) do
+        case spec.wire_protocol.click_aware_with_classification(session, element) do
           {:ok, _classification, :ready} ->
             {:ok, nil}
 

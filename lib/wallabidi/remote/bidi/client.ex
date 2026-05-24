@@ -9,14 +9,11 @@ defmodule Wallabidi.Remote.BiDi.Client do
   # layer is unchanged — both clients dispatch through the session's
   # actor pid.
   #
-  # ## Op-by-op state of this file
-  #
-  # Step 1 (this branch) is mechanical translation of CDPClient's
-  # public surface, BiDi-flavored. Things implemented op-by-op as
-  # tests and integration coverage drive them. The orchestration
-  # primitives (await_page_load, register_find/await_find_result,
-  # bootstrap channel) are reused from Transport.Protocol — they
-  # were verified end-to-end in Transport.BiDi phases A/B/C.
+  # Implements `Wallabidi.Remote.WireProtocol` directly — driver Specs
+  # point `wire_protocol: BiDiClient` and the Orchestrator dispatches
+  # straight to these functions, no adapter wrapper in between.
+
+  @behaviour Wallabidi.Remote.WireProtocol
 
   alias Wallabidi.Element
   alias Wallabidi.Remote.BiDi.{Commands, ResponseParser, WebSocketClient}
@@ -1414,5 +1411,47 @@ defmodule Wallabidi.Remote.BiDi.Client do
     Process.unlink(handler)
 
     message
+  end
+
+  @doc """
+  Window viewport size. BiDi's native call is `get_viewport/1`;
+  exposed here as `get_window_size/1` to match the WireProtocol
+  contract used by the Orchestrator.
+  """
+  @spec get_window_size(Session.t()) :: {:ok, %{width: integer, height: integer}} | {:error, term}
+  defdelegate get_window_size(session), to: __MODULE__, as: :get_viewport
+
+  @doc """
+  Resize the viewport. Mirrors `set_viewport/3` under the
+  WireProtocol-matching name.
+  """
+  @spec set_window_size(Session.t(), integer, integer) :: {:ok, nil} | {:error, term}
+  defdelegate set_window_size(session, width, height), to: __MODULE__, as: :set_viewport
+
+  @doc "True when the session's current URL is about:blank or empty."
+  @spec blank_page?(Session.t()) :: boolean
+  def blank_page?(%Session{} = session) do
+    case current_url(session) do
+      {:ok, url} -> url in ["about:blank", ""]
+      _ -> false
+    end
+  end
+
+  @doc """
+  Is the element checked (checkbox / radio) or selected (option)?
+  Routes through the bootstrap dispatch helper so the DOM property is
+  the source of truth.
+  """
+  @spec selected(Session.t(), Element.t()) :: {:ok, boolean} | {:error, term}
+  def selected(%Session{} = session, %Element{} = element) do
+    case call_on_element(
+           session,
+           element,
+           OpsShared.dispatch_fn(),
+           [[["is_selected"]]]
+         ) do
+      {:ok, v} -> {:ok, v == true}
+      err -> err
+    end
   end
 end

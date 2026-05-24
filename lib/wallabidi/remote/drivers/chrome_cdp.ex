@@ -15,7 +15,7 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
   use Wallabidi.Remote.Driver.Generic
 
   alias Wallabidi.{DependencyError, Metadata, Session}
-  alias Wallabidi.Remote.{Browser, Transport, WebSocket, WireProtocol}
+  alias Wallabidi.Remote.{Browser, Transport, WebSocket}
   alias Wallabidi.Remote.CDP.Client, as: CDPClient
   alias Wallabidi.Remote.Chrome.Server, as: ChromeServer
   alias Wallabidi.Remote.Chrome.SharedConnection
@@ -27,7 +27,7 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
 
   @driver_spec %Spec{
     browser: Browser.Chrome,
-    wire_protocol: WireProtocol.CDP,
+    wire_protocol: CDPClient,
     dialogs: Dialogs.ChromeCDP,
     windows: Windows.ChromeCDP,
     frames: Frames.ChromeCDP,

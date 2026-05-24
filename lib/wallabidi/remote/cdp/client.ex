@@ -6,16 +6,16 @@ defmodule Wallabidi.Remote.CDP.Client do
   # callers (drivers, tests) can write `CDPClient.evaluate(s, ...)`
   # without knowing about the Session GenServer or wire-id correlation.
   #
+  # Implements `Wallabidi.Remote.WireProtocol` directly — driver Specs
+  # point `wire_protocol: CDPClient` and the Orchestrator dispatches
+  # straight to these functions, no adapter wrapper in between.
+  #
   # Each function:
   #   1. Constructs the CDP method + params
   #   2. Calls `Session.cdp_send/4`
   #   3. Returns `{:ok, result_map}` or `{:error, reason}`
-  #
-  # No retries, no waiters, no protocol-aware semantics — those are
-  # the Session's job. This module is just the shape adapter.
-  #
-  # Operations are added one at a time, each with an integration test
-  # against a live Lightpanda server. See test/wallabidi/v2/.
+
+  @behaviour Wallabidi.Remote.WireProtocol
 
   alias Wallabidi.{Element, Session}
   alias Wallabidi.Remote.{Bootstrap, OpsShared}
@@ -1583,5 +1583,24 @@ defmodule Wallabidi.Remote.CDP.Client do
 
     _ = handler
     message
+  end
+
+  @doc """
+  Is the element checked (checkbox / radio) or selected (option)?
+  Routes through the bootstrap dispatch helper so the DOM property is
+  the source of truth (the `selected` attribute may not reflect later
+  state changes).
+  """
+  @spec selected(Session.t(), Element.t()) :: {:ok, boolean} | {:error, term}
+  def selected(%Session{} = session, %Element{} = element) do
+    case call_on_element(
+           session,
+           element,
+           OpsShared.dispatch_fn(),
+           [[["is_selected"]]]
+         ) do
+      {:ok, v} -> {:ok, v == true}
+      err -> err
+    end
   end
 end

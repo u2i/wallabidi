@@ -19,12 +19,11 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
   alias Wallabidi.Remote.Transport.BiDi
   alias Wallabidi.Remote.Transport.Protocol
   alias Wallabidi.Remote.Windows
-  alias Wallabidi.Remote.WireProtocol
   alias Wallabidi.Session
 
   @driver_spec %Spec{
     browser: Browser.Chrome,
-    wire_protocol: WireProtocol.BiDi,
+    wire_protocol: BiDiClient,
     dialogs: Dialogs.ChromeBiDi,
     windows: Windows.ChromeBiDi,
     frames: Frames.ChromeBiDi,
