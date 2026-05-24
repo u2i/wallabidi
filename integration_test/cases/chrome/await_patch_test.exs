@@ -74,6 +74,32 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
       |> assert_has(Query.css("#count", text: "1"))
       |> assert_has(Query.css("#message", text: "done"))
     end
+
+    # >1s server work pushes the patch reply PAST the 1s patch-promise
+    # window. The patch-aware click flow falls back to LV ack — total
+    # latency stays close to handle_event time (~2.3s). A simple
+    # await_page_ready_after flow has nothing to fall back to and
+    # ends up burning the full 5s page_ready window before assert_has
+    # retries find the patched DOM.
+    #
+    # Tight 3500ms budget: passes for the patch-aware flow with
+    # margin (handle_event=2s + small overhead); fails for any flow
+    # that has to ride out the 5s page_ready timeout.
+    # Regression guard: with `handle_event` sleeping 2s — past either
+    # flow's 1s patch-promise / patch-arrival window — the post-click
+    # wait must still return shortly after the patch lands (~2020ms
+    # observed on CDP, ~2070ms on BiDi). A bug that fell back to a 5s
+    # page_ready timeout instead of the patch-signal path would blow
+    # this budget.
+    @tag slow: 3500
+    test "click stays within budget when handle_event runs past patch window",
+         %{session: session, live_url: url} do
+      session
+      |> visit("#{url}/counter")
+      |> click(Query.css("#very-slow-inc"))
+      |> assert_has(Query.css("#count", text: "1"))
+      |> assert_has(Query.css("#message", text: "very slow done"))
+    end
   end
 
   describe "await_patch (explicit)" do
