@@ -26,17 +26,16 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
   alias Wallabidi.Remote.Chrome.Server, as: ChromeServer
   alias Wallabidi.Remote.Chrome.SharedConnection
   alias Wallabidi.Remote.Driver.{Orchestrator, Spec}
-  alias Wallabidi.Remote.Drivers.CDP.Shared, as: CDPShared
-  alias Wallabidi.Remote.LiveViewAware
   alias Wallabidi.Remote.{Transport, WebSocket}
   alias Wallabidi.Remote.Transport.Protocol
   alias Wallabidi.Remote.WireProtocol
-  import Wallabidi.Driver.LogChecker
 
   @driver_spec %Spec{
     browser: Browser.Chrome,
     wire_protocol: WireProtocol.CDP,
-    patch_url_fallback?: true
+    patch_url_fallback?: true,
+    log_check_interactions?: true,
+    log_check_accessors?: false
   }
 
   @doc false
@@ -150,84 +149,81 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
   # ----- Driver behaviour delegation (same shape as V2Driver) -----
 
   @impl true
-  def visit(%Session{} = session, url) do
-    check_logs!(session, fn ->
-      result = CDPClient.visit(session, url)
-      _ = LiveViewAware.await_liveview_connected(session)
-      result
-    end)
-  end
+  def visit(%Session{} = session, url), do: Orchestrator.visit(@driver_spec, session, url)
 
   @impl true
-  defdelegate await_patch(session, opts), to: CDPShared
+  def await_patch(%Session{} = session, opts),
+    do: Orchestrator.await_patch(@driver_spec, session, opts)
 
   @impl true
-  defdelegate current_url(session), to: CDPShared
+  def current_url(%Session{} = session), do: Orchestrator.current_url(@driver_spec, session)
 
   @impl true
-  defdelegate current_path(session), to: CDPShared
+  def current_path(%Session{} = session), do: Orchestrator.current_path(@driver_spec, session)
 
   @impl true
-  defdelegate page_source(session), to: CDPShared
+  def page_source(%Session{} = session), do: Orchestrator.page_source(@driver_spec, session)
 
   @impl true
-  defdelegate page_title(session), to: CDPShared
+  def page_title(%Session{} = session), do: Orchestrator.page_title(@driver_spec, session)
 
   @impl true
-  defdelegate cookies(session), to: CDPShared
+  def cookies(%Session{} = session), do: Orchestrator.cookies(@driver_spec, session)
 
   @impl true
-  defdelegate set_cookie(session, name, value), to: CDPShared
+  def set_cookie(%Session{} = session, name, value),
+    do: Orchestrator.set_cookie(@driver_spec, session, name, value)
 
   @impl true
-  defdelegate set_cookie(session, name, value, attrs), to: CDPShared
+  def set_cookie(%Session{} = session, name, value, attrs),
+    do: Orchestrator.set_cookie(@driver_spec, session, name, value, attrs)
 
   @impl true
-  def take_screenshot(%Session{} = session), do: CDPShared.take_screenshot(session)
+  def take_screenshot(%Session{} = session), do: Orchestrator.take_screenshot(@driver_spec, session)
 
-  # Element-scoped screenshot — fall back to a full-page capture on
-  # the element's session. Cropping to the element's bounding rect
-  # would require Page.captureScreenshot's `clip` option threaded
-  # through CDPClient; not strictly required for the tests we
-  # gate on today.
-  def take_screenshot(%Element{} = element) do
-    CDPShared.take_screenshot(Element.root_session(element))
-  end
+  def take_screenshot(%Element{} = element),
+    do: Orchestrator.take_screenshot(@driver_spec, element)
 
   @impl true
-  defdelegate get_window_size(parent), to: CDPShared
+  def get_window_size(parent), do: Orchestrator.get_window_size(@driver_spec, parent)
 
   @impl true
-  defdelegate set_window_size(parent, w, h), to: CDPShared
+  def set_window_size(parent, w, h),
+    do: Orchestrator.set_window_size(@driver_spec, parent, w, h)
 
   @impl true
   def click(%Element{} = element), do: Orchestrator.click(@driver_spec, element)
 
   @impl true
-  defdelegate text(element), to: CDPShared
+  def text(%Element{} = element), do: Orchestrator.text(@driver_spec, element)
 
   @impl true
-  defdelegate attribute(element, name), to: CDPShared
+  def attribute(%Element{} = element, name),
+    do: Orchestrator.attribute(@driver_spec, element, name)
 
   @impl true
-  defdelegate displayed(element), to: CDPShared
+  def displayed(%Element{} = element), do: Orchestrator.displayed(@driver_spec, element)
 
   @impl true
-  defdelegate set_value(element, value), to: CDPShared
+  def set_value(%Element{} = element, value),
+    do: Orchestrator.set_value(@driver_spec, element, value)
 
   @impl true
-  defdelegate clear(element), to: CDPShared
+  def clear(%Element{} = element), do: Orchestrator.clear(@driver_spec, element)
 
-  defdelegate clear(element, opts), to: CDPShared
-
-  @impl true
-  defdelegate find_elements(parent, query), to: CDPShared
+  def clear(%Element{} = element, _opts), do: Orchestrator.clear(@driver_spec, element)
 
   @impl true
-  defdelegate execute_script(session, script, args), to: CDPShared
+  def find_elements(parent, query),
+    do: Orchestrator.find_elements(@driver_spec, parent, query)
 
   @impl true
-  defdelegate execute_script_async(session, script, args), to: CDPShared
+  def execute_script(%Session{} = session, script, args),
+    do: Orchestrator.execute_script(@driver_spec, session, script, args)
+
+  @impl true
+  def execute_script_async(%Session{} = session, script, args),
+    do: Orchestrator.execute_script_async(@driver_spec, session, script, args)
 
   @impl true
   def send_keys(%Session{} = session, keys) when is_list(keys),
@@ -236,18 +232,20 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
   def send_keys(%Session{} = session, key) when is_binary(key) or is_atom(key),
     do: CDPClient.send_keys_to_session(session, [key])
 
-  defdelegate send_keys(element, keys), to: CDPShared
+  def send_keys(%Element{} = element, keys),
+    do: Orchestrator.send_keys(@driver_spec, element, keys)
 
   @impl true
-  defdelegate selected(element), to: CDPShared
+  def selected(%Element{} = element), do: Orchestrator.selected(@driver_spec, element)
 
-  # ----- Mouse/touch/geometry (delegated to CDPClient helpers) -----
+  # ----- Mouse/touch/geometry (delegated through Orchestrator) -----
 
-  defdelegate hover(element), to: CDPShared
-  defdelegate tap(element), to: CDPShared
-  defdelegate touch_down(parent, target, x, y), to: CDPShared
-  defdelegate touch_up(parent), to: CDPShared
-  defdelegate touch_move(parent, x, y), to: CDPShared
+  def hover(%Element{} = element), do: Orchestrator.hover(@driver_spec, element)
+  def tap(%Element{} = element), do: Orchestrator.tap(@driver_spec, element)
+  def touch_down(parent, target, x, y),
+    do: Orchestrator.touch_down(@driver_spec, parent, target, x, y)
+  def touch_up(parent), do: Orchestrator.touch_up(@driver_spec, parent)
+  def touch_move(parent, x, y), do: Orchestrator.touch_move(@driver_spec, parent, x, y)
 
   def touch_scroll(%Element{} = element, x_offset, y_offset) do
     session = Element.root_session(element)
@@ -270,15 +268,17 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
   end
 
   def click(parent, button) when button in [:left, :middle, :right],
-    do: CDPShared.click_at_cursor(parent, button)
+    do: Orchestrator.click_at_cursor(@driver_spec, parent, button)
 
-  defdelegate double_click(parent), to: CDPShared
-  defdelegate button_down(parent, button), to: CDPShared
-  defdelegate button_up(parent, button), to: CDPShared
-  defdelegate move_mouse_by(parent, x_offset, y_offset), to: CDPShared
-  defdelegate element_size(element), to: CDPShared
-  defdelegate element_location(element), to: CDPShared
-  defdelegate blank_page?(session), to: CDPShared
+  def double_click(parent), do: Orchestrator.double_click(@driver_spec, parent)
+  def button_down(parent, button), do: Orchestrator.button_down(@driver_spec, parent, button)
+  def button_up(parent, button), do: Orchestrator.button_up(@driver_spec, parent, button)
+  def move_mouse_by(parent, x_offset, y_offset),
+    do: Orchestrator.move_mouse_by(@driver_spec, parent, x_offset, y_offset)
+  def element_size(%Element{} = element), do: Orchestrator.element_size(@driver_spec, element)
+  def element_location(%Element{} = element),
+    do: Orchestrator.element_location(@driver_spec, element)
+  def blank_page?(%Session{} = session), do: Orchestrator.blank_page?(@driver_spec, session)
 
   # LogChecker calls driver.parse_log/1 on each drained log entry —
   # Wallabidi.Remote.Chrome.Logger raises Wallabidi.JSError on SEVERE entries

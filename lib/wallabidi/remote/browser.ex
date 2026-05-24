@@ -18,11 +18,4 @@ defmodule Wallabidi.Remote.Browser do
     * `:simple` — single click RPC, no flow. Used by Lightpanda.
   """
   @callback click_strategy() :: :classified | :simple
-
-  @doc """
-  Whether to wrap interaction RPCs in `check_logs!` so Chrome's
-  Runtime.consoleAPICalled / exceptionThrown events drained into the
-  test mailbox get inspected and raised as JSError.
-  """
-  @callback wraps_interactions_in_log_check?() :: boolean
 end

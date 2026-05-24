@@ -23,14 +23,11 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
 
   @behaviour Wallabidi.Driver
 
-  import Wallabidi.Driver.LogChecker
-
   alias Wallabidi.{Element, Session}
   alias Wallabidi.Remote.BiDi.Client, as: BiDiClient
   alias Wallabidi.Remote.BiDi.WebSocketClient
   alias Wallabidi.Remote.Browser
   alias Wallabidi.Remote.Driver.{Orchestrator, Spec}
-  alias Wallabidi.Remote.LiveViewAware
   alias Wallabidi.Remote.Transport.BiDi
   alias Wallabidi.Remote.Transport.Protocol
   alias Wallabidi.Remote.WireProtocol
@@ -38,7 +35,9 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
   @driver_spec %Spec{
     browser: Browser.Chrome,
     wire_protocol: WireProtocol.BiDi,
-    patch_url_fallback?: false
+    patch_url_fallback?: false,
+    log_check_interactions?: true,
+    log_check_accessors?: true
   }
 
   @doc false
@@ -167,73 +166,31 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
   # ----- Session-scoped callbacks -----
 
   @impl true
-  def visit(%Session{} = session, url) do
-    result = check_logs!(session, fn -> BiDiClient.visit(session, url) end)
-    _ = await_liveview_connected_v2(session)
-    result
-  end
+  def visit(%Session{} = session, url), do: Orchestrator.visit(@driver_spec, session, url)
 
   @impl true
-  def await_patch(%Session{} = session, opts) do
-    LiveViewAware.arm_and_await(session, Keyword.get(opts, :timeout, 5_000))
-  end
-
-  # Mirrors V2ChromeDriver.await_liveview_connected_v2/1 and
-  # V2Driver.await_liveview_connected_v2/1 — wait up to 5s for
-  # liveSocket.main.joinPending === false on LV pages. Without this,
-  # post-visit interactions can race the channel-join.
-  defp await_liveview_connected_v2(%Session{} = session) do
-    timeout = 5_000
-
-    js = """
-    new Promise(function(resolve) {
-      var deadline = Date.now() + #{timeout};
-      function check() {
-        if (document.readyState === 'loading') {
-          if (Date.now() > deadline) return resolve(false);
-          return setTimeout(check, 20);
-        }
-        if (!document.querySelector('[data-phx-session]')) {
-          return resolve('no-liveview');
-        }
-        var ls = window.liveSocket;
-        if (ls && ls.main && !ls.main.joinPending) return resolve(true);
-        if (Date.now() > deadline) return resolve(false);
-        setTimeout(check, 30);
-      }
-      check();
-    })
-    """
-
-    _ = Wallabidi.Remote.BiDi.Client.evaluate_async(session, js)
-    :ok
-  rescue
-    _ -> :ok
-  end
+  def await_patch(%Session{} = session, opts),
+    do: Orchestrator.await_patch(@driver_spec, session, opts)
 
   @impl true
-  def current_url(%Session{} = session) do
-    check_logs!(session, fn -> BiDiClient.current_url(session) end)
-  end
+  def current_url(%Session{} = session), do: Orchestrator.current_url(@driver_spec, session)
 
   @impl true
-  def current_path(%Session{} = session), do: BiDiClient.current_path(session)
+  def current_path(%Session{} = session), do: Orchestrator.current_path(@driver_spec, session)
 
   @impl true
-  def page_source(%Session{} = session), do: BiDiClient.page_source(session)
+  def page_source(%Session{} = session), do: Orchestrator.page_source(@driver_spec, session)
 
   @impl true
-  def page_title(%Session{} = session) do
-    check_logs!(session, fn -> BiDiClient.page_title(session) end)
-  end
+  def page_title(%Session{} = session), do: Orchestrator.page_title(@driver_spec, session)
 
   @impl true
   def execute_script(%Session{} = session, script, args),
-    do: BiDiClient.evaluate(session, script, args || [])
+    do: Orchestrator.execute_script(@driver_spec, session, script, args)
 
   @impl true
   def execute_script_async(%Session{} = session, script, args),
-    do: BiDiClient.evaluate_async(session, script, args || [])
+    do: Orchestrator.execute_script_async(@driver_spec, session, script, args)
 
   # ----- Element-scoped callbacks -----
 
@@ -241,69 +198,54 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
   def click(%Element{} = element), do: Orchestrator.click(@driver_spec, element)
 
   @impl true
-  def text(%Element{} = element) do
-    BiDiClient.text(Element.root_session(element), element)
-  end
+  def text(%Element{} = element), do: Orchestrator.text(@driver_spec, element)
 
   @impl true
-  def attribute(%Element{} = element, name) do
-    BiDiClient.attribute(Element.root_session(element), element, name)
-  end
+  def attribute(%Element{} = element, name),
+    do: Orchestrator.attribute(@driver_spec, element, name)
 
   @impl true
-  def displayed(%Element{} = element) do
-    BiDiClient.displayed(Element.root_session(element), element)
-  end
+  def displayed(%Element{} = element), do: Orchestrator.displayed(@driver_spec, element)
 
   @impl true
-  def set_value(%Element{} = element, value) do
-    BiDiClient.set_value(Element.root_session(element), element, value)
-  end
+  def set_value(%Element{} = element, value),
+    do: Orchestrator.set_value(@driver_spec, element, value)
 
   @impl true
-  def clear(%Element{} = element) do
-    BiDiClient.clear(Element.root_session(element), element)
-  end
+  def clear(%Element{} = element), do: Orchestrator.clear(@driver_spec, element)
 
+  # ChromeBiDi historically passed `opts` through to BiDiClient.clear/3
+  # whereas CDP drivers ignore it. Preserve that here by going through
+  # BiDiClient directly for the silent path.
   def clear(%Element{} = element, opts) do
     BiDiClient.clear(Element.root_session(element), element, opts)
   end
 
   @impl true
-  def find_elements(parent, query) do
-    %Wallabidi.Query{} = q = ensure_query(query)
-    BiDiClient.find_elements(parent, q)
-  end
+  def find_elements(parent, query),
+    do: Orchestrator.find_elements(@driver_spec, parent, query)
 
   @impl true
   def send_keys(%Session{} = session, keys) when is_list(keys) do
     BiDiClient.send_keys_to_session(session, keys)
   end
 
-  def send_keys(%Element{} = element, keys) do
-    BiDiClient.send_keys(Element.root_session(element), element, keys)
-  end
+  def send_keys(%Element{} = element, keys),
+    do: Orchestrator.send_keys(@driver_spec, element, keys)
 
   @impl true
-  def selected(%Element{} = element) do
-    BiDiClient.call_on_element(
-      Element.root_session(element),
-      element,
-      Wallabidi.Remote.OpsShared.dispatch_fn(),
-      [[["is_selected"]]]
-    )
-  end
+  def selected(%Element{} = element), do: Orchestrator.selected(@driver_spec, element)
 
   # ----- Mouse / touch / geometry -----
 
-  def hover(%Element{} = element), do: BiDiClient.hover(element)
-  def tap(%Element{} = element), do: BiDiClient.tap(element)
+  def hover(%Element{} = element), do: Orchestrator.hover(@driver_spec, element)
+  def tap(%Element{} = element), do: Orchestrator.tap(@driver_spec, element)
 
   def touch_down(parent, target, x, y),
-    do: BiDiClient.touch_down(Element.root_session(parent), target, x, y)
+    do: Orchestrator.touch_down(@driver_spec, parent, target, x, y)
 
-  def touch_up(parent), do: BiDiClient.touch_up(parent)
-  def touch_move(parent, x, y), do: BiDiClient.touch_move(parent, x, y)
+  def touch_up(parent), do: Orchestrator.touch_up(@driver_spec, parent)
+  def touch_move(parent, x, y), do: Orchestrator.touch_move(@driver_spec, parent, x, y)
 
   def touch_scroll(%Element{} = element, x_offset, y_offset) do
     # Use JS scrollBy — touch pointer actions don't reliably trigger
@@ -320,24 +262,20 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
   end
 
   def click(parent, button) when button in [:left, :middle, :right],
-    do: BiDiClient.click_at_cursor(parent, button)
+    do: Orchestrator.click_at_cursor(@driver_spec, parent, button)
 
-  def double_click(parent), do: BiDiClient.double_click(parent)
-  def button_down(parent, button), do: BiDiClient.button_down(parent, button)
-  def button_up(parent, button), do: BiDiClient.button_up(parent, button)
+  def double_click(parent), do: Orchestrator.double_click(@driver_spec, parent)
+  def button_down(parent, button), do: Orchestrator.button_down(@driver_spec, parent, button)
+  def button_up(parent, button), do: Orchestrator.button_up(@driver_spec, parent, button)
 
   def move_mouse_by(parent, x_offset, y_offset),
-    do: BiDiClient.move_mouse_by(parent, x_offset, y_offset)
+    do: Orchestrator.move_mouse_by(@driver_spec, parent, x_offset, y_offset)
 
-  def element_size(%Element{} = element), do: BiDiClient.element_size(element)
-  def element_location(%Element{} = element), do: BiDiClient.element_location(element)
+  def element_size(%Element{} = element), do: Orchestrator.element_size(@driver_spec, element)
+  def element_location(%Element{} = element),
+    do: Orchestrator.element_location(@driver_spec, element)
 
-  def blank_page?(%Session{} = session) do
-    case BiDiClient.current_url(session) do
-      {:ok, url} -> url in ["about:blank", ""]
-      _ -> false
-    end
-  end
+  def blank_page?(%Session{} = session), do: Orchestrator.blank_page?(@driver_spec, session)
 
   # LogChecker calls driver.parse_log/1 on each drained log entry.
   # Wallabidi.Remote.Chrome.Logger raises Wallabidi.JSError on SEVERE entries
@@ -348,42 +286,28 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
   # ----- Cookies / screenshot / window — not implemented yet -----
 
   @impl true
-  def cookies(%Session{} = session), do: BiDiClient.cookies(session)
+  def cookies(%Session{} = session), do: Orchestrator.cookies(@driver_spec, session)
 
   @impl true
   def set_cookie(%Session{} = session, name, value),
-    do: cookie_result(BiDiClient.set_cookie(session, name, value))
+    do: Orchestrator.set_cookie(@driver_spec, session, name, value)
 
   @impl true
   def set_cookie(%Session{} = session, name, value, attrs),
-    do: cookie_result(BiDiClient.set_cookie(session, name, value, Map.new(attrs)))
-
-  defp cookie_result({:ok, _}), do: {:ok, nil}
-  defp cookie_result(other), do: other
+    do: Orchestrator.set_cookie(@driver_spec, session, name, value, attrs)
 
   @impl true
-  def take_screenshot(%Session{} = session) do
-    case BiDiClient.take_screenshot(session) do
-      {:ok, binary} -> binary
-      _ -> ""
-    end
-  end
+  def take_screenshot(%Session{} = session), do: Orchestrator.take_screenshot(@driver_spec, session)
 
-  def take_screenshot(%Element{} = element) do
-    take_screenshot(Element.root_session(element))
-  end
+  def take_screenshot(%Element{} = element),
+    do: Orchestrator.take_screenshot(@driver_spec, element)
 
   @impl true
-  def get_window_size(%Session{} = session) do
-    case BiDiClient.get_viewport(session) do
-      {:ok, %{width: w, height: h}} -> {:ok, %{"width" => w, "height" => h}}
-      other -> other
-    end
-  end
+  def get_window_size(parent), do: Orchestrator.get_window_size(@driver_spec, parent)
 
   @impl true
-  def set_window_size(%Session{} = session, w, h),
-    do: BiDiClient.set_viewport(session, w, h)
+  def set_window_size(parent, w, h),
+    do: Orchestrator.set_window_size(@driver_spec, parent, w, h)
 
   # ----- Dialog stubs -----
 
@@ -519,11 +443,4 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
     Process.get({:wallabidi_bidi_v2_frame, id}, root)
   end
 
-  # ----- Internal -----
-
-  defp ensure_query(%Wallabidi.Query{} = q), do: q
-
-  defp ensure_query({type, selector}) when type in [:css, :xpath] and is_binary(selector) do
-    Wallabidi.Query.css(selector)
-  end
 end
