@@ -24,6 +24,7 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
   alias Wallabidi.Remote.CDP.Client, as: CDPClient
   alias Wallabidi.Remote.Chrome.Server, as: ChromeServer
   alias Wallabidi.Remote.Chrome.SharedConnection
+  alias Wallabidi.Remote.Drivers.CDP.Shared, as: CDPShared
   alias Wallabidi.Remote.LiveViewAware
   alias Wallabidi.Remote.{Transport, WebSocket}
   alias Wallabidi.Remote.Transport.Protocol
@@ -146,65 +147,46 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
   end
 
   @impl true
-  def await_patch(%Session{} = session, opts) do
-    LiveViewAware.arm_and_await(session, Keyword.get(opts, :timeout, 5_000))
-  end
+  defdelegate await_patch(session, opts), to: CDPShared
 
   @impl true
-  def current_url(%Session{} = session), do: CDPClient.current_url(session)
+  defdelegate current_url(session), to: CDPShared
 
   @impl true
-  def current_path(%Session{} = session), do: CDPClient.current_path(session)
+  defdelegate current_path(session), to: CDPShared
 
   @impl true
-  def page_source(%Session{} = session), do: CDPClient.page_source(session)
+  defdelegate page_source(session), to: CDPShared
 
   @impl true
-  def page_title(%Session{} = session), do: CDPClient.page_title(session)
+  defdelegate page_title(session), to: CDPShared
 
   @impl true
-  def cookies(%Session{} = session), do: CDPClient.cookies(session)
+  defdelegate cookies(session), to: CDPShared
 
   @impl true
-  def set_cookie(%Session{} = session, name, value),
-    do: cookie_result(CDPClient.set_cookie(session, name, value))
+  defdelegate set_cookie(session, name, value), to: CDPShared
 
   @impl true
-  def set_cookie(%Session{} = session, name, value, attrs),
-    do: cookie_result(CDPClient.set_cookie(session, name, value, Map.new(attrs)))
-
-  defp cookie_result({:ok, _}), do: {:ok, nil}
-  defp cookie_result(other), do: other
+  defdelegate set_cookie(session, name, value, attrs), to: CDPShared
 
   @impl true
-  def take_screenshot(%Session{} = session) do
-    # Browser.take_screenshot expects a raw binary (not {:ok, binary}).
-    case CDPClient.take_screenshot(session) do
-      {:ok, binary} -> binary
-      _ -> ""
-    end
-  end
+  def take_screenshot(%Session{} = session), do: CDPShared.take_screenshot(session)
 
+  # Element-scoped screenshot — fall back to a full-page capture on
+  # the element's session. Cropping to the element's bounding rect
+  # would require Page.captureScreenshot's `clip` option threaded
+  # through CDPClient; not strictly required for the tests we
+  # gate on today.
   def take_screenshot(%Element{} = element) do
-    # Element-scoped screenshot — fall back to a full-page capture on
-    # the element's session. Cropping to the element's bounding rect
-    # would require Page.captureScreenshot's `clip` option threaded
-    # through CDPClient; not strictly required for the tests we
-    # gate on today.
-    take_screenshot(Element.root_session(element))
+    CDPShared.take_screenshot(Element.root_session(element))
   end
 
   @impl true
-  def get_window_size(%Session{} = parent) do
-    case CDPClient.get_window_size(Element.root_session(parent)) do
-      {:ok, %{width: w, height: h}} -> {:ok, %{"width" => w, "height" => h}}
-      other -> other
-    end
-  end
+  defdelegate get_window_size(parent), to: CDPShared
 
   @impl true
-  def set_window_size(%Session{} = parent, w, h),
-    do: CDPClient.set_window_size(Element.root_session(parent), w, h)
+  defdelegate set_window_size(parent, w, h), to: CDPShared
 
   @impl true
   def click(%Element{} = element) do
@@ -295,45 +277,30 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
   end
 
   @impl true
-  def text(%Element{} = element),
-    do: CDPClient.text(Element.root_session(element), element)
+  defdelegate text(element), to: CDPShared
 
   @impl true
-  def attribute(%Element{} = element, name),
-    do: CDPClient.attribute(Element.root_session(element), element, name)
+  defdelegate attribute(element, name), to: CDPShared
 
   @impl true
-  def displayed(%Element{} = element),
-    do: CDPClient.displayed(Element.root_session(element), element)
+  defdelegate displayed(element), to: CDPShared
 
   @impl true
-  def set_value(%Element{} = element, value),
-    do: CDPClient.set_value(Element.root_session(element), element, value)
+  defdelegate set_value(element, value), to: CDPShared
 
   @impl true
-  def clear(%Element{} = element),
-    do: CDPClient.clear(Element.root_session(element), element)
+  defdelegate clear(element), to: CDPShared
 
-  # Element.fill_in/2 calls driver.clear(element, silent: true) — the
-  # silent flag suppresses input events. Implementation-wise it's a
-  # plain clear; the events will get dispatched via the subsequent
-  # set_value.
-  def clear(%Element{} = element, _opts),
-    do: CDPClient.clear(Element.root_session(element), element)
+  defdelegate clear(element, opts), to: CDPShared
 
   @impl true
-  def find_elements(parent, query) do
-    %Wallabidi.Query{} = q = ensure_query(query)
-    CDPClient.find_elements(parent, q)
-  end
+  defdelegate find_elements(parent, query), to: CDPShared
 
   @impl true
-  def execute_script(%Session{} = session, script, args),
-    do: CDPClient.evaluate(session, script, args || [])
+  defdelegate execute_script(session, script, args), to: CDPShared
 
   @impl true
-  def execute_script_async(%Session{} = session, script, args),
-    do: CDPClient.evaluate_async(session, script, args || [])
+  defdelegate execute_script_async(session, script, args), to: CDPShared
 
   @impl true
   def send_keys(%Session{} = session, keys) when is_list(keys),
@@ -342,39 +309,18 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
   def send_keys(%Session{} = session, key) when is_binary(key) or is_atom(key),
     do: CDPClient.send_keys_to_session(session, [key])
 
-  def send_keys(%Element{} = element, keys),
-    do: CDPClient.send_keys(Element.root_session(element), element, keys)
+  defdelegate send_keys(element, keys), to: CDPShared
 
   @impl true
-  def selected(%Element{} = element) do
-    # `selected?` semantics: true iff the input/option is currently
-    # checked/selected. The browser DOM property (`.checked` or
-    # `.selected`) is the source of truth; the HTML *attribute* may
-    # not reflect later state changes.
-    case CDPClient.call_on_element(
-           Element.root_session(element),
-           element,
-           Wallabidi.Remote.OpsShared.dispatch_fn(),
-           [[["is_selected"]]]
-         ) do
-      {:ok, v} -> {:ok, v == true}
-      err -> err
-    end
-  end
+  defdelegate selected(element), to: CDPShared
 
   # ----- Mouse/touch/geometry (delegated to CDPClient helpers) -----
 
-  def hover(%Element{} = element), do: CDPClient.hover(element)
-
-  def tap(%Element{} = element), do: CDPClient.tap(element)
-
-  def touch_down(parent, target, x, y) do
-    CDPClient.touch_down(Element.root_session(parent), target, x, y)
-  end
-
-  def touch_up(parent), do: CDPClient.touch_up(parent)
-
-  def touch_move(parent, x, y), do: CDPClient.touch_move(parent, x, y)
+  defdelegate hover(element), to: CDPShared
+  defdelegate tap(element), to: CDPShared
+  defdelegate touch_down(parent, target, x, y), to: CDPShared
+  defdelegate touch_up(parent), to: CDPShared
+  defdelegate touch_move(parent, x, y), to: CDPShared
 
   def touch_scroll(%Element{} = element, x_offset, y_offset) do
     session = Element.root_session(element)
@@ -396,22 +342,16 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
     end
   end
 
-  def click(parent, button) when button in [:left, :middle, :right] do
-    CDPClient.click_at_cursor(parent, button)
-  end
+  def click(parent, button) when button in [:left, :middle, :right],
+    do: CDPShared.click_at_cursor(parent, button)
 
-  def double_click(parent), do: CDPClient.double_click(parent)
-  def button_down(parent, button), do: CDPClient.button_down(parent, button)
-  def button_up(parent, button), do: CDPClient.button_up(parent, button)
-
-  def move_mouse_by(parent, x_offset, y_offset),
-    do: CDPClient.move_mouse_by(parent, x_offset, y_offset)
-
-  def element_size(%Element{} = element), do: CDPClient.element_size(element)
-
-  def element_location(%Element{} = element), do: CDPClient.element_location(element)
-
-  def blank_page?(%Session{} = session), do: CDPClient.blank_page?(session)
+  defdelegate double_click(parent), to: CDPShared
+  defdelegate button_down(parent, button), to: CDPShared
+  defdelegate button_up(parent, button), to: CDPShared
+  defdelegate move_mouse_by(parent, x_offset, y_offset), to: CDPShared
+  defdelegate element_size(element), to: CDPShared
+  defdelegate element_location(element), to: CDPShared
+  defdelegate blank_page?(session), to: CDPShared
 
   # LogChecker calls driver.parse_log/1 on each drained log entry —
   # Wallabidi.Remote.Chrome.Logger raises Wallabidi.JSError on SEVERE entries
@@ -599,12 +539,6 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
   def focus_parent_frame(_), do: {:ok, nil}
 
   # ----- Internal -----
-
-  defp ensure_query(%Wallabidi.Query{} = q), do: q
-
-  defp ensure_query({type, selector}) when type in [:css, :xpath] and is_binary(selector) do
-    Wallabidi.Query.css(selector)
-  end
 
   @doc false
   def remote_url do
