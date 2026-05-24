@@ -1,19 +1,21 @@
 defmodule Wallabidi.Remote.CDP.Client do
   @moduledoc false
 
-  # Thin façade over `Wallabidi.Remote.Transport.Session` providing CDP-shaped
-  # operations (`Page.navigate`, `Runtime.evaluate`, etc.). Exists so
-  # callers (drivers, tests) can write `CDPClient.evaluate(s, ...)`
-  # without knowing about the Session GenServer or wire-id correlation.
+  # CDP-shaped façade over `Wallabidi.Remote.Transport.Protocol` —
+  # operations like `Page.navigate`, `Runtime.evaluate`, etc. Callers
+  # (drivers, tests) work in Wallabidi's normalized shape and don't
+  # need to know about wire-id correlation, session GenServers, or
+  # the per-method CDP param schemas.
   #
   # Implements `Wallabidi.Remote.WireProtocol` directly — driver Specs
   # point `wire_protocol: CDPClient` and the Orchestrator dispatches
   # straight to these functions, no adapter wrapper in between.
   #
-  # Each function:
-  #   1. Constructs the CDP method + params
-  #   2. Calls `Session.cdp_send/4`
-  #   3. Returns `{:ok, result_map}` or `{:error, reason}`
+  # The BiDi counterpart at `Wallabidi.Remote.BiDi.Client` exposes the
+  # same surface area in the same section layout — diff them to see
+  # which differences are genuine (mostly: wire method names + param
+  # shapes) versus which are protocol-mandated (frame focus, element
+  # ref types, mouse/touch input model).
 
   @behaviour Wallabidi.Remote.WireProtocol
 
@@ -481,8 +483,10 @@ defmodule Wallabidi.Remote.CDP.Client do
   `change` events. Suitable for `<input>`, `<textarea>`, and
   `<select>`. For `<select>`, sets `.value` and synthesises change.
 
-  Mirrors today's CDPClient.set_value/2 (event-dispatching) shape —
-  unlike clear/2 which has a `silent` mode that skips events.
+  For file inputs, uses CDP's `DOM.setFileInputFiles` (which needs
+  a real V8 objectId — the lazy ref is materialized for this path).
+  Lightpanda doesn't implement `DOM.setFileInputFiles`; on those
+  engines we fall back to the shared DataTransfer JS trick.
   """
   @spec set_value(Session.t(), Element.t(), term) :: {:ok, nil} | {:error, term}
   def set_value(%Session{} = session, %Element{} = element, value) do
@@ -620,10 +624,9 @@ defmodule Wallabidi.Remote.CDP.Client do
   # file-input handling (CDP-specific via DOM.setFileInputFiles)
   # and the shared DOM path.
 
-  @doc """
   # clear/3 — provided by Wallabidi.Remote.OpsShared.
 
-  @doc \"""
+  @doc """
   Sends keys to the element. `keys` is a list of string segments
   or special-key atoms (`:enter`, `:tab`, ...). For pure-text
   input we use the shared fast path (no CDP key events — keeps
@@ -793,8 +796,9 @@ defmodule Wallabidi.Remote.CDP.Client do
   Like `click_aware/3` but returns the classification AND a status
   tag (`:ready` or `:timeout`) so callers can branch on the
   classification before deciding whether a page-ready timeout is
-  actually an error. Patch-classified timeouts in particular are
-  silent in the legacy click pipeline.
+  actually an error. Patch-classified timeouts are swallowed by
+  the Orchestrator (assert_has retries take it from there); only
+  navigate/full_page classifications surface a timeout as an error.
   """
   @spec click_aware_with_classification(Session.t(), Element.t(), keyword) ::
           {:ok, String.t(), :ready | :timeout} | {:error, term}

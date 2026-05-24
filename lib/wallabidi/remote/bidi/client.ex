@@ -1,17 +1,21 @@
 defmodule Wallabidi.Remote.BiDi.Client do
   @moduledoc false
 
-  # BiDi-flavored counterpart to CDPClient.
-  #
-  # Same operation surface (visit, find_elements, click, evaluate,
-  # text, attribute, ...) but every wire call goes out as a
-  # WebDriver-BiDi command instead of CDP. The Transport.Protocol
-  # layer is unchanged — both clients dispatch through the session's
-  # actor pid.
+  # BiDi-shaped façade over `Wallabidi.Remote.Transport.Protocol` —
+  # operations like `browsingContext.navigate`, `script.evaluate`,
+  # etc. Callers (drivers, tests) work in Wallabidi's normalized shape
+  # and don't need to know about wire-id correlation, session
+  # GenServers, or the per-method BiDi param schemas.
   #
   # Implements `Wallabidi.Remote.WireProtocol` directly — driver Specs
   # point `wire_protocol: BiDiClient` and the Orchestrator dispatches
   # straight to these functions, no adapter wrapper in between.
+  #
+  # The CDP counterpart at `Wallabidi.Remote.CDP.Client` exposes the
+  # same surface area in the same section layout — diff them to see
+  # which differences are genuine (mostly: wire method names + param
+  # shapes) versus which are protocol-mandated (frame focus, element
+  # ref types, mouse/touch input model).
 
   @behaviour Wallabidi.Remote.WireProtocol
 
@@ -650,9 +654,9 @@ defmodule Wallabidi.Remote.BiDi.Client do
   def set_value(%Session{} = session, %Element{} = element, value) do
     case file_input?(session, element) do
       {:ok, true} ->
-        # set_file_value uses a custom JS body (DataTransfer), not the
-        # W.run dispatcher — so a lazy element can't be passed through.
-        # Materialize to a real sharedId first.
+        # The DataTransfer helper uses a custom JS body, not the W.run
+        # dispatcher, so a lazy element can't pass through — materialize
+        # to a real sharedId first.
         case materialize(session, element) do
           {:ok, eager} -> set_file_input_via_data_transfer(session, eager, to_string(value))
           {:error, _} = err -> err
@@ -711,9 +715,10 @@ defmodule Wallabidi.Remote.BiDi.Client do
   # file-input branch (DataTransfer trick) and the shared DOM path.
 
   @doc """
-  Send text to an element. List form joins; atom form (special keys
-  like :tab, :enter) is not supported on the BiDi path yet — would
-  require `input.performActions` with a key-source action sequence.
+  Sends keys to the element. `keys` is a list of string segments
+  or special-key atoms (`:enter`, `:tab`, ...). For pure-text
+  input we use the shared fast path. For mixed input we focus the
+  element and dispatch real key events via `input.performActions`.
   """
   @spec send_keys(Session.t(), Element.t(), [String.t()] | String.t()) ::
           {:ok, nil} | {:error, term}
