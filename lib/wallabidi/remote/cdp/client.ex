@@ -280,6 +280,25 @@ defmodule Wallabidi.Remote.CDP.Client do
   end
 
   @doc """
+  Evaluate a JS expression that returns a Promise; awaits resolution
+  and returns the resolved value. Equivalent to `Runtime.evaluate`
+  with `awaitPromise: true`.
+  """
+  @spec evaluate_async(Session.t(), String.t()) :: {:ok, term} | {:error, term}
+  def evaluate_async(%Session{} = session, expression) when is_binary(expression) do
+    case cdp_send(session, "Runtime.evaluate", %{
+           expression: expression,
+           awaitPromise: true,
+           returnByValue: true
+         }) do
+      {:ok, %{"result" => %{"value" => v}}} -> {:ok, v}
+      {:ok, %{"result" => %{"type" => "undefined"}}} -> {:ok, nil}
+      {:ok, %{"exceptionDetails" => details}} -> {:error, {:js_exception, details}}
+      other -> other
+    end
+  end
+
+  @doc """
   Async-script semantics: the script's last argument is a callback that
   resolves the awaited promise. Mirrors WebDriver's
   `Execute Async Script` so test code like
@@ -341,11 +360,12 @@ defmodule Wallabidi.Remote.CDP.Client do
   # ----- Element-scoped operations -----
 
   @doc """
-  Runs a JS function against the given element's `objectId` (`this`),
-  optionally with positional args. Returns the serialised value.
+  Runs a JS function with `this` bound to the given element,
+  optionally with positional args. Returns the deserialised value,
+  or `{:error, :stale_reference}` if the element handle has been
+  invalidated (e.g. by an intervening navigation).
 
   Equivalent to `Runtime.callFunctionOn` with `returnByValue: true`.
-
   Used as a building block for element-scoped operations (text,
   attribute, displayed, etc.).
   """
@@ -992,7 +1012,7 @@ defmodule Wallabidi.Remote.CDP.Client do
 
   # ----- Mouse / touch -----
 
-  @doc "Move the virtual mouse to the element's center."
+  @doc "Hover the mouse over an element (pointer move to its center)."
   @spec hover(Element.t()) :: {:ok, nil} | {:error, term}
   def hover(%Element{} = element) do
     case element_center(element) do
@@ -1005,7 +1025,7 @@ defmodule Wallabidi.Remote.CDP.Client do
     end
   end
 
-  @doc "Synthesize a single tap (touchStart + touchEnd) at element center."
+  @doc "Synthesize a tap at the element's center via touch input source."
   @spec tap(Element.t()) :: {:ok, nil} | {:error, term}
   def tap(%Element{} = element) do
     session = Element.root_session(element)
@@ -1020,7 +1040,11 @@ defmodule Wallabidi.Remote.CDP.Client do
     end
   end
 
-  @doc "Press a touch point at element top-left + offset."
+  @doc """
+  Press a touch point. With an element, lands at the element's
+  top-left corner plus offsets; without one, lands at the supplied
+  absolute coordinates.
+  """
   @spec touch_down(Session.t(), Element.t() | nil, integer, integer) ::
           {:ok, nil} | {:error, term}
   def touch_down(%Session{} = session, nil, x, y) do
@@ -1047,21 +1071,21 @@ defmodule Wallabidi.Remote.CDP.Client do
   @spec touch_move(Session.t() | Element.t(), integer, integer) :: {:ok, nil}
   def touch_move(parent, x, y), do: dispatch_touch(parent, "touchMove", x, y)
 
-  @doc "Press a mouse button at the current cursor position."
+  @doc "Press a mouse button at the cursor's current position."
   @spec button_down(Session.t() | Element.t(), :left | :middle | :right) :: {:ok, nil}
   def button_down(parent, button) do
     {x, y} = get_mouse_pos(parent)
     dispatch_mouse(parent, "mousePressed", x, y, button: mouse_button(button), clickCount: 1)
   end
 
-  @doc "Release a mouse button at the current cursor position."
+  @doc "Release a mouse button at the cursor's current position."
   @spec button_up(Session.t() | Element.t(), :left | :middle | :right) :: {:ok, nil}
   def button_up(parent, button) do
     {x, y} = get_mouse_pos(parent)
     dispatch_mouse(parent, "mouseReleased", x, y, button: mouse_button(button), clickCount: 1)
   end
 
-  @doc "Mouse-pos-aware click: press+release at current cursor position."
+  @doc "Press+release a mouse button at the cursor's current position."
   @spec click_at_cursor(Session.t() | Element.t(), :left | :middle | :right) :: {:ok, nil}
   def click_at_cursor(parent, button) do
     {x, y} = get_mouse_pos(parent)
@@ -1070,7 +1094,7 @@ defmodule Wallabidi.Remote.CDP.Client do
     dispatch_mouse(parent, "mouseReleased", x, y, button: btn, clickCount: 1)
   end
 
-  @doc "Move mouse cursor by an offset from its last known position."
+  @doc "Move the mouse cursor by an offset from its current position."
   @spec move_mouse_by(Session.t() | Element.t(), integer, integer) :: {:ok, nil}
   def move_mouse_by(parent, x_offset, y_offset) do
     {cx, cy} = get_mouse_pos(parent)
@@ -1080,7 +1104,7 @@ defmodule Wallabidi.Remote.CDP.Client do
     dispatch_mouse(parent, "mouseMoved", nx, ny)
   end
 
-  @doc "Double-click at the current cursor position."
+  @doc "Double-click at the cursor's current position."
   @spec double_click(Session.t() | Element.t()) :: {:ok, nil}
   def double_click(parent) do
     {x, y} = get_mouse_pos(parent)
@@ -1142,10 +1166,12 @@ defmodule Wallabidi.Remote.CDP.Client do
   end
 
   @doc """
-  Sets a cookie. `attrs` may include any standard CDP `setCookie`
-  fields (`url`, `domain`, `path`, `expires`, `secure`, `httpOnly`,
-  `sameSite`); a `:url` is helpful when you don't have a known domain
-  and just want the cookie scoped to the current page.
+  Sets a cookie. `attrs` accepts the standard WebDriver attribute
+  keys (`:domain`, `:path`, `:secure`, `:httpOnly`, `:expiry`,
+  `:sameSite`) — `Wallabidi.Remote.Cookies` translates `:expiry` to
+  CDP's `:expires` and normalises `:sameSite` to PascalCase. A
+  `:url` may also be supplied; when neither `:url` nor `:domain` is
+  given, the current page URL is used.
   """
   @spec set_cookie(Session.t(), String.t(), String.t(), map) ::
           {:ok, nil} | {:error, term}
@@ -1198,10 +1224,7 @@ defmodule Wallabidi.Remote.CDP.Client do
 
   # ----- Screenshot + window size -----
 
-  @doc """
-  Captures a PNG screenshot of the current page (viewport).
-  Returns the raw binary (not base64).
-  """
+  @doc "Capture a PNG screenshot of the current viewport. Returns raw binary."
   @spec take_screenshot(Session.t()) :: {:ok, binary} | {:error, term}
   def take_screenshot(%Session{} = session) do
     case cdp_send(session, "Page.captureScreenshot", %{format: "png"}) do
@@ -1216,7 +1239,7 @@ defmodule Wallabidi.Remote.CDP.Client do
     end
   end
 
-  @doc "Returns the current viewport size as `{:ok, %{width: w, height: h}}`."
+  @doc "Read the current viewport size in CSS pixels."
   @spec get_window_size(Session.t()) ::
           {:ok, %{width: non_neg_integer, height: non_neg_integer}} | {:error, term}
   def get_window_size(%Session{} = session) do
@@ -1242,9 +1265,11 @@ defmodule Wallabidi.Remote.CDP.Client do
   end
 
   @doc """
-  Resizes the viewport (and optionally the device) via
-  `Emulation.setDeviceMetricsOverride`. Pass 0 for `device_scale_factor`
-  / `mobile` to use defaults.
+  Set the viewport size (CSS pixels) via
+  `Emulation.setDeviceMetricsOverride`. The requested size is also
+  stashed in a JS global and queued onto every future document so
+  it persists across navigations — engines that don't implement
+  Emulation (Lightpanda) read from the stash via `get_window_size/1`.
   """
   @spec set_window_size(Session.t(), non_neg_integer, non_neg_integer) ::
           {:ok, nil} | {:error, term}

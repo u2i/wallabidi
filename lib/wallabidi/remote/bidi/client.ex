@@ -81,20 +81,34 @@ defmodule Wallabidi.Remote.BiDi.Client do
   # ----- Script evaluation -----
 
   @doc """
-  Evaluate a JS expression in the current browsing context's realm.
-  Returns the deserialized value.
+  Runs a JS expression in the current browsing context's realm and
+  returns the deserialised value. Equivalent to `script.evaluate`
+  with `awaitPromise: false`.
 
-  When `args` is empty, treats `expression` as a raw expression
-  (BiDi `script.evaluate`). When args are provided OR the
-  expression contains a `return`, wraps it in a function and uses
-  `script.callFunction` so `return` and `arguments[]` references
-  work like the user-facing `execute_script` API expects.
+  Examples:
+
+      iex> evaluate(session, "1 + 1")
+      {:ok, 2}
+
+      iex> evaluate(session, "document.title")
+      {:ok, "Wallabidi Test"}
   """
   @spec evaluate(Session.t(), String.t()) :: {:ok, term} | {:error, term}
   def evaluate(%Session{} = session, expression) when is_binary(expression) do
     do_eval_expression(session, expression)
   end
 
+  @doc """
+  Like `evaluate/2` but threads `args` into the script via
+  `arguments[]`. Wraps the body so `return X` and `arguments[0]`
+  references work like the user-facing `execute_script` API expects.
+
+  When the script has no `return`/`arguments` references AND no args
+  are provided, falls back to the raw `evaluate/2` path so a bare
+  expression like `"2 + 2"` doesn't get wrapped (which would yield
+  `undefined`). Callers who want plain expression evaluation should
+  use `evaluate/2`.
+  """
   @spec evaluate(Session.t(), String.t(), list) :: {:ok, term} | {:error, term}
   def evaluate(%Session{} = session, expression, args)
       when is_binary(expression) and is_list(args) do
@@ -127,8 +141,9 @@ defmodule Wallabidi.Remote.BiDi.Client do
   end
 
   @doc """
-  Evaluate a JS expression and await its returned Promise. Mirrors
-  `evaluate/2` for the case where the expression yields a thenable.
+  Evaluate a JS expression that returns a Promise; awaits resolution
+  and returns the resolved value. Equivalent to `script.evaluate`
+  with `awaitPromise: true`.
   """
   @spec evaluate_async(Session.t(), String.t()) :: {:ok, term} | {:error, term}
   def evaluate_async(%Session{} = session, expression) when is_binary(expression) do
@@ -145,10 +160,10 @@ defmodule Wallabidi.Remote.BiDi.Client do
   end
 
   @doc """
-  Run an asynchronous user script — the user's snippet is wrapped so
-  the final `arguments[arguments.length - 1]` is a `__resolve`
-  callback they invoke with the eventual value. Mirrors
-  CDPClient.evaluate_async/3.
+  Async-script semantics: the script's last argument is a callback that
+  resolves the awaited promise. Mirrors WebDriver's
+  `Execute Async Script` so test code like
+  `arguments[arguments.length - 1](value)` works.
   """
   @spec evaluate_async(Session.t(), String.t(), list) :: {:ok, term} | {:error, term}
   def evaluate_async(%Session{} = session, expression, args)
@@ -259,11 +274,14 @@ defmodule Wallabidi.Remote.BiDi.Client do
   # ----- Element-scoped ops -----
 
   @doc """
-  Run a JS function with `this` bound to the given element.
-  BiDi's `script.callFunction` accepts a `this` argument — pass it
-  the element's sharedId so the function body sees the live DOM
-  node. Returns the deserialized value, or `{:error, :stale_reference}`
-  for a detached node sentinel.
+  Runs a JS function with `this` bound to the given element,
+  optionally with positional args. Returns the deserialised value,
+  or `{:error, :stale_reference}` if the element handle has been
+  invalidated (e.g. by an intervening navigation).
+
+  Equivalent to `script.callFunction` with the element's sharedId
+  as the `this` argument. Used as a building block for element-
+  scoped operations (text, attribute, displayed, etc.).
   """
   @spec call_on_element(Session.t(), Element.t(), String.t(), [term], keyword) ::
           {:ok, term} | {:error, term}
@@ -584,12 +602,18 @@ defmodule Wallabidi.Remote.BiDi.Client do
   @doc """
   LV-aware click. Captures `pre_page_id` BEFORE the click, classifies
   the element to decide what to await, then issues the click and
-  blocks for the appropriate signal. Mirrors CDPClient.click_aware
-  shape — same primitive contract, BiDi underneath.
+  blocks for the appropriate signal:
+
+    * `"none"` — JS-only interaction (hash href, target=_blank).
+      Returns immediately, no wait.
+    * `"patch"` / `"navigate"` / `"full_page"` — awaits the next
+      `page_ready` notification. The bootstrap's onPatchEnd hook
+      bumps pageId on every LV patch, and a fresh document fires
+      a new page_ready, so one signal covers all three cases.
 
   Returns `{:ok, classification}` on success, `{:error, :timeout}`
-  if the expected signal didn't arrive, or `{:error, term}` for
-  transport errors.
+  if the expected signal didn't arrive within `:timeout` (default
+  5_000 ms), or `{:error, term}` for transport errors.
   """
   @spec click_aware(Session.t(), Element.t(), keyword) ::
           {:ok, String.t()} | {:error, term}
@@ -602,9 +626,12 @@ defmodule Wallabidi.Remote.BiDi.Client do
   end
 
   @doc """
-  Like `click_aware/3` but returns a status tag (`:ready` or
-  `:timeout`) so callers can handle patch-classified timeouts
-  silently — same shape as CDPClient.click_aware_with_classification.
+  Like `click_aware/3` but returns the classification AND a status
+  tag (`:ready` or `:timeout`) so callers can branch on the
+  classification before deciding whether a page-ready timeout is
+  actually an error. Patch-classified timeouts are swallowed by
+  the Orchestrator (assert_has retries take it from there); only
+  navigate/full_page classifications surface a timeout as an error.
   """
   @spec click_aware_with_classification(Session.t(), Element.t(), keyword) ::
           {:ok, String.t(), :ready | :timeout} | {:error, term}
@@ -640,15 +667,14 @@ defmodule Wallabidi.Remote.BiDi.Client do
   # click/2 — provided by Wallabidi.Remote.OpsShared.
 
   @doc """
-  DOM-based set_value. Handles checkboxes, radios, options, text
-  inputs, AND file inputs.
+  Sets the value of an input element and dispatches `input` and
+  `change` events. Suitable for `<input>`, `<textarea>`, and
+  `<select>`. For `<select>`, sets `.value` and synthesises change.
 
-  File inputs use a DataTransfer + File trick — the browser's
-  security model rejects `el.value = "/path"` on file inputs, but
-  fabricating an empty File and assigning it via DataTransfer
-  populates `el.files` and dispatches the expected `change` event.
-  Wallabidi tests only check `.value` (which the browser exposes
-  as `C:\\fakepath\\<basename>`), so file content isn't needed.
+  For file inputs, uses the shared DataTransfer JS trick (BiDi has
+  no native equivalent to CDP's `DOM.setFileInputFiles` — the JS
+  fallback is the only path). The browser exposes `.value` as
+  `C:\\fakepath\\<basename>`, so file content isn't needed.
   """
   @spec set_value(Session.t(), Element.t(), term) :: {:ok, nil} | {:error, term}
   def set_value(%Session{} = session, %Element{} = element, value) do
@@ -851,9 +877,9 @@ defmodule Wallabidi.Remote.BiDi.Client do
   # ----- Cookies -----
 
   @doc """
-  Fetch cookies for the session's browsing context. Partitioned by
-  context, mirroring the legacy BiDi driver — sessions can't see
-  each other's cookies even when sharing the underlying server.
+  Returns the cookies visible to the current page. Partitioned by
+  browsing context so sessions sharing the underlying server can't
+  see each other's cookies.
   """
   @spec cookies(Session.t()) :: {:ok, [map]} | {:error, term}
   def cookies(%Session{browsing_context: ctx} = session) do
@@ -867,9 +893,12 @@ defmodule Wallabidi.Remote.BiDi.Client do
   end
 
   @doc """
-  Set a cookie scoped to the session's browsing context. Accepts
-  the standard WebDriver attribute keys (`:domain`, `:path`,
-  `:secure`, `:httpOnly`, `:expiry`).
+  Sets a cookie scoped to the session's browsing context. `attrs`
+  accepts the standard WebDriver attribute keys (`:domain`, `:path`,
+  `:secure`, `:httpOnly`, `:expiry`, `:sameSite`) —
+  `Wallabidi.Remote.Cookies` normalises `:sameSite` to BiDi's
+  lowercase form. Defaults `:domain` to `"localhost"` and `:path` to
+  `"/"` when not provided.
   """
   @spec set_cookie(Session.t(), String.t(), String.t(), map | keyword) ::
           {:ok, nil} | {:error, term}

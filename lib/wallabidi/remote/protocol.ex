@@ -31,17 +31,8 @@ defmodule Wallabidi.Remote.Protocol do
   def eval_async(session, js, timeout \\ 10_000)
 
   def eval_async(%Session{driver: driver} = session, js, _timeout)
-      when driver in [Wallabidi.Remote.Drivers.LightpandaCDP, Wallabidi.Remote.Drivers.ChromeCDP] do
-    case Wallabidi.Remote.CDP.Client.cdp_send(session, "Runtime.evaluate", %{
-           expression: js,
-           awaitPromise: true,
-           returnByValue: true
-         }) do
-      {:ok, %{"result" => %{"value" => v}}} -> {:ok, v}
-      {:ok, %{"result" => %{"type" => "undefined"}}} -> {:ok, nil}
-      other -> other
-    end
-  end
+      when driver in [Wallabidi.Remote.Drivers.LightpandaCDP, Wallabidi.Remote.Drivers.ChromeCDP],
+      do: Wallabidi.Remote.CDP.Client.evaluate_async(session, js)
 
   def eval_async(%Session{driver: Wallabidi.Remote.Drivers.ChromeBiDi} = session, js, _timeout),
     do: Wallabidi.Remote.BiDi.Client.evaluate_async(session, js)
