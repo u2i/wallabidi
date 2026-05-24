@@ -682,21 +682,20 @@ defmodule Wallabidi.Remote.Transport.Session do
   end
 
   def handle_info({:find_timeout, query_id}, state) do
-    case Map.pop(state.find_waiters, query_id) do
-      {nil, _} ->
+    case Map.get(state.find_waiters, query_id) do
+      nil ->
         {:noreply, state}
 
-      {{:resolved, _}, rest} ->
-        # Already resolved; let await_find_result harvest it.
-        {:noreply,
-         %{state | find_waiters: Map.put(rest, query_id, get_in(state.find_waiters, [query_id]))}}
+      {:resolved, _} ->
+        # Already resolved — keep the entry; await_find_result will pop it.
+        {:noreply, state}
 
-      {{:pending, _ref, nil}, rest} ->
-        {:noreply, %{state | find_waiters: rest}}
+      {:pending, _ref, nil} ->
+        {:noreply, %{state | find_waiters: Map.delete(state.find_waiters, query_id)}}
 
-      {{:pending, _ref, from}, rest} ->
+      {:pending, _ref, from} ->
         GenServer.reply(from, {:timeout, 0})
-        {:noreply, %{state | find_waiters: rest}}
+        {:noreply, %{state | find_waiters: Map.delete(state.find_waiters, query_id)}}
     end
   end
 

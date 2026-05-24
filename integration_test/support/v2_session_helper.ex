@@ -40,7 +40,6 @@ defmodule Wallabidi.Integration.V2SessionHelper do
       url: "about:blank",
       session_url: "about:blank",
       driver: __MODULE__,
-      protocol: nil,
       bidi_pid: ws_pid,
       browsing_context: session_id,
       capabilities: %{

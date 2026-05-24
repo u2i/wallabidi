@@ -84,7 +84,6 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
       url: "about:blank",
       session_url: "about:blank",
       driver: __MODULE__,
-      protocol: nil,
       browsing_context: nil,
       capabilities: Keyword.get(opts, :capabilities, %{}) |> Map.new()
     }

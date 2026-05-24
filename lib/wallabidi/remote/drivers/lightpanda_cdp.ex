@@ -103,7 +103,6 @@ defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
       url: "about:blank",
       session_url: "about:blank",
       driver: __MODULE__,
-      protocol: nil,
       browsing_context: nil,
       capabilities: %{
         flat_session_id: true,
@@ -139,7 +138,6 @@ defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
         url: "about:blank",
         session_url: "about:blank",
         driver: __MODULE__,
-        protocol: nil,
         bidi_pid: acquired.ws_pid,
         browsing_context: acquired.session_id,
         capabilities: acquired.capabilities
