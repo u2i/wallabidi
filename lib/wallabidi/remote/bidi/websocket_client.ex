@@ -118,8 +118,13 @@ defmodule Wallabidi.Remote.BiDi.WebSocketClient do
         write_concurrency: true
       ])
 
+    # See `Wallabidi.Remote.WebSocket.init/1` for the rationale on the
+    # explicit `Host: localhost` header — Chromium 148 rejects upgrades
+    # whose Host isn't `localhost` or an IP literal.
+    upgrade_headers = [{"host", "localhost"}]
+
     with {:ok, conn} <- Mint.HTTP.connect(http_scheme, uri.host, port),
-         {:ok, conn, ref} <- Mint.WebSocket.upgrade(ws_scheme, conn, path, []) do
+         {:ok, conn, ref} <- Mint.WebSocket.upgrade(ws_scheme, conn, path, upgrade_headers) do
       {:ok, %__MODULE__{conn: conn, ref: ref, subscribers_table: table}}
     else
       {:error, reason} ->
@@ -252,6 +257,22 @@ defmodule Wallabidi.Remote.BiDi.WebSocketClient do
     end
 
     %{state | status: status}
+  end
+
+  # If the upgrade was rejected (non-101 status), drop the response body
+  # and trailing `:done`. Without this, `Mint.WebSocket.decode/2` would
+  # be called with `websocket: nil` and raise on `:buffer`, masking the
+  # real cause (e.g. Chromium 148's Host-header rejection).
+  defp process_response({:data, ref, data}, %{ref: ref, websocket: nil, status: status} = state) do
+    Logger.error(
+      "BiDi WebSocket upgrade rejected (status #{status}): #{inspect(String.slice(data, 0, 200))}"
+    )
+
+    state
+  end
+
+  defp process_response({:done, ref}, %{ref: ref, websocket: nil} = state) do
+    state
   end
 
   defp process_response({:headers, ref, headers}, %{ref: ref, status: 101} = state) do

@@ -154,8 +154,17 @@ defmodule Wallabidi.Remote.WebSocket do
         write_concurrency: true
       ])
 
+    # Chromium 148 tightened DevTools' host allowlist: the upgrade
+    # request must carry `Host: localhost` (or an IP literal) or
+    # Chrome replies 500 "Host header is specified and is not an IP
+    # address or localhost." That bites docker-sibling topologies
+    # where the WS URL targets a hostname like `chrome:9222`.
+    # /json/version discovery already passes Host: localhost; mirror
+    # it here so both legs of the handshake match.
+    upgrade_headers = [{"host", "localhost"}]
+
     with {:ok, conn} <- Mint.HTTP.connect(http_scheme, uri.host, port),
-         {:ok, conn, ref} <- Mint.WebSocket.upgrade(ws_scheme, conn, path, []) do
+         {:ok, conn, ref} <- Mint.WebSocket.upgrade(ws_scheme, conn, path, upgrade_headers) do
       {:ok, %__MODULE__{conn: conn, ref: ref, subscribers_table: table}}
     else
       {:error, reason} ->
@@ -268,6 +277,22 @@ defmodule Wallabidi.Remote.WebSocket do
     end
 
     %{state | status: status}
+  end
+
+  # If the upgrade was rejected (non-101 status), drop body data and
+  # the trailing `:done`. Without this guard, `Mint.WebSocket.decode/2`
+  # would be called with `websocket: nil` and raise on `:buffer`,
+  # masking the real cause (e.g. Chromium 148's Host-header rejection).
+  defp process_response({:data, ref, data}, %{ref: ref, websocket: nil, status: status} = state) do
+    Logger.error(
+      "WebSocket upgrade rejected (status #{status}): #{inspect(String.slice(data, 0, 200))}"
+    )
+
+    state
+  end
+
+  defp process_response({:done, ref}, %{ref: ref, websocket: nil} = state) do
+    state
   end
 
   defp process_response({:headers, ref, headers}, %{ref: ref, status: 101} = state) do

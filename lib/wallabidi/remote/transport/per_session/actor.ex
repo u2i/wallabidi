@@ -95,8 +95,13 @@ defmodule Wallabidi.Remote.Transport.PerSession.Actor do
     port = uri.port || if(http_scheme == :https, do: 443, else: 80)
     path = (uri.path || "/") <> if(uri.query, do: "?#{uri.query}", else: "")
 
+    # See `Wallabidi.Remote.WebSocket.init/1` for the rationale on the
+    # explicit `Host: localhost` header — Chromium 148 rejects upgrades
+    # whose Host isn't `localhost` or an IP literal.
+    upgrade_headers = [{"host", "localhost"}]
+
     with {:ok, conn} <- Mint.HTTP.connect(http_scheme, uri.host, port),
-         {:ok, conn, mint_ref} <- Mint.WebSocket.upgrade(ws_scheme, conn, path, []),
+         {:ok, conn, mint_ref} <- Mint.WebSocket.upgrade(ws_scheme, conn, path, upgrade_headers),
          {:ok, %Wallabidi.Session{} = session} <- init_fun.() do
       session = %{session | pid: self()}
 
