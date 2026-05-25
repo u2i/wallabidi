@@ -29,6 +29,7 @@ defmodule Wallabidi.Integration.LiveApp.Router do
       live("/slow-event-dest", Wallabidi.Integration.LiveApp.SlowEventDestLive)
       live("/slow-evt-slow-dest", Wallabidi.Integration.LiveApp.SlowEventToSlowMountLive)
       live("/slow-evt-slow-dest-target", Wallabidi.Integration.LiveApp.SlowMountDestLive)
+      live("/optimistic-counter", Wallabidi.Integration.LiveApp.OptimisticCounterLive)
     end
 
     # Separate live_session — navigating here from :default triggers a full page load

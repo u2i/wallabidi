@@ -1,5 +1,62 @@
 # Changelog
 
+## Wallabidi 0.4.0-rc.3 (2026-05-25)
+
+### Features
+
+* **`Wallabidi.LiveView` — testing helpers for optimistic-UI and
+  in-flight observation.**
+
+  Adds three pieces aimed at LiveView apps where the test needs to
+  assert on DOM state *between* a user action and the server's reply
+  landing (optimistic UI hooks, multi-phase modals, version
+  reconciliation).
+
+  - `set_latency/2`, `clear_latency/1`, `with_latency/3` — wrap
+    LiveView's built-in latency simulator
+    (`liveSocket.enableLatencySim`) so tests can deterministically
+    stretch the round-trip and observe the in-flight phase.
+  - `await: :defer` opt on `Wallabidi.Browser.click/3`, `clear/3`,
+    `fill_in/3` — fires the action, stashes the wait on the session,
+    and returns immediately. Assertions can then run against the
+    optimistic DOM.
+  - `Wallabidi.LiveView.await_patch/2` — drains the deferred wait
+    (uses the stashed pre-click `pageId` for click defers, the
+    `__wallabidi_patch_promise` machinery for input defers). Falls
+    back to today's arm-and-await when no defer is pending.
+
+  Example:
+
+      session
+      |> Wallabidi.LiveView.with_latency(300, fn s ->
+        s
+        |> click(button("Increment"), await: :defer)
+        |> assert_has(css("#count", text: "1"))      # optimistic
+        |> Wallabidi.LiveView.await_patch()
+        |> assert_has(css("#count", text: "1"))      # reconciled
+      end)
+
+  In-process LV driver: `with_latency` and `:defer` are no-ops —
+  there's no round-trip to delay or defer.
+
+## Wallabidi 0.4.0-rc.2 (2026-05-24)
+
+* **Fix WebSocket upgrade failure against Chromium 148+ over a
+  non-`localhost` hostname.** Chromium 148 tightened DevTools' host
+  allowlist: the WS upgrade request must carry `Host: localhost` (or
+  an IP literal) or Chrome replies `500 Host header is specified and
+  is not an IP address or localhost.`. wallabidi previously sent the
+  upgrade with the default Mint behavior — `Host: <uri.host>:<port>` —
+  which broke docker-sibling topologies where the WS URL is reached by
+  service hostname (e.g. `chrome:9222`). The upgrade now passes an
+  explicit `Host: localhost` header, mirroring the `/json/version`
+  discovery request that already worked around this.
+* When the WS upgrade is rejected with a non-101 status, the client
+  now logs the response body and shuts down cleanly instead of
+  crashing on `Mint.WebSocket.Frame.binary_to_frames/2` with
+  `KeyError :buffer not found in nil`. The original error text from
+  the server is now surfaced in the logs.
+
 ## Wallabidi 0.4.0-rc.1 (2026-05-24)
 
 * `priv/wallabidi.js` + `priv/wallabidi.min.js` are now included in

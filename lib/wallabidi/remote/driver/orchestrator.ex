@@ -61,6 +61,65 @@ defmodule Wallabidi.Remote.Driver.Orchestrator do
     end)
   end
 
+  @doc """
+  Variant of `click/2` that returns immediately after dispatching the
+  click, without awaiting the bootstrap's `page_ready` signal.
+  Returns `{:ok, pre_page_id}` so the caller can stash it on the
+  session and drain the wait later via
+  `Wallabidi.LiveView.await_patch/2`.
+
+  Used by `Wallabidi.Browser.click(query, await: :defer)` for tests
+  that need to observe optimistic-UI DOM state between the click and
+  the server reply.
+
+  Falls back to a plain click (no classify, no wait) on browsers
+  whose `click_strategy` is `:simple` — there's no awaiting machinery
+  to skip, so `:defer` collapses to the normal path.
+  """
+  @spec click_deferred(Spec.t(), Element.t()) :: {:ok, String.t() | nil} | {:error, term}
+  def click_deferred(%Spec{browser: browser} = spec, %Element{} = element) do
+    session = Element.root_session(element)
+
+    case browser.click_strategy() do
+      :simple ->
+        case spec.wire_protocol.click(session, element) do
+          {:ok, _} -> {:ok, nil}
+          err -> err
+        end
+
+      :classified ->
+        # Stash pre_page_id via a closure-capture sink — the underlying
+        # call returns {:ok, classification, :deferred}, and we want
+        # the pre_page_id back. A 1-arity sink keeps the call signature
+        # explicit without leaking a tuple shape change.
+        ref = make_ref()
+        parent = self()
+
+        sink = fn pre_page_id ->
+          send(parent, {ref, :pre_page_id, pre_page_id})
+        end
+
+        result =
+          spec.wire_protocol.click_aware_with_classification(session, element,
+            await: false,
+            pre_page_id_sink: sink
+          )
+
+        pre_page_id =
+          receive do
+            {^ref, :pre_page_id, id} -> id
+          after
+            0 -> nil
+          end
+
+        case result do
+          {:ok, _classification, :deferred} -> {:ok, pre_page_id}
+          {:ok, _classification, :ready} -> {:ok, pre_page_id}
+          {:error, _} = err -> err
+        end
+    end
+  end
+
   @doc "Current URL of the session — bare delegation, no log-check."
   @spec current_url(Spec.t(), Session.t()) :: {:ok, String.t()} | {:error, term}
   def current_url(%Spec{} = spec, %Session{} = session) do

@@ -821,18 +821,27 @@ defmodule Wallabidi.Remote.CDP.Client do
   navigate/full_page classifications surface a timeout as an error.
   """
   @spec click_aware_with_classification(Session.t(), Element.t(), keyword) ::
-          {:ok, String.t(), :ready | :timeout} | {:error, term}
+          {:ok, String.t(), :ready | :timeout | :deferred} | {:error, term}
   def click_aware_with_classification(%Session{} = session, %Element{} = element, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, 5_000)
     pre_click_timeout = Keyword.get(opts, :pre_click_timeout, 200)
+    await? = Keyword.get(opts, :await, true)
+    pre_page_id_sink = Keyword.get(opts, :pre_page_id_sink)
 
     with {:ok, %{"classification" => classification, "prePageId" => pre_page_id}} <-
            await_ready_classify_and_click(session, element, pre_click_timeout) do
-      case classification do
-        "none" ->
+      _ = if is_function(pre_page_id_sink, 1), do: pre_page_id_sink.(pre_page_id)
+
+      cond do
+        classification == "none" ->
           {:ok, classification, :ready}
 
-        _ ->
+        await? == false ->
+          # Caller stashed pre_page_id via `:pre_page_id_sink` and will
+          # drain the wait via `Wallabidi.LiveView.await_patch/2`.
+          {:ok, classification, :deferred}
+
+        true ->
           case Protocol.await_page_ready_after(session, pre_page_id, timeout) do
             :ok -> {:ok, classification, :ready}
             :timeout -> {:ok, classification, :timeout}

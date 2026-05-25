@@ -182,25 +182,44 @@ defmodule Wallabidi.Browser do
   Using JavaScript is a known workaround for filling in fields with Emojis and other non-BMP characters.
   """
   @spec fill_in(parent, Query.t(), with: String.t()) :: parent
-  def fill_in(%Session{} = parent, query, with: value) do
-    if remote_session?(parent) do
-      # Fused: one round-trip does silent clear + set_value + (on
-      # phx-change forms) drain_patches. Saves two round-trips vs the
-      # legacy element-op-per-step. `classify_interaction` returns
-      # `:none` for non-phx-bound inputs (and `prepare_patch` returns
-      # `:no_liveview` for non-LV pages downstream), so we don't need
-      # an outer LV-aware gate.
-      drain_idle_ms =
-        if classify_interaction(parent, query, :change) != :none, do: 300, else: 0
+  @spec fill_in(parent, Query.t(), [{:with, String.t()} | {:await, atom}]) :: parent
+  def fill_in(%Session{} = parent, query, opts) when is_list(opts) do
+    value = Keyword.fetch!(opts, :with)
+    await_mode = Keyword.get(opts, :await, :auto)
 
-      find_lazy(parent, query, fn element ->
-        session = Wallabidi.Element.root_session(element)
-        remote_client(session).fill_in(session, element, value, drain_idle_ms)
-      end)
-    else
-      # In-process LV driver: route through Element.fill_in (no JS,
-      # no W.run — driver overrides clear/set_value directly).
-      find(parent, query, &Element.fill_in(&1, with: value))
+    cond do
+      remote_session?(parent) and await_mode == :defer ->
+        # Deferred: use the same fused single-roundtrip pipeline,
+        # but force `drain_idle_ms: 0` so the JS-side skips the
+        # in-band patch drain. Arm a patch promise BEAM-side
+        # beforehand so a subsequent `Wallabidi.LiveView.await_patch/2`
+        # can resolve on the next patch.
+        armed = Wallabidi.LiveView.arm_next_patch(parent)
+
+        _ =
+          find_lazy(parent, query, fn element ->
+            session = Wallabidi.Element.root_session(element)
+            remote_client(session).fill_in(session, element, value, 0)
+          end)
+
+        armed
+
+      remote_session?(parent) ->
+        # Fused: one round-trip does silent clear + set_value + (on
+        # phx-change forms) drain_patches. Saves two round-trips vs
+        # the legacy element-op-per-step.
+        drain_idle_ms =
+          if classify_interaction(parent, query, :change) != :none, do: 300, else: 0
+
+        find_lazy(parent, query, fn element ->
+          session = Wallabidi.Element.root_session(element)
+          remote_client(session).fill_in(session, element, value, drain_idle_ms)
+        end)
+
+      true ->
+        # In-process LV driver: route through Element.fill_in (no JS,
+        # no W.run — driver overrides clear/set_value directly).
+        find(parent, query, &Element.fill_in(&1, with: value))
     end
   end
 
@@ -221,12 +240,21 @@ defmodule Wallabidi.Browser do
   # The element can also be passed in directly.
   # """
   @spec clear(parent, Query.t()) :: parent
+  @spec clear(parent, Query.t(), keyword) :: parent
 
-  def clear(parent, query) do
-    with_patch_await(parent, query, :change, fn ->
-      parent
-      |> find_lazy(query, &Element.clear/1)
-    end)
+  def clear(parent, query), do: clear(parent, query, [])
+
+  def clear(parent, query, opts) when is_list(opts) do
+    with_patch_await(
+      parent,
+      query,
+      :change,
+      fn ->
+        parent
+        |> find_lazy(query, &Element.clear/1)
+      end,
+      opts
+    )
   end
 
   @doc """
@@ -772,10 +800,29 @@ defmodule Wallabidi.Browser do
   end
 
   @doc """
-  Clicks the mouse on the element returned by the query or at the current mouse cursor position.
+  Clicks the mouse on the element returned by the query or at the
+  current mouse cursor position.
+
+  ## Options
+
+  * `:await` — controls the LiveView patch-await behaviour for clicks
+    on phx-bound elements.
+
+    * `:auto` (default) — wait for the resulting patch / page-ready
+      signal before returning. This is what you want for ordinary
+      tests.
+    * `:defer` — fire the click, stash a pre-click `pageId`, and
+      return immediately. Pair with `Wallabidi.LiveView.await_patch/2`
+      to consume the deferred wait. Use this when you need to assert
+      on the optimistic-UI DOM between the click and the server reply.
+      Outside a `Wallabidi.LiveView.with_latency/3` block, the optimistic
+      window is usually too short to observe reliably.
+
+  Non-LiveView clicks ignore `:await` — there's nothing to wait for.
   """
   @spec click(parent, :left | :middle | :right) :: parent
   @spec click(parent, Query.t()) :: parent
+  @spec click(parent, Query.t(), keyword) :: parent
   def click(parent, button) when button in [:left, :middle, :right] do
     case parent.driver.click(parent, button) do
       {:ok, _} ->
@@ -784,6 +831,17 @@ defmodule Wallabidi.Browser do
   end
 
   def click(parent, query) do
+    click(parent, query, [])
+  end
+
+  def click(parent, query, opts) when is_list(opts) do
+    case Keyword.get(opts, :await, :auto) do
+      :defer -> click_deferred(parent, query)
+      _ -> click_auto(parent, query)
+    end
+  end
+
+  defp click_auto(parent, query) do
     session = get_session(parent)
 
     # Lightpanda: route through CDPClient.click_aware which captures
@@ -799,6 +857,43 @@ defmodule Wallabidi.Browser do
       v2_click_with_await(parent, query)
     else
       parent |> find(query, &Element.click/1)
+    end
+  end
+
+  # Deferred click: fire the click via the Orchestrator's
+  # `click_deferred/2` which returns immediately after dispatching
+  # without awaiting `page_ready`. Stash the captured pre-click
+  # `pageId` on the session so `Wallabidi.LiveView.await_patch/2`
+  # can drain the wait later.
+  #
+  # In-process LV driver: defer is a no-op (renders synchronously),
+  # so just delegate to auto.
+  defp click_deferred(parent, query) do
+    session = get_session(parent)
+
+    cond do
+      is_nil(session) or is_nil(session.driver_spec) ->
+        # No spec (LV driver, or unusual session shape) → fall through
+        # to the normal click. There's no awaiting machinery to skip.
+        click_auto(parent, query)
+
+      true ->
+        case find_lazy(parent, query) do
+          %Element{} = element ->
+            case Wallabidi.Remote.Driver.Orchestrator.click_deferred(session.driver_spec, element) do
+              {:ok, pre_page_id} ->
+                %{session | pending_await: {:page_ready_after, pre_page_id}}
+
+              {:error, _} ->
+                # Click dispatch failed (e.g. transport issue). Don't
+                # stash a half-baked await — fall back to whatever
+                # surface error handling the assertion does.
+                session
+            end
+
+          other ->
+            other
+        end
     end
   end
 
@@ -1826,12 +1921,24 @@ defmodule Wallabidi.Browser do
   # Sets up the promise before the action, awaits after.
   # Skips if: not BiDi, no LiveView, or the element is a JS-only click
   # (phx-click without a push command, e.g. JS.toggle).
-  defp with_patch_await(%Session{} = session, query, interaction, fun) do
+  defp with_patch_await(session_or_parent, query, interaction, fun, opts \\ [])
+
+  defp with_patch_await(%Session{} = session, query, interaction, fun, opts) do
     # Only remote sessions can run JS for classification. The in-process
     # LV driver renders synchronously and has no patch lifecycle to
     # await — `fun.()` is the right answer there.
     if remote_session?(session) do
+      mode = Keyword.get(opts, :await, :auto)
+
       case classify_interaction(session, query, interaction) do
+        :patch when mode == :defer ->
+          # Arm a patch promise, run the action, return the session
+          # with :armed stashed. Caller drains via
+          # `Wallabidi.LiveView.await_patch/2`.
+          armed = Wallabidi.LiveView.arm_next_patch(session)
+          _ = fun.()
+          armed
+
         :patch ->
           do_patch_await(session, fun)
 
@@ -1852,7 +1959,7 @@ defmodule Wallabidi.Browser do
     end
   end
 
-  defp with_patch_await(_parent, _query, _interaction, fun), do: fun.()
+  defp with_patch_await(_parent, _query, _interaction, fun, _opts), do: fun.()
 
   # Classify the interaction: :patch, :navigate, :full_page, or :none.
   defp do_patch_await(session, fun) do
