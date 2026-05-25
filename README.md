@@ -341,6 +341,35 @@ feature "users can chat", %{sessions: [user1, user2]} do
 end
 ```
 
+### Testing LiveView optimistic UI
+
+Default interactions auto-await the LiveView patch that follows the
+action — your assertions see the post-reconcile DOM. To test
+optimistic UI hooks (where the client paints state before the server
+reply lands), use `Wallabidi.LiveView`:
+
+```elixir
+session
+|> visit("/counter")
+|> Wallabidi.LiveView.with_latency(300, fn s ->
+  s
+  |> click(Query.button("Increment"), await: :defer)
+  |> assert_has(Query.css("#count", text: "1"))      # optimistic
+  |> Wallabidi.LiveView.await_patch()
+  |> assert_has(Query.css("#count", text: "1"))      # reconciled
+end)
+```
+
+`with_latency/3` toggles LiveView's built-in latency simulator
+(`liveSocket.enableLatencySim`) so the in-flight window is wide
+enough to land an `assert_has` in. `await: :defer` skips the action's
+auto-await; `Wallabidi.LiveView.await_patch/2` drains the deferred
+wait before the post-reconcile assertions.
+
+The `:defer` opt is supported on `click/3`, `fill_in/3`, and
+`clear/3`. On the in-process LV driver, latency helpers are no-ops
+and `:defer` collapses to `:auto` — there's no round-trip to delay.
+
 ## API
 
 ### Queries and actions
