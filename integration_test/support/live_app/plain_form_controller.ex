@@ -1,6 +1,58 @@
 defmodule Wallabidi.Integration.LiveApp.PlainFormController do
   use Phoenix.Controller, formats: [:html]
 
+  @doc """
+  Vanilla (non-LiveView) page that installs four click listeners and
+  records how many times each one was invoked. Used by the driver-
+  parity event-propagation tests to isolate which DOM event-flow
+  guarantees a given driver upholds.
+
+  Listeners:
+
+    * `#root-capture`      — addEventListener on the ancestor div,  capture phase
+    * `#root-bubble`       — addEventListener on the ancestor div,  bubble phase
+    * `#document-capture`  — addEventListener on document,          capture phase
+    * `#document-bubble`   — addEventListener on document,          bubble phase
+
+  Each listener increments its own counter span. The test reads
+  `textContent` after each click to determine which phases fired.
+
+  Clicking `#trigger-button` should ideally fire all four
+  (the canonical DOM event flow is: capture from window down to the
+  target, then bubble from target up). Drivers that emit a properly
+  bubbled+captured event hit all four. Drivers that take shortcuts
+  (e.g. raw `el.click()` synthesis) may miss capture-phase listeners
+  on intermediate ancestors.
+  """
+  def event_capture(conn, _params) do
+    html(conn, """
+    <html><body>
+      <div id="root">
+        <button id="trigger-button" type="button">Click me</button>
+      </div>
+      <ul>
+        <li>root capture:     <span id="root-capture">0</span></li>
+        <li>root bubble:      <span id="root-bubble">0</span></li>
+        <li>document capture: <span id="document-capture">0</span></li>
+        <li>document bubble:  <span id="document-bubble">0</span></li>
+      </ul>
+      <script>
+        var bump = function(id) {
+          return function() {
+            var n = document.getElementById(id);
+            n.textContent = String(Number(n.textContent) + 1);
+          };
+        };
+        var root = document.getElementById("root");
+        root.addEventListener("click", bump("root-capture"), true);
+        root.addEventListener("click", bump("root-bubble"), false);
+        document.addEventListener("click", bump("document-capture"), true);
+        document.addEventListener("click", bump("document-bubble"), false);
+      </script>
+    </body></html>
+    """)
+  end
+
   def show(conn, _params) do
     token = Plug.CSRFProtection.get_csrf_token()
 

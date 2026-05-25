@@ -30,6 +30,8 @@ defmodule Wallabidi.Integration.LiveApp.Router do
       live("/slow-evt-slow-dest", Wallabidi.Integration.LiveApp.SlowEventToSlowMountLive)
       live("/slow-evt-slow-dest-target", Wallabidi.Integration.LiveApp.SlowMountDestLive)
       live("/optimistic-counter", Wallabidi.Integration.LiveApp.OptimisticCounterLive)
+      live("/capture-listener", Wallabidi.Integration.LiveApp.CaptureListenerLive)
+      live("/marker-hook", Wallabidi.Integration.LiveApp.MarkerHookLive)
     end
 
     # Separate live_session — navigating here from :default triggers a full page load
@@ -47,5 +49,6 @@ defmodule Wallabidi.Integration.LiveApp.Router do
     )
 
     get("/join-pending", Wallabidi.Integration.LiveApp.PlainFormController, :join_pending)
+    get("/event-capture", Wallabidi.Integration.LiveApp.PlainFormController, :event_capture)
   end
 end
