@@ -1,5 +1,21 @@
 # Changelog
 
+## Wallabidi 0.4.0-rc.4 (2026-05-26)
+
+* **Fix `mix wallabidi.install` from consumer projects.** Two bugs:
+
+  - `bidi_server_dir` resolved to `File.cwd!() / priv/bidi-server`,
+    pointing at the *consumer's* tree instead of wallabidi's. In a
+    Hex-dep setup the dir doesn't exist there, so `cd:` into it
+    failed silently with the npm subprocess writing `spawn: Could
+    not cd to ...` to stdout. Now resolves via
+    `Application.app_dir(:wallabidi, "priv/bidi-server")`, with a
+    cwd-relative fallback for in-tree development.
+  - When `npm install` failed (because of the bug above), the
+    surrounding `{_, 0} = System.cmd(...)` raised a confusing
+    `MatchError` instead of a clear error. Now surfaces the exit
+    status with a useful message.
+
 ## Wallabidi 0.4.0-rc.3 (2026-05-25)
 
 ### Features
