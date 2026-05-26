@@ -172,9 +172,14 @@ Wallabidi launches Chrome directly — no chromedriver, Selenium server, or Dock
 If Chrome is on your PATH or has been installed by `mix wallabidi.install`, Wallabidi launches it directly via CDP.
 
 ```
-$ mix wallabidi.install  # downloads Chrome for Testing into .browsers/
+$ MIX_ENV=test mix wallabidi.install   # downloads Chrome for Testing into .browsers/
 $ mix test
 ```
+
+> `MIX_ENV=test` is required when wallabidi is in your `deps` as
+> `only: :test` (the typical setup) — Mix only loads the task module
+> in environments where wallabidi compiles. Plain `mix
+> wallabidi.install` raises `task could not be found`.
 
 Override the binary path with `WALLABIDI_CHROME_PATH` if Chrome lives somewhere unusual:
 
@@ -207,7 +212,7 @@ steps:
     node-version: 20
 
 - run: mix deps.get
-- run: mix wallabidi.install   # downloads Chrome for Testing
+- run: MIX_ENV=test mix wallabidi.install   # downloads Chrome for Testing
 - run: mix test
 ```
 
