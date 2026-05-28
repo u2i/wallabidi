@@ -1,5 +1,23 @@
 # Changelog
 
+## Wallabidi 0.4.0-rc.5 (2026-05-28)
+
+Documentation-only release candidate. No code or API changes.
+
+### Changed
+
+- **README split into focused guides** (665 → 190 lines). Reference
+  material moved into `guides/`, wired into ExDoc extras under "Guides"
+  and "Internals" groups:
+  - `guides/setup.md` — installation, Chrome management, CI, Phoenix config.
+  - `guides/isolation.md` — `sandbox_case` / `sandbox_shim` test isolation
+    (Ecto, Mimic, Mox, Cachex, FunWithFlags).
+  - `guides/api.md` — queries, actions, navigation, finding, forms,
+    assertions, optimistic-UI testing, screenshots, dialogs, `settle`,
+    `intercept_request`, `on_console`.
+  - `guides/migrating.md` — what's different from Wallaby and the
+    find-and-replace migration steps.
+
 ## Wallabidi 0.4.0-rc.4 (2026-05-26)
 
 * **Fix `mix wallabidi.install` from consumer projects.** Two bugs:
