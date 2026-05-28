@@ -132,8 +132,16 @@ defmodule Wallabidi.Mixfile do
     [
       extras: [
         "README.md": [title: "Introduction"],
-        "TESTING.md": [title: "Testing"],
-        "ARCHITECTURE.md": [title: "Architecture"]
+        "guides/setup.md": [title: "Setup"],
+        "guides/isolation.md": [title: "Test Isolation"],
+        "guides/api.md": [title: "API"],
+        "guides/migrating.md": [title: "Migrating from Wallaby"],
+        "ARCHITECTURE.md": [title: "Architecture"],
+        "TESTING.md": [title: "Testing"]
+      ],
+      groups_for_extras: [
+        Guides: ["guides/setup.md", "guides/isolation.md", "guides/api.md", "guides/migrating.md"],
+        Internals: ["ARCHITECTURE.md", "TESTING.md"]
       ],
       source_ref: "v#{@version}",
       source_url: @source_url,
