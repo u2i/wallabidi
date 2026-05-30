@@ -21,27 +21,78 @@ defmodule Wallabidi do
   @doc false
   def start(_type, _args) do
     Wallabidi.Bench.Timing.setup()
-    driver_mod = driver_module()
 
-    case driver_mod.validate() do
+    # The primary driver (the one untagged tests route to) must be
+    # available — validate it and raise if not. Tag-routed drivers
+    # (`@tag :browser` / `@tag :headless`) are started best-effort so a
+    # single `mix test` run can route each test to the cheapest driver
+    # that supports it without the consumer wiring up supervisors by hand.
+    primary_mod = driver_module()
+
+    case primary_mod.validate() do
       :ok -> :ok
       {:error, exception} -> raise exception
     end
 
-    children = [
-      {driver_mod, [name: Wallabidi.Driver.Supervisor]},
-      {Wallabidi.SessionStore, [name: Wallabidi.SessionStore]}
-    ]
+    driver_children =
+      configured_driver_modules()
+      |> Enum.map(fn mod -> {mod, [name: Module.concat(mod, Supervisor)]} end)
+
+    children = driver_children ++ [{Wallabidi.SessionStore, [name: Wallabidi.SessionStore]}]
 
     opts = [strategy: :one_for_one, name: Wallabidi.Supervisor]
     result = Supervisor.start_link(children, opts)
 
     if match?({:ok, _}, result) do
-      driver_mod.cleanup_stale_sessions()
+      primary_mod.cleanup_stale_sessions()
     end
 
     result
   end
+
+  # The set of driver supervisor modules a single test run can route to:
+  # the primary `:driver` plus the drivers `@tag :browser` / `@tag
+  # :headless` tests resolve to (`:browser` / `:headless` config, both
+  # defaulting to `:chrome_cdp`). Deduped, primary first.
+  #
+  # When `WALLABIDI_DRIVER` / `WALLABIDI_BROWSER` pins a single driver for
+  # the run (per-driver CI matrices, the integration suite), tag routing
+  # is disabled in `Feature.resolve_test_driver`, so we start only the
+  # primary — no point booting Chrome for a Lightpanda-pinned run.
+  defp configured_driver_modules do
+    primary = driver_module()
+
+    tag_routed =
+      if driver_pinned_by_env?() do
+        []
+      else
+        [
+          Application.get_env(:wallabidi, :browser, :chrome_cdp),
+          Application.get_env(:wallabidi, :headless, :chrome_cdp)
+        ]
+        |> Enum.map(&driver_module_for/1)
+        |> Enum.uniq()
+        |> Enum.reject(&(&1 == primary))
+        # Non-primary drivers are best-effort: only start ones whose
+        # module is loadable AND whose dependency is actually available
+        # (e.g. Chrome installed). A failing one would otherwise crash the
+        # whole supervision tree at boot.
+        |> Enum.filter(fn mod -> module_loadable?(mod) and mod.validate() == :ok end)
+      end
+
+    [primary | tag_routed]
+  end
+
+  defp driver_pinned_by_env? do
+    not is_nil(System.get_env("WALLABIDI_DRIVER")) or
+      not is_nil(System.get_env("WALLABIDI_BROWSER"))
+  end
+
+  # A tag-routed driver module is only startable if its module (and the
+  # browser package behind it) is loadable — e.g. the Lightpanda driver
+  # needs the `lightpanda` dep. Skip the ones that aren't there so a
+  # CDP-only consumer doesn't fail to boot over an unconfigured tag route.
+  defp module_loadable?(mod), do: Code.ensure_loaded?(mod)
 
   @type reason :: any
   @type start_session_opts :: {atom, any}
@@ -128,8 +179,11 @@ defmodule Wallabidi do
   end
 
   @doc false
-  def driver_module do
-    case resolve_driver() do
+  def driver_module, do: driver_module_for(resolve_driver())
+
+  @doc false
+  def driver_module_for(driver) do
+    case driver do
       :live_view -> Wallabidi.LiveView.Driver
       d when d in [:lightpanda, :lightpanda_v2] -> Wallabidi.Remote.Drivers.LightpandaCDP
       d when d in [:chrome_cdp, :chrome_cdp_v2] -> Wallabidi.Remote.Drivers.ChromeCDP
