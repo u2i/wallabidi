@@ -27,7 +27,10 @@ $ mix test
 > `MIX_ENV=test` is required when wallabidi is in your `deps` as
 > `only: :test` (the typical setup) — Mix only loads the task module
 > in environments where wallabidi compiles. Plain `mix
-> wallabidi.install` raises `task could not be found`.
+> wallabidi.install` raises `task could not be found`, and the task
+> won't appear in `mix help` either (that runs in `:dev`). Run it as
+> `MIX_ENV=test mix wallabidi.install` (likewise `MIX_ENV=test mix help
+> wallabidi.install` to see its docs).
 
 Both browsers land in version-stamped subdirectories so multiple
 versions coexist, and the resolved binary paths are recorded in
@@ -52,7 +55,14 @@ When Chrome runs as a service in a Docker Compose stack, point Wallabidi at it w
 
 ### Lightpanda
 
-The Lightpanda binary is provided by the [`lightpanda`](https://hex.pm/packages/lightpanda) dependency (the release tag is baked into that dep — bump it to upgrade). `mix wallabidi.install` downloads it into `.browsers/lightpanda/` alongside Chrome. Override the binary path with `WALLABIDI_LIGHTPANDA_PATH` for Docker/CI images that already ship Lightpanda:
+The Lightpanda binary is provided by the [`lightpanda`](https://hex.pm/packages/lightpanda) dependency (the release tag is baked into that dep — bump it to upgrade). To use the Lightpanda driver, **add the dep to your own project** — it is not pulled in transitively:
+
+```elixir
+# mix.exs
+{:lightpanda, "~> 0.3", only: :test}
+```
+
+`mix wallabidi.install` (and `mix wallabidi.install.lightpanda`) then downloads the binary into `.browsers/lightpanda/` alongside Chrome. Without the dep the Lightpanda install task is a no-op (it prints `Skipping Lightpanda (the lightpanda dep is not available)`) and the Lightpanda driver can't start. Override the binary path with `WALLABIDI_LIGHTPANDA_PATH` for Docker/CI images that already ship Lightpanda:
 
 ```bash
 WALLABIDI_LIGHTPANDA_PATH=/opt/lightpanda/lightpanda mix test
@@ -124,13 +134,45 @@ Chrome), set `WALLABIDI_CHROME_PATH` and skip `mix wallabidi.install`:
 
 ## Phoenix
 
+Browser drivers connect to your app over real HTTP, so the endpoint must
+run a server during tests and `base_url` must point at the port it
+actually binds:
+
 ```elixir
 # config/test.exs
-config :your_app, YourAppWeb.Endpoint, server: true
+config :your_app, YourAppWeb.Endpoint,
+  http: [ip: {127, 0, 0, 1}, port: 4002],
+  url: [host: "localhost", port: 4002],   # see the port note below
+  server: true
 
 # test/test_helper.exs
-Application.put_env(:wallabidi, :base_url, YourAppWeb.Endpoint.url)
+Application.put_env(:wallabidi, :base_url, YourAppWeb.Endpoint.url())
 ```
+
+> **Make `Endpoint.url()` match the bound port.** `Endpoint.url()`
+> reflects the `:url` config (used for link generation), *not* the `http:`
+> listener. A generated Phoenix app binds `http:` on `4002` but leaves
+> `:url` defaulting to `4000`, so `base_url` ends up pointing at `4000`
+> and every `visit/2` lands on a "connection refused" browser error page.
+> A trivial smoke assertion like `assert_has(css("body"))` will even
+> *pass* against that error page. Set `:url` to the same port as `http:`
+> (above) so the two agree.
+
+> **Watch out for `config/runtime.exs`.** Phoenix 1.8's generated
+> `runtime.exs` sets the endpoint `http:` port from `PORT` (default
+> `4000`) *outside* the `:prod` block, and `runtime.exs` loads **after**
+> `config/test.exs` — so it silently overrides your test port back to
+> `4000` while `:url` stays put, reproducing the connection-refused
+> symptom above. Guard it so the test env keeps the port from
+> `config/test.exs`:
+>
+> ```elixir
+> # config/runtime.exs
+> if config_env() != :test do
+>   config :your_app, YourAppWeb.Endpoint,
+>     http: [port: String.to_integer(System.get_env("PORT", "4000"))]
+> end
+> ```
 
 ## Test isolation
 

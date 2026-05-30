@@ -42,7 +42,19 @@ feature "uploads a file", %{session: session} do
 end
 ```
 
-Each test runs on the **cheapest driver** that supports it. No env vars, no aliases — just `mix test`.
+Each test runs on the **cheapest driver** that supports it, in a single `mix test` run. Routing is controlled by three config keys — the default driver for untagged tests, and the drivers `@tag :headless` and `@tag :browser` map to:
+
+```elixir
+# config/test.exs
+config :wallabidi,
+  otp_app: :your_app,
+  endpoint: YourAppWeb.Endpoint,
+  driver: :live_view,      # untagged tests (fastest)
+  headless: :lightpanda,   # @tag :headless  (defaults to :chrome_cdp)
+  browser: :chrome_cdp     # @tag :browser   (defaults to :chrome_cdp)
+```
+
+Wallabidi starts a supervisor for the primary `:driver` plus each distinct `:headless` / `:browser` target that's available, so one run can fan tests across drivers. The primary driver must be available (it raises otherwise); tag-routed drivers are best-effort — if Chrome isn't installed, `@tag :browser` tests just can't run, but your untagged LiveView suite still boots. Setting `WALLABIDI_DRIVER=<driver>` pins the whole run to one driver (used by the per-driver CI matrices below), which disables tag routing.
 
 ## Concurrency and performance
 
@@ -161,7 +173,9 @@ All options with defaults:
 config :wallabidi,
   otp_app: :your_app,              # required for Ecto sandbox
   endpoint: YourAppWeb.Endpoint,   # required for LiveView driver
-  driver: :chrome_cdp,             # :live_view | :lightpanda | :chrome_cdp | :chrome (BiDi)
+  driver: :chrome_cdp,             # untagged tests; :live_view | :lightpanda | :chrome_cdp | :chrome (BiDi)
+  headless: :chrome_cdp,           # driver for @tag :headless tests
+  browser: :chrome_cdp,            # driver for @tag :browser tests
   max_wait_time: 5_000,            # ms to wait for elements
   js_errors: true,                 # re-raise JS errors in Elixir
   js_logger: :stdio,               # IO device for console logs (nil to disable)
