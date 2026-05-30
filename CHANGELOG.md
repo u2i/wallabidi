@@ -1,5 +1,45 @@
 # Changelog
 
+## Wallabidi 0.4.0-rc.6 (2026-05-30)
+
+### Changed
+
+- **Unified browser install into `.browsers/`.** `mix wallabidi.install`
+  now downloads Lightpanda alongside Chrome for Testing, into a
+  version-stamped `.browsers/lightpanda/<target>-<release>/` dir that
+  mirrors Chrome's `.browsers/chrome/<target>-<version>/` layout. Both
+  binary paths are recorded in `.browsers/PATHS` (`CHROME=` and
+  `LIGHTPANDA=`), so a single mounted/cached `.browsers/` dir provisions
+  every driver. Requires `lightpanda ~> 0.3.1` (the release that adds the
+  `:install_dir` knob); on older versions the Lightpanda step is skipped
+  with a message and Lightpanda continues to work via its `_build/`
+  default.
+
+### Added
+
+- **Browser-scoped install subtasks**: `mix wallabidi.install.chrome` and
+  `mix wallabidi.install.lightpanda` install one browser each, merging
+  into `.browsers/PATHS` without clobbering the other's entry.
+- **`WALLABIDI_LIGHTPANDA_PATH`** env override for the Lightpanda binary,
+  symmetric with `WALLABIDI_CHROME_PATH` — point it at an existing binary
+  in Docker/CI images.
+- **`Wallabidi.BrowserPaths.lightpanda/0`, `lightpanda_path/0`, and
+  `lightpanda_install_dir/0`**, mirroring the Chrome resolvers. The
+  Lightpanda driver now resolves its binary through `BrowserPaths`
+  (env override → `.browsers/PATHS`), making the manifest the runtime
+  source of truth as it already is for Chrome.
+
+### Fixed
+
+- **macOS Gatekeeper SIGKILL (exit 137) on freshly-downloaded Lightpanda.**
+  The install now strips `com.apple.*` xattrs and re-applies an ad-hoc
+  code signature on Darwin so the binary launches non-interactively under
+  a BEAM Port. Best-effort and no-op off macOS.
+
+### Dependencies
+
+- `lightpanda` `~> 0.3.0` → `~> 0.3.1`.
+
 ## Wallabidi 0.4.0-rc.5 (2026-05-28)
 
 Documentation-only release candidate. No code or API changes.

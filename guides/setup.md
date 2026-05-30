@@ -1,6 +1,6 @@
 # Setup
 
-Requires Elixir 1.19+, OTP 28+, and Chrome (or Chromium). Use `mix wallabidi.install` to download a pinned Chrome for Testing build, or set `WALLABIDI_CHROME_PATH` to your existing Chrome binary.
+Requires Elixir 1.19+, OTP 28+. Use `mix wallabidi.install` to download the browsers the drivers need (Chrome for Testing, Lightpanda, and the chromium-bidi Node deps) into `.browsers/`, or point the `WALLABIDI_*_PATH` env vars at existing binaries.
 
 ## Installation
 
@@ -15,16 +15,12 @@ end
 {:ok, _} = Application.ensure_all_started(:wallabidi)
 ```
 
-## How Chrome is managed
+## How browsers are managed
 
-Wallabidi launches Chrome directly — no chromedriver, Selenium server, or Docker container in the loop. There are two modes:
-
-### 1. Local Chrome (default)
-
-If Chrome is on your PATH or has been installed by `mix wallabidi.install`, Wallabidi launches it directly via CDP.
+Wallabidi launches browsers directly — no chromedriver, Selenium server, or Docker container in the loop. `mix wallabidi.install` downloads everything the drivers need (Chrome for Testing, Lightpanda, and the chromium-bidi Node deps) into a single project-local `.browsers/` directory:
 
 ```
-$ MIX_ENV=test mix wallabidi.install   # downloads Chrome for Testing into .browsers/
+$ MIX_ENV=test mix wallabidi.install   # Chrome + Lightpanda + chromium-bidi → .browsers/
 $ mix test
 ```
 
@@ -33,13 +29,38 @@ $ mix test
 > in environments where wallabidi compiles. Plain `mix
 > wallabidi.install` raises `task could not be found`.
 
-Override the binary path with `WALLABIDI_CHROME_PATH` if Chrome lives somewhere unusual:
+Both browsers land in version-stamped subdirectories so multiple
+versions coexist, and the resolved binary paths are recorded in
+`.browsers/PATHS`:
+
+```
+.browsers/
+  PATHS                                              # CHROME=… and LIGHTPANDA=…
+  chrome/mac_arm-149.0.7827.54/…
+  lightpanda/aarch64-macos-fork-2026-05-30/lightpanda-…
+```
+
+### Chrome
+
+If Chrome is on your PATH or has been installed by `mix wallabidi.install`, Wallabidi launches it directly via CDP. Override the binary path with `WALLABIDI_CHROME_PATH` if Chrome lives somewhere unusual:
 
 ```bash
 WALLABIDI_CHROME_PATH=/usr/bin/google-chrome-stable mix test
 ```
 
-### 2. Remote Chrome (CI / Docker)
+When Chrome runs as a service in a Docker Compose stack, point Wallabidi at it with `WALLABIDI_CHROME_URL` (see [Remote Chrome](#remote-chrome-ci-docker) below).
+
+### Lightpanda
+
+The Lightpanda binary is provided by the [`lightpanda`](https://hex.pm/packages/lightpanda) dependency (the release tag is baked into that dep — bump it to upgrade). `mix wallabidi.install` downloads it into `.browsers/lightpanda/` alongside Chrome. Override the binary path with `WALLABIDI_LIGHTPANDA_PATH` for Docker/CI images that already ship Lightpanda:
+
+```bash
+WALLABIDI_LIGHTPANDA_PATH=/opt/lightpanda/lightpanda mix test
+```
+
+If you don't run `mix wallabidi.install`, the `lightpanda` package falls back to downloading into `_build/` on first use.
+
+### Remote Chrome (CI / Docker)
 
 When Chrome runs as a service in your Docker Compose stack, point Wallabidi at it:
 
@@ -64,13 +85,15 @@ steps:
     node-version: 20
 
 - run: mix deps.get
-- run: MIX_ENV=test mix wallabidi.install   # downloads Chrome for Testing
+- run: MIX_ENV=test mix wallabidi.install   # Chrome + Lightpanda + chromium-bidi → .browsers/
 - run: mix test
 ```
 
 `mix wallabidi.install` uses `npx @puppeteer/browsers install` to download
-a pinned Chrome for Testing binary into `.browsers/`. Cache this directory
-for faster subsequent runs:
+a pinned Chrome for Testing binary, plus the Lightpanda binary, into
+`.browsers/`. To install just one browser, use `mix wallabidi.install.chrome`
+or `mix wallabidi.install.lightpanda`. Cache the directory for faster
+subsequent runs:
 
 ```yaml
 - uses: actions/cache@v5
@@ -88,6 +111,7 @@ For Docker-based CI or remote browsers:
 |----------|---------|---------|
 | `WALLABIDI_CHROME_URL` | Connect to remote Chrome (CDP) | `chrome:9222` |
 | `WALLABIDI_CHROME_PATH` | Local Chrome binary override | `/usr/bin/google-chrome` |
+| `WALLABIDI_LIGHTPANDA_PATH` | Local Lightpanda binary override | `/opt/lightpanda/lightpanda` |
 
 If you have Chrome pre-installed on the runner (e.g. GitHub Actions' built-in
 Chrome), set `WALLABIDI_CHROME_PATH` and skip `mix wallabidi.install`:

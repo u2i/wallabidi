@@ -187,4 +187,4 @@ mix test.all                # all of the above
 mix test.browsers --browsers chrome   # run ALL tests on a specific browser
 ```
 
-The LiveView and Lightpanda tests require no external dependencies — Lightpanda's binary is installed automatically via `mix lightpanda.install`. Chrome tests need a local Chrome binary (use `mix wallabidi.install` to download one) or `WALLABIDI_CHROME_URL` pointing at a remote Chrome.
+`mix wallabidi.install` downloads everything the drivers need (Chrome for Testing, Lightpanda, and the chromium-bidi Node deps) into `.browsers/`; use `mix wallabidi.install.chrome` or `mix wallabidi.install.lightpanda` for just one. The LiveView driver needs no browser at all. Alternatively point `WALLABIDI_CHROME_PATH` / `WALLABIDI_LIGHTPANDA_PATH` at existing binaries, or `WALLABIDI_CHROME_URL` at a remote Chrome.

@@ -61,6 +61,8 @@ defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
 
   @impl Supervisor
   def init(_) do
+    resolve_binary_path()
+
     children =
       if Code.ensure_loaded?(@lightpanda_server) do
         opts = [
@@ -77,6 +79,25 @@ defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
       end
 
     Supervisor.init(children, strategy: :one_for_one)
+  end
+
+  # Make `Wallabidi.BrowserPaths` authoritative for Lightpanda's binary
+  # location, mirroring how the Chrome drivers resolve through it. We
+  # translate the resolved path into `config :lightpanda, :path`, which
+  # `Lightpanda.bin_path/0` honors at the top of its precedence.
+  #
+  # An explicitly-configured `:path` (the dev sibling checkout) wins —
+  # we never overwrite it. When BrowserPaths resolves nothing (no env
+  # override, no `LIGHTPANDA=` line), we leave config untouched so the
+  # package's own resolution (`:install_dir` → `.browsers/`, else
+  # `_build/`) applies.
+  defp resolve_binary_path do
+    if is_nil(Application.get_env(:lightpanda, :path)) do
+      case Wallabidi.BrowserPaths.lightpanda_path() do
+        {:ok, path} -> Application.put_env(:lightpanda, :path, path)
+        :error -> :ok
+      end
+    end
   end
 
   @doc false

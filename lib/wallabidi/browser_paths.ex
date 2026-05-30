@@ -1,14 +1,25 @@
 defmodule Wallabidi.BrowserPaths do
   @moduledoc """
-  Finds Chrome — either a local binary to launch or a remote URL
-  to connect to.
+  Finds browser binaries — either a local binary to launch or a remote
+  URL to connect to.
 
-  ## Resolution order
+  ## Chrome resolution order
 
   1. `WALLABIDI_CHROME_URL` — connect to remote Chrome (`chrome:9222` or full `ws://` URL)
   2. `WALLABIDI_CHROME_PATH` — local Chrome binary to launch
   3. `.browsers/PATHS` file (written by `mix wallabidi.install`)
   4. System PATH
+
+  ## Lightpanda resolution order
+
+  1. `WALLABIDI_LIGHTPANDA_PATH` — local Lightpanda binary to launch
+  2. `.browsers/PATHS` file (written by `mix wallabidi.install`)
+
+  Lightpanda has no remote-URL mode here: the `lightpanda` package
+  manages the binary and spawns it locally. When neither source
+  resolves, the `lightpanda` package falls back to its own
+  `Lightpanda.bin_path/0` (the version-stamped `.browsers/lightpanda/`
+  dir, or `_build/`).
 
   ## Setup
 
@@ -17,6 +28,7 @@ defmodule Wallabidi.BrowserPaths do
   Or for Docker/CI:
 
       WALLABIDI_CHROME_URL=chrome:9222 mix test.chrome
+      WALLABIDI_LIGHTPANDA_PATH=/opt/lightpanda/lightpanda mix test.lightpanda
   """
 
   @paths_file ".browsers/PATHS"
@@ -60,6 +72,46 @@ defmodule Wallabidi.BrowserPaths do
     case chrome() do
       {:path, path} -> {:ok, path}
       _ -> :error
+    end
+  end
+
+  @doc """
+  Returns `{:path, path}` for a resolved Lightpanda binary, or `:error`.
+
+  Unlike `chrome/0` there is no remote-URL mode — the `lightpanda`
+  package launches the binary locally.
+  """
+  def lightpanda do
+    with :skip <- from_path("WALLABIDI_LIGHTPANDA_PATH"),
+         :skip <- from_paths_file("LIGHTPANDA") do
+      :error
+    end
+  end
+
+  @doc "Returns `{:ok, path}` for a resolved Lightpanda binary, or `:error`."
+  def lightpanda_path do
+    case lightpanda() do
+      {:path, path} -> {:ok, path}
+      _ -> :error
+    end
+  end
+
+  @doc """
+  Returns the directory Lightpanda should install into, version-stamped
+  to mirror Chrome for Testing's `.browsers/chrome/<target>-<version>/`
+  layout — e.g. `.browsers/lightpanda/aarch64-macos-fork-2026-05-30`.
+
+  Used both by `mix wallabidi.install` (to place the binary) and by the
+  test config (to point `config :lightpanda, :install_dir` at the same
+  spot so the runtime resolves it). Returns `nil` if the `lightpanda`
+  package is unavailable or too old to expose `target/0` + `release/0`.
+  """
+  @lightpanda_install_root Path.join(".browsers", "lightpanda")
+  def lightpanda_install_dir do
+    if Code.ensure_loaded?(Lightpanda) and
+         function_exported?(Lightpanda, :target, 0) and
+         function_exported?(Lightpanda, :release, 0) do
+      Path.join(@lightpanda_install_root, "#{Lightpanda.target()}-#{Lightpanda.release()}")
     end
   end
 

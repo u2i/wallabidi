@@ -4,13 +4,54 @@ config :logger, level: :warning
 
 # Lightpanda binary source. The `:lightpanda` hex package downloads the
 # u2i fork build (carries the WS-cookie-on-upgrade patch needed for
-# Phoenix LiveView channel joins). Point `:path` at a locally-built
-# sibling checkout when present so dev rebuilds get picked up without
-# re-running `mix lightpanda.install`.
+# Phoenix LiveView channel joins).
+#
+# We resolve to a concrete `config :lightpanda, :path` here, highest
+# priority first:
+#   1. WALLABIDI_LIGHTPANDA_PATH env override (Docker/CI), symmetric
+#      with WALLABIDI_CHROME_PATH.
+#   2. A locally-built sibling checkout (dev) — picked up without
+#      re-running an install so rebuilds take effect immediately.
+#   3. The `LIGHTPANDA=` line in `.browsers/PATHS`, written by
+#      `mix wallabidi.install` (the absolute binary path, exactly like
+#      Chrome's `CHROME=` line).
+# If none match we set nothing, and the `lightpanda` package falls back
+# to its own `_build/` default.
+#
+# This reads `.browsers/PATHS` as a plain file rather than calling
+# Wallabidi.BrowserPaths — config is evaluated before wallabidi's (and
+# even the lightpanda dep's) modules are loadable, so no module calls
+# are possible here.
+lp_from_paths_file =
+  case File.read(".browsers/PATHS") do
+    {:ok, content} ->
+      content
+      |> String.split("\n", trim: true)
+      |> Enum.find_value(fn line ->
+        case String.split(line, "=", parts: 2) do
+          ["LIGHTPANDA", path] -> String.trim(path)
+          _ -> nil
+        end
+      end)
+
+    {:error, _} ->
+      nil
+  end
+
 local_lp = Path.expand("../../lightpanda-browser/zig-out/bin/lightpanda", __DIR__)
 
-if File.exists?(local_lp) do
-  config :lightpanda, :path, local_lp
+cond do
+  lp_override = System.get_env("WALLABIDI_LIGHTPANDA_PATH") ->
+    config :lightpanda, :path, lp_override
+
+  File.exists?(local_lp) ->
+    config :lightpanda, :path, local_lp
+
+  lp_from_paths_file && File.exists?(lp_from_paths_file) ->
+    config :lightpanda, :path, lp_from_paths_file
+
+  true ->
+    :ok
 end
 
 config :wallabidi,
@@ -22,10 +63,11 @@ config :wallabidi,
   # mutation timer with margin.
   max_wait_time: 3_500
 
-# Chrome discovery handled by Wallabidi.BrowserPaths.
+# Browser discovery handled by Wallabidi.BrowserPaths.
 # Override with env vars for Docker/CI:
-#   WALLABIDI_CHROME_URL=ws://...        (remote CDP connection)
+#   WALLABIDI_CHROME_URL=ws://...            (remote CDP connection)
 #   WALLABIDI_CHROME_PATH=/path/to/chrome
+#   WALLABIDI_LIGHTPANDA_PATH=/path/to/lightpanda
 
 # Test app configuration
 config :wallabidi, Wallabidi.TestApp.Repo,
