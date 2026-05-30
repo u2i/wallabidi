@@ -17,6 +17,12 @@ defmodule Wallabidi.Installer do
   @install_dir ".browsers"
   @paths_file Path.join(@install_dir, "PATHS")
 
+  # `lightpanda` is an `only: :test` dep, so the module isn't on the path
+  # when compiling in :dev/:prod (e.g. `mix docs`). Hold the name as an
+  # attribute and call via apply/3 so the compiler doesn't try (and warn)
+  # about an undefined module. Guarded at runtime by Code.ensure_loaded?.
+  @lightpanda Lightpanda
+
   @doc "The `.browsers` install dir."
   def install_dir, do: @install_dir
 
@@ -90,7 +96,7 @@ defmodule Wallabidi.Installer do
 
   defp do_install_lightpanda do
     cond do
-      not Code.ensure_loaded?(Lightpanda) ->
+      not Code.ensure_loaded?(@lightpanda) ->
         Mix.shell().info("Skipping Lightpanda (the `lightpanda` dep is not available).")
         nil
 
@@ -105,7 +111,8 @@ defmodule Wallabidi.Installer do
         nil
 
       true ->
-        Mix.shell().info("Installing Lightpanda (#{Lightpanda.release()})...")
+        # credo:disable-for-next-line Credo.Check.Refactor.Apply
+        Mix.shell().info("Installing Lightpanda (#{apply(@lightpanda, :release, [])})...")
         # Redirect where the package installs the binary. The dir is
         # version-stamped (`.browsers/lightpanda/<target>-<release>`) to
         # mirror Chrome's `.browsers/chrome/<target>-<version>/` layout,
@@ -123,8 +130,10 @@ defmodule Wallabidi.Installer do
         try do
           Application.delete_env(:lightpanda, :path)
           Application.put_env(:lightpanda, :install_dir, BrowserPaths.lightpanda_install_dir())
-          Lightpanda.install()
-          path = Path.expand(Lightpanda.bin_path())
+          # credo:disable-for-next-line Credo.Check.Refactor.Apply
+          apply(@lightpanda, :install, [])
+          # credo:disable-for-next-line Credo.Check.Refactor.Apply
+          path = Path.expand(apply(@lightpanda, :bin_path, []))
           fixup_macos_signature(path)
           path
         after
@@ -178,7 +187,8 @@ defmodule Wallabidi.Installer do
     try do
       Application.delete_env(:lightpanda, :path)
       Application.put_env(:lightpanda, :install_dir, sentinel)
-      String.starts_with?(Path.expand(Lightpanda.bin_path()), Path.expand(sentinel))
+      # credo:disable-for-next-line Credo.Check.Refactor.Apply
+      String.starts_with?(Path.expand(apply(@lightpanda, :bin_path, [])), Path.expand(sentinel))
     after
       restore_env(:lightpanda, :install_dir, prev_dir)
       restore_env(:lightpanda, :path, prev_path)

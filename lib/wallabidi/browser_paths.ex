@@ -107,11 +107,20 @@ defmodule Wallabidi.BrowserPaths do
   package is unavailable or too old to expose `target/0` + `release/0`.
   """
   @lightpanda_install_root Path.join(".browsers", "lightpanda")
+  # `lightpanda` is an `only: :test` dep, so the module isn't on the path
+  # when compiling in :dev/:prod (e.g. `mix docs`). Resolve it as a
+  # runtime atom and call via apply/3 so the compiler doesn't try (and
+  # warn) about an undefined module.
+  @lightpanda Lightpanda
   def lightpanda_install_dir do
-    if Code.ensure_loaded?(Lightpanda) and
-         function_exported?(Lightpanda, :target, 0) and
-         function_exported?(Lightpanda, :release, 0) do
-      Path.join(@lightpanda_install_root, "#{Lightpanda.target()}-#{Lightpanda.release()}")
+    if Code.ensure_loaded?(@lightpanda) and
+         function_exported?(@lightpanda, :target, 0) and
+         function_exported?(@lightpanda, :release, 0) do
+      # credo:disable-for-next-line Credo.Check.Refactor.Apply
+      target = apply(@lightpanda, :target, [])
+      # credo:disable-for-next-line Credo.Check.Refactor.Apply
+      release = apply(@lightpanda, :release, [])
+      Path.join(@lightpanda_install_root, "#{target}-#{release}")
     end
   end
 
