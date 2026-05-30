@@ -1,5 +1,19 @@
 # Changelog
 
+## Wallabidi 0.4.0-rc.7 (2026-05-30)
+
+### Fixed
+
+- **`mix wallabidi.install` could grab the wrong Chrome path.** The
+  installer parsed `@puppeteer/browsers --format {{path}}` output as the
+  last non-empty stdout line, but npm update-notice lines can trail the
+  path and got picked up instead — leaving the install with a bogus
+  `CHROME=` entry even though Chrome downloaded fine (seen on Docker/CI
+  images). The installer now (a) suppresses npm's update notice on the
+  npx call (`NPM_CONFIG_UPDATE_NOTIFIER=false`) and (b) scans the output
+  for the line that actually resolves to an existing path under
+  `.browsers/`, rather than trusting line position.
+
 ## Wallabidi 0.4.0-rc.6 (2026-05-30)
 
 ### Changed

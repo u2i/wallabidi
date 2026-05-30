@@ -213,24 +213,45 @@ defmodule Wallabidi.Installer do
           "--format",
           "{{path}}"
         ],
-        stderr_to_stdout: true
+        stderr_to_stdout: true,
+        # Silence npm's update notice. It otherwise interleaves "npm
+        # notice" lines into stdout *after* the `{{path}}` output, which
+        # breaks any naive last-line parse of the install path.
+        env: [{"NPM_CONFIG_UPDATE_NOTIFIER", "false"}, {"NO_UPDATE_NOTIFIER", "1"}]
       )
 
-    path =
-      output
-      |> String.split("\n", trim: true)
-      |> List.last()
-      |> String.trim()
+    abs_path = extract_install_path(output)
 
-    abs_path = Path.expand(path)
+    unless abs_path && File.exists?(abs_path) do
+      Mix.raise("""
+      Could not determine the installed #{browser} path from the installer output.
 
-    unless File.exists?(abs_path) do
-      Mix.raise(
-        "Installation reported path #{abs_path} but file does not exist.\nOutput: #{output}"
-      )
+      #{output}
+      """)
     end
 
     abs_path
+  end
+
+  # `@puppeteer/browsers --format {{path}}` prints the install path, but
+  # update notices / warnings can still slip into the same stdout stream,
+  # so the path isn't reliably the last line. Pick the line that actually
+  # resolves to an existing path under our install dir — scanning from the
+  # bottom so the most recent install wins if several are printed.
+  defp extract_install_path(output) do
+    install_root = Path.expand(@install_dir)
+
+    output
+    |> String.split("\n", trim: true)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reverse()
+    |> Enum.find_value(fn line ->
+      candidate = Path.expand(line)
+
+      if String.starts_with?(candidate, install_root) and File.exists?(candidate) do
+        candidate
+      end
+    end)
   end
 
   defp install_bidi_server_deps do
