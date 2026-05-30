@@ -91,7 +91,10 @@ excludes =
         [
           browser: true,
           headless: true,
-          cdp_only: true
+          cdp_only: true,
+          # In-process LV driver makes no real HTTP request, so it carries
+          # no User-Agent — the sandbox-metadata-in-UA test is N/A here.
+          sandbox_metadata: true
         ]
 
     # LP has a full JS implementation and a WebSocket client and runs

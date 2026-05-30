@@ -53,6 +53,18 @@ defmodule Wallabidi.Integration.LiveApp.PlainFormController do
     """)
   end
 
+  # Echoes the request's User-Agent into the DOM. Used to assert that a
+  # driver forwards the BEAM sandbox metadata (encoded into the UA by
+  # `Wallabidi.Metadata`) on its server-side HTTP requests — the
+  # mechanism sandbox_shim relies on to find the sandbox owner.
+  def echo_user_agent(conn, _params) do
+    ua = conn |> Plug.Conn.get_req_header("user-agent") |> List.first() || "(none)"
+
+    html(conn, """
+    <html><body><div id="ua">#{Plug.HTML.html_escape(ua)}</div></body></html>
+    """)
+  end
+
   def show(conn, _params) do
     token = Plug.CSRFProtection.get_csrf_token()
 

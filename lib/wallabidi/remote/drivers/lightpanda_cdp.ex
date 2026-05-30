@@ -9,7 +9,7 @@ defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
 
   use Wallabidi.Remote.Driver.Generic
 
-  alias Wallabidi.{Element, Session}
+  alias Wallabidi.{Element, Metadata, Session}
   alias Wallabidi.Remote.Browser
   alias Wallabidi.Remote.CDP.Client, as: CDPClient
   alias Wallabidi.Remote.Dialogs
@@ -28,6 +28,14 @@ defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
     touch_scroll: nil,
     log_check_interactions?: false
   }
+
+  # Lightpanda reports `Lightpanda/1.0` by default. We append the BEAM
+  # sandbox metadata onto that so server-side requests carry the same
+  # `BeamMetadata (...)` segment the Chrome driver emits — without it,
+  # sandbox_shim can't find the sandbox owner and DB-backed tests crash
+  # with DBConnection.OwnershipError. Lightpanda honors
+  # `Network.setUserAgentOverride` (verified against the fork binary).
+  @base_user_agent "Lightpanda/1.0"
 
   @doc false
   def driver_spec, do: @driver_spec
@@ -141,15 +149,7 @@ defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
              session_struct: session_struct,
              owner: Keyword.get(opts, :owner, self())
            ) do
-      if window_size = Keyword.get(opts, :window_size) do
-        _ =
-          CDPClient.set_window_size(
-            session,
-            window_size[:width],
-            window_size[:height]
-          )
-      end
-
+      apply_session_opts(session, opts)
       {:ok, session}
     end
   end
@@ -168,18 +168,26 @@ defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
       }
 
       with {:ok, session} <- Transport.start_session_from(acquired, session_struct, opts) do
-        if window_size = Keyword.get(opts, :window_size) do
-          _ =
-            CDPClient.set_window_size(
-              session,
-              window_size[:width],
-              window_size[:height]
-            )
-        end
-
+        apply_session_opts(session, opts)
         {:ok, session}
       end
     end
+  end
+
+  # Apply post-start session options shared by both transports: the BEAM
+  # sandbox metadata user-agent override (mirrors ChromeCDP) and the
+  # optional window size.
+  defp apply_session_opts(session, opts) do
+    if metadata = Keyword.get(opts, :metadata) do
+      ua = Metadata.append(@base_user_agent, metadata)
+      _ = CDPClient.cdp_send(session, "Network.setUserAgentOverride", %{userAgent: ua})
+    end
+
+    if window_size = Keyword.get(opts, :window_size) do
+      _ = CDPClient.set_window_size(session, window_size[:width], window_size[:height])
+    end
+
+    :ok
   end
 
   defp pick_transport(opts) do

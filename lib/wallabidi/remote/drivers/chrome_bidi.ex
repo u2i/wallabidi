@@ -10,6 +10,7 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
 
   use Wallabidi.Remote.Driver.Generic
 
+  alias Wallabidi.{Metadata, Session}
   alias Wallabidi.Remote.BiDi.Client, as: BiDiClient
   alias Wallabidi.Remote.BiDi.WebSocketClient
   alias Wallabidi.Remote.Browser
@@ -19,7 +20,6 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
   alias Wallabidi.Remote.Transport.BiDi
   alias Wallabidi.Remote.Transport.Protocol
   alias Wallabidi.Remote.Windows
-  alias Wallabidi.Session
 
   @driver_spec %Spec{
     browser: Browser.Chrome,
@@ -30,6 +30,15 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
     touch_scroll: &__MODULE__.touch_scroll_impl/3,
     log_check_interactions?: true
   }
+
+  # Mirrors ChromeCDP's base UA. When the feature passes BEAM sandbox
+  # metadata, we append it (via `Wallabidi.Metadata`) and push it with
+  # BiDi's `emulation.setUserAgentOverride` so server-side requests carry
+  # the `BeamMetadata (...)` segment sandbox_shim reads to find the
+  # sandbox owner. Without it, DB-backed browser tests crash with
+  # DBConnection.OwnershipError.
+  @base_user_agent "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 " <>
+                     "(KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36"
 
   @doc false
   def driver_spec, do: @driver_spec
@@ -99,6 +108,18 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
            ) do
       caller = Keyword.get(opts, :owner, self())
       _ = WebSocketClient.subscribe(session.bidi_pid, "log.entryAdded", caller, :global)
+
+      if metadata = Keyword.get(opts, :metadata) do
+        ua = Metadata.append(@base_user_agent, metadata)
+
+        _ =
+          Protocol.cdp_send(
+            session,
+            "emulation.setUserAgentOverride",
+            %{"userAgent" => ua, "contexts" => [session.browsing_context]},
+            []
+          )
+      end
 
       if window_size = Keyword.get(opts, :window_size) do
         _ = BiDiClient.set_viewport(session, window_size[:width], window_size[:height])

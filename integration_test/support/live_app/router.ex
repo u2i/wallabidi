@@ -50,5 +50,6 @@ defmodule Wallabidi.Integration.LiveApp.Router do
 
     get("/join-pending", Wallabidi.Integration.LiveApp.PlainFormController, :join_pending)
     get("/event-capture", Wallabidi.Integration.LiveApp.PlainFormController, :event_capture)
+    get("/echo-user-agent", Wallabidi.Integration.LiveApp.PlainFormController, :echo_user_agent)
   end
 end
