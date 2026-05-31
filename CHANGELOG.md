@@ -1,5 +1,22 @@
 # Changelog
 
+## Wallabidi 0.4.0-rc.9 (2026-05-31)
+
+### Docs
+
+- **Perf chart now renders on HexDocs.** The README's per-test wall-time
+  chart was referenced at `priv/perf-matrix.svg`, which ex_doc never
+  copied into the docs output — so it 404'd on hexdocs. Moved to
+  `assets/perf-matrix.svg` (resolves on both GitHub and HexDocs) and
+  configured ex_doc to copy `assets/` into the generated docs.
+- **Corrected the LiveView driver speed** from "~0ms/test" to "~30ms/test"
+  — the per-test figure the perf suite actually shows (136 tests in ~4s).
+- **Simplified the `--max-cases` guidance.** LiveView, Lightpanda, and CDP
+  all run cleanly at ExUnit's default concurrency (CDP merely plateaus
+  past mc=4 — no flakes); only Chrome BiDi needs capping (to `8`), as its
+  single-threaded Mapper goes flaky at the typical 16-core default. The
+  docs no longer prescribe caps the data doesn't justify.
+
 ## Wallabidi 0.4.0-rc.8 (2026-05-30)
 
 ### Added
