@@ -71,4 +71,40 @@ defmodule Wallabidi.DriverForTest do
       assert Wallabidi.resolve_driver() == :live_view
     end
   end
+
+  describe "pinned_driver/0 and primary_driver/0 (WALLABIDI_DRIVER)" do
+    setup do
+      on_exit(fn ->
+        System.delete_env("WALLABIDI_DRIVER")
+        System.delete_env("WALLABIDI_BROWSER")
+      end)
+    end
+
+    test "no env pin → nil / config default" do
+      assert Wallabidi.pinned_driver() == nil
+      assert Wallabidi.primary_driver() == :live_view
+    end
+
+    test "WALLABIDI_DRIVER pins to the named driver (by value)" do
+      System.put_env("WALLABIDI_DRIVER", "chrome_cdp")
+      assert Wallabidi.pinned_driver() == :chrome_cdp
+      # The pin wins over config :driver — this is what CI lanes rely on.
+      Application.put_env(:wallabidi, :driver, :live_view)
+      assert Wallabidi.primary_driver() == :chrome_cdp
+    end
+
+    test "WALLABIDI_BROWSER takes precedence over WALLABIDI_DRIVER" do
+      System.put_env("WALLABIDI_DRIVER", "lightpanda")
+      System.put_env("WALLABIDI_BROWSER", "chrome")
+      assert Wallabidi.pinned_driver() == :chrome
+    end
+
+    test "an unknown driver name raises" do
+      System.put_env("WALLABIDI_DRIVER", "nope")
+
+      assert_raise ArgumentError, ~r/not a known driver/, fn ->
+        Wallabidi.pinned_driver()
+      end
+    end
+  end
 end

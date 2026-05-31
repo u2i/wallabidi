@@ -165,21 +165,13 @@ defmodule Wallabidi.Feature do
 
     def resolve_test_driver(context) do
       cond do
-        # WALLABIDI_BROWSER forces all tests to a specific browser
-        browser = System.get_env("WALLABIDI_BROWSER") ->
-          String.to_existing_atom(browser)
-
-        # When running inside a specific driver's test suite (e.g. WALLABIDI_DRIVER=chrome),
-        # don't route to a different driver based on tags
-        System.get_env("WALLABIDI_DRIVER") in [
-          "chrome",
-          "chrome_cdp",
-          "chrome_cdp_v2",
-          "chrome_bidi_v2",
-          "lightpanda",
-          "lightpanda_v2"
-        ] ->
-          Wallabidi.resolve_driver()
+        # WALLABIDI_DRIVER / WALLABIDI_BROWSER pin the whole run to one
+        # driver — every test routes there regardless of its capability
+        # tag. This is what the per-driver CI lanes use to run "everything
+        # this browser can run" (combined with --only/--exclude tag
+        # filters). The env var VALUE selects the driver.
+        pinned = Wallabidi.pinned_driver() ->
+          pinned
 
         # @tag :browser — needs a full browser
         context[:browser] ->

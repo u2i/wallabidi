@@ -80,10 +80,7 @@ defmodule Wallabidi do
     [primary | tag_routed]
   end
 
-  defp driver_pinned_by_env? do
-    not is_nil(System.get_env("WALLABIDI_DRIVER")) or
-      not is_nil(System.get_env("WALLABIDI_BROWSER"))
-  end
+  defp driver_pinned_by_env?, do: not is_nil(pinned_driver())
 
   # A tag-routed driver module is only startable if its module (and the
   # browser package behind it) is loadable — e.g. the Lightpanda driver
@@ -176,7 +173,51 @@ defmodule Wallabidi do
   end
 
   @doc false
-  def driver_module, do: driver_module_for(resolve_driver())
+  def driver_module, do: driver_module_for(primary_driver())
+
+  @doc """
+  The driver untagged tests / the app supervisor use as primary.
+
+  A `WALLABIDI_DRIVER` / `WALLABIDI_BROWSER` env pin wins (so a pinned CI
+  lane boots the right supervisor and routes every test there); otherwise
+  the configured/default `:driver`.
+  """
+  def primary_driver do
+    case pinned_driver() do
+      nil -> driver_for(:default)
+      driver -> driver
+    end
+  end
+
+  @pinnable_drivers ~w(
+    live_view
+    lightpanda lightpanda_v2
+    chrome_cdp chrome_cdp_v2
+    chrome chrome_bidi_v2
+  )
+
+  @doc """
+  The driver pinned via `WALLABIDI_DRIVER` / `WALLABIDI_BROWSER`, or `nil`.
+
+  Raises if the env var holds an unknown driver name (loud beats a stray
+  atom / silent wrong-driver run).
+  """
+  def pinned_driver do
+    value = System.get_env("WALLABIDI_BROWSER") || System.get_env("WALLABIDI_DRIVER")
+
+    cond do
+      is_nil(value) ->
+        nil
+
+      value in @pinnable_drivers ->
+        String.to_existing_atom(value)
+
+      true ->
+        raise ArgumentError,
+              "WALLABIDI_DRIVER/WALLABIDI_BROWSER=#{inspect(value)} is not a known driver. " <>
+                "Expected one of: #{Enum.join(@pinnable_drivers, ", ")}"
+    end
+  end
 
   @doc false
   def driver_module_for(driver) do

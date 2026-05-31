@@ -113,6 +113,86 @@ subsequent runs:
     restore-keys: ${{ runner.os }}-browsers-
 ```
 
+### Running the suite across drivers
+
+A plain `mix test` uses the [default driver ladder](readme.html#drivers):
+each test runs on the *cheapest* driver that supports it (untagged →
+LiveView, `@tag :headless` → Lightpanda, `@tag :browser` → Chrome). That's
+the right default for local dev and a fast CI lane.
+
+For thorough CI you often want the opposite: run every feature on **every
+browser capable of running it** — e.g. exercise a `@tag :headless` test on
+both Lightpanda *and* Chrome. ExUnit applies one driver per run, so this is
+a small matrix of separate runs, not a single invocation. The mechanism:
+
+- `@tag :headless` / `@tag :browser` declare each feature's *minimum*
+  capability. **Excluding** the tiers a driver can't satisfy selects
+  exactly what it can run — LiveView drops both, Lightpanda drops
+  `:browser`, Chrome runs everything.
+- `WALLABIDI_DRIVER=<driver>` pins the whole run to that driver (disabling
+  the cheapest-driver ladder), so every selected test executes on it.
+
+| Lane | Command |
+|------|---------|
+| Features on **LiveView** | `WALLABIDI_DRIVER=live_view mix test --exclude headless --exclude browser` |
+| Features on **Lightpanda** | `WALLABIDI_DRIVER=lightpanda mix test --exclude browser` |
+| Features on **Chrome (CDP)** | `WALLABIDI_DRIVER=chrome_cdp mix test` |
+| Features on **Chrome (BiDi)** | `WALLABIDI_DRIVER=chrome mix test` |
+
+> Use plain `--exclude`, **not** `--only feature`. ExUnit's `--only` /
+> `--include` *overrides* excludes for any matching test, so
+> `--only feature --exclude browser` would still run the browser features.
+> Capability filtering only works through excludes.
+
+These lanes also run your plain (non-feature) unit tests — which is
+harmless (they start no browser) and gives untagged features coverage on
+every driver. If you'd rather keep a separate, browser-free fast lane,
+add one with `mix test --exclude feature` (the `feature` macro tags every
+`use Wallabidi.Feature` test `:feature`):
+
+| Lane | Command |
+|------|---------|
+| Unit only (no browser) | `mix test --exclude feature` |
+
+As a GitHub Actions matrix — a fast unit lane plus one parallel job per
+browser:
+
+```yaml
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: erlef/setup-beam@v1
+        with: { otp-version: 28.x, elixir-version: 1.19.x }
+      - run: mix deps.get
+      - run: mix test --exclude feature
+
+  features:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - driver: live_view
+            exclude: "--exclude headless --exclude browser"
+          - driver: lightpanda
+            exclude: "--exclude browser"
+          - driver: chrome_cdp
+            exclude: ""
+    steps:
+      - uses: actions/checkout@v6
+      - uses: erlef/setup-beam@v1
+        with: { otp-version: 28.x, elixir-version: 1.19.x }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: mix deps.get
+      - run: MIX_ENV=test mix wallabidi.install
+      - run: mix test ${{ matrix.exclude }}
+        env:
+          WALLABIDI_DRIVER: ${{ matrix.driver }}
+```
+
 ### Environment variable overrides
 
 For Docker-based CI or remote browsers:
