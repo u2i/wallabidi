@@ -181,17 +181,15 @@ defmodule Wallabidi.Feature do
         ] ->
           Wallabidi.resolve_driver()
 
-        # @tag :browser — needs full browser (Chrome)
+        # @tag :browser — needs a full browser
         context[:browser] ->
-          Application.get_env(:wallabidi, :browser, :chrome_cdp)
+          Wallabidi.driver_for(:browser)
 
         # @tag :headless — needs a headless browser
-        # Defaults to chrome_cdp since Lightpanda is experimental and
-        # doesn't yet support WebSocket-based features like LiveView.
         context[:headless] ->
-          Application.get_env(:wallabidi, :headless, :chrome_cdp)
+          Wallabidi.driver_for(:headless)
 
-        # Default — use the fastest available driver
+        # Default — untagged, cheapest driver
         true ->
           Wallabidi.resolve_driver()
       end

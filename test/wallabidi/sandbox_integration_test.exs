@@ -19,7 +19,9 @@ defmodule Wallabidi.SandboxIntegrationTest do
 
   setup %{sandbox: sandbox} do
     metadata = SandboxCase.Sandbox.ecto_metadata(sandbox)
-    {:ok, session} = Wallabidi.start_session(metadata: metadata)
+    # Pin a real browser driver — this suite exercises cross-process
+    # sandbox propagation over HTTP, not the in-process LiveView default.
+    {:ok, session} = Wallabidi.start_session(driver: :chrome_cdp, metadata: metadata)
 
     on_exit(fn ->
       Wallabidi.end_session(session)
@@ -108,7 +110,7 @@ defmodule Wallabidi.SandboxIntegrationTest do
     test "two sessions share sandbox data", %{session: session1} do
       # Create a second session with the same metadata
       metadata = Phoenix.Ecto.SQL.Sandbox.metadata_for(Repo, self())
-      {:ok, session2} = Wallabidi.start_session(metadata: metadata)
+      {:ok, session2} = Wallabidi.start_session(driver: :chrome_cdp, metadata: metadata)
 
       Repo.insert!(%User{name: "Diana"})
 

@@ -134,9 +134,10 @@ Chrome), set `WALLABIDI_CHROME_PATH` and skip `mix wallabidi.install`:
 
 ## Phoenix
 
-Browser drivers connect to your app over real HTTP, so the endpoint must
-run a server during tests and `base_url` must point at the port it
-actually binds:
+The default `:live_view` driver renders in-process and needs no HTTP
+server. The moment any test uses a browser driver — `@tag :headless` /
+`@tag :browser`, or a browser `:driver` — the endpoint must run a server
+during tests and `base_url` must point at the port it actually binds:
 
 ```elixir
 # config/test.exs

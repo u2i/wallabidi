@@ -42,16 +42,24 @@ feature "uploads a file", %{session: session} do
 end
 ```
 
-Each test runs on the **cheapest driver** that supports it, in a single `mix test` run. Routing is controlled by three config keys — the default driver for untagged tests, and the drivers `@tag :headless` and `@tag :browser` map to:
+Each test runs on the **cheapest driver** that supports it, in a single `mix test` run — and the sensible mapping is the default, so most projects configure nothing:
+
+| Test | Driver | Why |
+|------|--------|-----|
+| untagged | `:live_view` | in-process, fastest |
+| `@tag :headless` | `:lightpanda` (if the `lightpanda` dep is present, else the `:browser` driver) | cheapest real headless browser |
+| `@tag :browser` | `:chrome_cdp` | full browser fidelity |
+
+Each tier is overridable — set a key only to deviate from the ladder:
 
 ```elixir
-# config/test.exs
+# config/test.exs — all optional
 config :wallabidi,
   otp_app: :your_app,
   endpoint: YourAppWeb.Endpoint,
-  driver: :live_view,      # untagged tests (fastest)
-  headless: :lightpanda,   # @tag :headless  (defaults to :chrome_cdp)
-  browser: :chrome_cdp     # @tag :browser   (defaults to :chrome_cdp)
+  driver: :live_view,      # untagged tests
+  headless: :chrome_cdp,   # force @tag :headless onto Chrome instead of Lightpanda
+  browser: :chrome         # use BiDi for @tag :browser
 ```
 
 Wallabidi starts a supervisor for the primary `:driver` plus each distinct `:headless` / `:browser` target that's available, so one run can fan tests across drivers. The primary driver must be available (it raises otherwise); tag-routed drivers are best-effort — if Chrome isn't installed, `@tag :browser` tests just can't run, but your untagged LiveView suite still boots. Setting `WALLABIDI_DRIVER=<driver>` pins the whole run to one driver (used by the per-driver CI matrices below), which disables tag routing.
@@ -158,13 +166,13 @@ config :wallabidi,
   endpoint: YourAppWeb.Endpoint
 ```
 
-The default driver is `:chrome_cdp`. To use LiveView for fast local testing:
+Untagged tests default to the `:live_view` driver (fastest). Set `:driver` to route untagged tests elsewhere:
 
 ```elixir
 config :wallabidi,
   otp_app: :your_app,
   endpoint: YourAppWeb.Endpoint,
-  driver: :live_view
+  driver: :chrome_cdp
 ```
 
 All options with defaults:
@@ -173,9 +181,9 @@ All options with defaults:
 config :wallabidi,
   otp_app: :your_app,              # required for Ecto sandbox
   endpoint: YourAppWeb.Endpoint,   # required for LiveView driver
-  driver: :chrome_cdp,             # untagged tests; :live_view | :lightpanda | :chrome_cdp | :chrome (BiDi)
-  headless: :chrome_cdp,           # driver for @tag :headless tests
-  browser: :chrome_cdp,            # driver for @tag :browser tests
+  driver: :live_view,              # untagged tests; :live_view | :lightpanda | :chrome_cdp | :chrome (BiDi)
+  headless: :lightpanda,           # @tag :headless tests (falls back to the :browser driver if lightpanda dep absent)
+  browser: :chrome_cdp,            # @tag :browser tests
   max_wait_time: 5_000,            # ms to wait for elements
   js_errors: true,                 # re-raise JS errors in Elixir
   js_logger: :stdio,               # IO device for console logs (nil to disable)

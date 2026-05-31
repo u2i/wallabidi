@@ -52,8 +52,8 @@ defmodule Wallabidi do
 
   # The set of driver supervisor modules a single test run can route to:
   # the primary `:driver` plus the drivers `@tag :browser` / `@tag
-  # :headless` tests resolve to (`:browser` / `:headless` config, both
-  # defaulting to `:chrome_cdp`). Deduped, primary first.
+  # :headless` tests resolve to (via the `driver_for/1` ladder). Deduped,
+  # primary first.
   #
   # When `WALLABIDI_DRIVER` / `WALLABIDI_BROWSER` pins a single driver for
   # the run (per-driver CI matrices, the integration suite), tag routing
@@ -66,10 +66,7 @@ defmodule Wallabidi do
       if driver_pinned_by_env?() do
         []
       else
-        [
-          Application.get_env(:wallabidi, :browser, :chrome_cdp),
-          Application.get_env(:wallabidi, :headless, :chrome_cdp)
-        ]
+        [driver_for(:headless), driver_for(:browser)]
         |> Enum.map(&driver_module_for/1)
         |> Enum.uniq()
         |> Enum.reject(&(&1 == primary))
@@ -193,15 +190,43 @@ defmodule Wallabidi do
   end
 
   @doc """
-  Resolves which driver to use.
+  Resolves the driver for an untagged/default session.
 
-  Checks in order: explicit opts, application config, default (:chrome_cdp).
+  Explicit `opts[:driver]` wins; otherwise the configured default
+  (`driver_for(:default)`). This is what a bare `Wallabidi.start_session/1`
+  and untagged `feature` tests use.
   """
   def resolve_driver(opts \\ []) do
-    Keyword.get_lazy(opts, :driver, fn ->
-      Application.get_env(:wallabidi, :driver, :chrome_cdp)
-    end)
+    Keyword.get_lazy(opts, :driver, fn -> driver_for(:default) end)
   end
+
+  @doc """
+  Resolves a driver for a capability tier, applying wallabidi's default
+  ladder so the sensible path needs no configuration:
+
+    * `:default`  — untagged tests / bare sessions. `config :driver`,
+      else `:live_view` (in-process, fastest).
+    * `:headless` — `@tag :headless`. `config :headless`, else
+      Lightpanda when its package is available, else the `:browser`
+      driver (so a Chrome-only project still runs headless tests).
+    * `:browser`  — `@tag :browser`. `config :browser`, else `:chrome_cdp`.
+
+  Each `config :wallabidi, <key>: <driver>` entry is purely an override.
+  """
+  def driver_for(:default), do: Application.get_env(:wallabidi, :driver, :live_view)
+
+  def driver_for(:browser), do: Application.get_env(:wallabidi, :browser, :chrome_cdp)
+
+  def driver_for(:headless) do
+    case Application.get_env(:wallabidi, :headless) do
+      nil -> if lightpanda_available?(), do: :lightpanda, else: driver_for(:browser)
+      driver -> driver
+    end
+  end
+
+  # The Lightpanda driver needs the `lightpanda` package (it provides the
+  # binary + server). Gauge availability the same way the driver does.
+  defp lightpanda_available?, do: Code.ensure_loaded?(Module.concat([Lightpanda, Server]))
 
   @doc false
   def screenshot_on_failure? do
