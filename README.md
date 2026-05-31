@@ -175,12 +175,20 @@ config :wallabidi,
   driver: :chrome_cdp
 ```
 
-All options with defaults:
+**Required** (no default — you must set these):
 
 ```elixir
 config :wallabidi,
-  otp_app: :your_app,              # required for Ecto sandbox
-  endpoint: YourAppWeb.Endpoint,   # required for LiveView driver
+  otp_app: :your_app,              # for the Ecto sandbox
+  endpoint: YourAppWeb.Endpoint    # for the LiveView driver / base_url
+```
+
+**Optional** — every key below is shown with its *default value*. You
+only need to add a line to **change** it; an empty config behaves exactly
+as written here:
+
+```elixir
+config :wallabidi,
   driver: :live_view,              # untagged tests; :live_view | :lightpanda | :chrome_cdp | :chrome (BiDi)
   headless: :lightpanda,           # @tag :headless tests (falls back to the :browser driver if lightpanda dep absent)
   browser: :chrome_cdp,            # @tag :browser tests

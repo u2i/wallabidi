@@ -62,4 +62,26 @@ config :wallaby, driver: Wallaby.Chrome
 config :wallaby, hackney_options: [...]
 ```
 
-4. That's it. The `Browser`, `Query`, `Element`, `Feature`, and `DSL` APIs are the same.
+4. **Pin the driver to `:chrome_cdp` to start.** Wallaby ran every test
+   in a real Chrome; wallabidi instead routes by capability and defaults
+   untagged tests to the in-process `:live_view` driver (see
+   [Setup](setup.html) and the driver table in the README). Your existing
+   Wallaby suite has no `@tag :headless` / `@tag :browser` tags, so
+   without this every test would route to LiveView and fail. Keep the
+   Wallaby behaviour first, then adopt tags incrementally:
+
+   ```elixir
+   # config/test.exs — preserves "everything runs in Chrome"
+   config :wallabidi,
+     otp_app: :your_app,
+     endpoint: YourAppWeb.Endpoint,
+     driver: :chrome_cdp
+   ```
+
+   Once you're green on Chrome, tag the tests that don't need a full
+   browser (`@tag :headless` → Lightpanda, untagged → LiveView) to claw
+   back the speed. You can drop the `driver: :chrome_cdp` line entirely
+   when the suite is fully tagged and you want the cheapest-driver
+   defaults.
+
+5. That's it. The `Browser`, `Query`, `Element`, `Feature`, and `DSL` APIs are the same.
