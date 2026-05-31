@@ -38,20 +38,52 @@ defmodule Wallabidi.Installer do
   """
   def install_chrome(version \\ "stable") do
     load_app!()
-    ensure_npx!()
     ensure_npm!()
     File.mkdir_p!(@install_dir)
 
-    Mix.shell().info("Installing Chrome for Testing @ #{version}...")
-    chrome_path = install_browser("chrome", version)
+    chrome_path = resolve_or_download_chrome(version)
     merge_paths(%{"CHROME" => chrome_path})
 
     Mix.shell().info("Installing chromium-bidi server Node deps...")
     install_bidi_server_deps()
 
-    Mix.shell().info("Installed Chrome: #{chrome_path}")
+    Mix.shell().info("Using Chrome: #{chrome_path}")
     Mix.shell().info("Paths written to #{@paths_file}")
     chrome_path
+  end
+
+  # Chrome for Testing has no arm64-Linux build, so we can't always
+  # download it. Prefer a Chrome/Chromium already on the system PATH; on
+  # platforms CfT doesn't support, require one; otherwise download CfT.
+  defp resolve_or_download_chrome(version) do
+    case BrowserPaths.system_chrome() do
+      path when is_binary(path) ->
+        Mix.shell().info("Using pre-installed Chrome/Chromium: #{path}")
+        Mix.shell().info("(skipping Chrome for Testing download)")
+        path
+
+      nil ->
+        if BrowserPaths.chrome_for_testing_unsupported?() do
+          Mix.raise("""
+          No Chrome/Chromium found, and Chrome for Testing has no build for
+          this platform (arm64 Linux), so it can't be downloaded.
+
+          Install a system Chromium and re-run, e.g.:
+
+              apt-get install -y chromium        # Debian/Ubuntu
+              # or your distro's chromium / chromium-browser package
+
+          wallabidi looks for `google-chrome`, `chromium`, or
+          `chromium-browser` on PATH. You can also point it at a binary
+          directly with WALLABIDI_CHROME_PATH, or at a remote browser with
+          WALLABIDI_CHROME_URL.
+          """)
+        end
+
+        ensure_npx!()
+        Mix.shell().info("Installing Chrome for Testing @ #{version}...")
+        install_browser("chrome", version)
+    end
   end
 
   @doc """

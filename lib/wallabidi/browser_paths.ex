@@ -33,6 +33,11 @@ defmodule Wallabidi.BrowserPaths do
 
   @paths_file ".browsers/PATHS"
 
+  # Executable names we accept as a system-provided Chrome/Chromium, in
+  # preference order. Chrome for Testing doesn't ship arm64 Linux builds,
+  # so on that platform a distro Chromium is the supported browser.
+  @system_chrome_names ["google-chrome", "chromium", "chromium-browser"]
+
   @doc """
   Returns `{:url, url}` for remote, `{:path, path}` for local, or `:error`.
   """
@@ -40,10 +45,43 @@ defmodule Wallabidi.BrowserPaths do
     with :skip <- from_url("WALLABIDI_CHROME_URL"),
          :skip <- from_path("WALLABIDI_CHROME_PATH"),
          :skip <- from_paths_file("CHROME"),
-         :skip <- from_system(["google-chrome", "chromium", "chromium-browser"]) do
+         :skip <- from_system(@system_chrome_names) do
       :error
     end
   end
+
+  @doc """
+  Returns the path to a Chrome/Chromium binary already on the system
+  `PATH` (`google-chrome`, `chromium`, or `chromium-browser`), or `nil`.
+
+  Used by the installer to skip the Chrome for Testing download when a
+  usable browser is already present.
+  """
+  def system_chrome do
+    case from_system(@system_chrome_names) do
+      {:path, path} -> path
+      :skip -> nil
+    end
+  end
+
+  @doc """
+  True on platforms Chrome for Testing has no build for — currently
+  arm64/aarch64 Linux. On these, `mix wallabidi.install` can't download
+  Chrome and a system Chromium must be used instead.
+  """
+  def chrome_for_testing_unsupported? do
+    chrome_for_testing_unsupported?(
+      :os.type(),
+      to_string(:erlang.system_info(:system_architecture))
+    )
+  end
+
+  @doc false
+  def chrome_for_testing_unsupported?(os_type, arch) do
+    match?({:unix, :linux}, os_type) and arm?(arch)
+  end
+
+  defp arm?(arch), do: String.contains?(arch, "aarch64") or String.contains?(arch, "arm")
 
   @doc "Returns the local Chrome binary path or raises."
   def chrome_path! do

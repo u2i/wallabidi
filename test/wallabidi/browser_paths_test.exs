@@ -54,4 +54,33 @@ defmodule Wallabidi.BrowserPathsTest do
       assert dir == Path.join([".browsers", "lightpanda", "#{Lightpanda.target()}-#{Lightpanda.release()}"])
     end
   end
+
+  describe "chrome_for_testing_unsupported?/2" do
+    test "true only on arm/aarch64 Linux" do
+      assert BrowserPaths.chrome_for_testing_unsupported?({:unix, :linux}, "aarch64-unknown-linux-gnu")
+      assert BrowserPaths.chrome_for_testing_unsupported?({:unix, :linux}, "armv7l-unknown-linux-gnueabihf")
+    end
+
+    test "false on x86_64 Linux (Chrome for Testing ships a build)" do
+      refute BrowserPaths.chrome_for_testing_unsupported?({:unix, :linux}, "x86_64-pc-linux-gnu")
+    end
+
+    test "false on macOS regardless of arch (system Chrome / CfT both fine)" do
+      refute BrowserPaths.chrome_for_testing_unsupported?({:unix, :darwin}, "aarch64-apple-darwin")
+    end
+
+    test "false on Windows" do
+      refute BrowserPaths.chrome_for_testing_unsupported?({:win32, :nt}, "win64")
+    end
+  end
+
+  describe "system_chrome/0" do
+    test "returns a path string or nil" do
+      # Whatever this machine has — assert the contract, not the value.
+      case BrowserPaths.system_chrome() do
+        nil -> :ok
+        path -> assert is_binary(path) and File.exists?(path)
+      end
+    end
+  end
 end

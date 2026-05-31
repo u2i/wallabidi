@@ -45,11 +45,18 @@ versions coexist, and the resolved binary paths are recorded in
 
 ### Chrome
 
-If Chrome is on your PATH or has been installed by `mix wallabidi.install`, Wallabidi launches it directly via CDP. Override the binary path with `WALLABIDI_CHROME_PATH` if Chrome lives somewhere unusual:
+If a Chrome/Chromium (`google-chrome`, `chromium`, or `chromium-browser`) is on your PATH, Wallabidi launches it directly via CDP. `mix wallabidi.install` **prefers a pre-installed browser**: if it finds one on PATH it records that and skips the Chrome for Testing download (logging which binary it used); otherwise it downloads a pinned Chrome for Testing into `.browsers/`. Override the binary path with `WALLABIDI_CHROME_PATH` if Chrome lives somewhere unusual:
 
 ```bash
 WALLABIDI_CHROME_PATH=/usr/bin/google-chrome-stable mix test
 ```
+
+> **arm64 Linux:** Chrome for Testing has no arm64-Linux build, so
+> `mix wallabidi.install` cannot download it there. Install a distro
+> Chromium first (`apt-get install -y chromium`, or your distro's
+> `chromium` / `chromium-browser` package) — wallabidi picks it up off
+> PATH. If none is present on arm64 Linux the install errors out with this
+> guidance rather than downloading an unusable binary.
 
 When Chrome runs as a service in a Docker Compose stack, point Wallabidi at it with `WALLABIDI_CHROME_URL` (see [Remote Chrome](#remote-chrome-ci-docker) below).
 
