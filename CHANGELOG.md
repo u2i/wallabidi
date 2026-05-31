@@ -1,5 +1,70 @@
 # Changelog
 
+## Wallabidi 0.4.0-rc.8 (2026-05-30)
+
+### Added
+
+- **Sensible per-capability driver defaults — no config required.** A
+  single `Wallabidi.driver_for/1` now encodes the ladder: untagged tests
+  default to `:live_view` (in-process, fastest), `@tag :headless` to
+  `:lightpanda` (falling back to the `:browser` driver when the
+  `lightpanda` dep is absent), and `@tag :browser` to `:chrome_cdp`. Each
+  `config :wallabidi, driver:/headless:/browser:` key is purely an
+  override. This makes the README's "each test runs on the cheapest
+  driver that supports it" true out of the box.
+- **Multi-driver test runs.** `Wallabidi.start/2` now starts a supervisor
+  for the primary driver *plus* each distinct `:headless` / `:browser`
+  target that's available, so one `mix test` run can fan tests across
+  drivers. The primary is validated (raises if unavailable); tag-routed
+  drivers are best-effort, so a LiveView-only project with no Chrome still
+  boots and runs its untagged suite.
+
+### Changed
+
+- **`WALLABIDI_DRIVER` / `WALLABIDI_BROWSER` now pin by value for
+  consumers.** Previously the pin only worked inside wallabidi's own repo
+  (which copies the env var into `config :driver`); in a consumer app
+  `WALLABIDI_DRIVER=chrome_cdp mix test` silently ran on the configured
+  default. The env var's *value* now selects the driver for both routing
+  and supervisor startup, and an unknown name raises. This is what the
+  documented per-driver CI matrix relies on (see the Setup guide).
+- **Bare `Wallabidi.start_session/1` defaults to `:live_view`** (was
+  `:chrome_cdp`), consistent with the untagged-test default. Pass
+  `driver:` to choose another.
+
+### Fixed
+
+- **Sandbox metadata propagation on Lightpanda and Chrome BiDi.** Only the
+  Chrome CDP driver forwarded the BEAM sandbox owner allowance (encoded in
+  the User-Agent) to server-side requests; the Lightpanda and BiDi drivers
+  dropped it, so `sandbox_shim` couldn't find the owner and DB-backed
+  browser tests crashed with `DBConnection.OwnershipError`. Both drivers
+  now set the metadata user-agent override (Lightpanda via
+  `Network.setUserAgentOverride`, BiDi via `emulation.setUserAgentOverride`).
+  Sandbox isolation now composes with every remote driver.
+
+- **`mix wallabidi.install` on arm64 Linux / with a system browser.**
+  Chrome for Testing has no arm64-Linux build, so the install would fail
+  trying to download an unavailable binary. The installer now prefers a
+  Chrome/Chromium already on PATH (recording it and skipping the download,
+  with a log line), and on arm64 Linux without one it raises a clear
+  message to install a distro Chromium rather than failing obscurely.
+  `npx` is only required when actually downloading Chrome for Testing.
+
+### Docs
+
+- New-user setup gaps closed across the Setup, Test Isolation, and
+  Migrating guides: adapter deps that aren't transitive
+  (mimic/mox/cachex/fun_with_flags) and the `lightpanda` dep, FunWithFlags
+  backend setup, the `Endpoint.url()`-vs-`http:` port trap (and Phoenix
+  1.8's `runtime.exs` clobbering the test port), Mox/Mimic/Cachex wiring,
+  and a recommendation to pin `driver: :chrome_cdp` when migrating from
+  Wallaby. Adds a per-driver CI matrix recipe.
+
+> Test isolation requires `sandbox_case ~> 0.3.12` if you use the
+> documented `mimic: true` form — earlier versions crash on it. The
+> explicit `mimic: [modules: […]]` form works on any 0.3.x.
+
 ## Wallabidi 0.4.0-rc.7 (2026-05-30)
 
 ### Fixed
