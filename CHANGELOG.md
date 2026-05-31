@@ -1,5 +1,43 @@
 # Changelog
 
+## Wallabidi 0.4.0-rc.10 (2026-05-31)
+
+### Added
+
+- **Detects unbuilt test assets — the #1 confusing LiveView-test failure.**
+  When a browser test visits a LiveView page whose JavaScript bundle isn't
+  loaded (the generated `mix test` alias builds the DB but not assets, and
+  `:dev` masks it because its watchers build live), the LiveView client
+  never boots: static mount-rendered content shows, but dynamic updates
+  (`stream_insert`, async assigns, `phx-*` events) never appear — and it
+  used to surface as a baffling assertion timeout. `visit/2` now awaits the
+  LiveView connection on remote drivers (making the documented "`visit/2`
+  waits for the LiveSocket to connect" actually true) and logs a one-time
+  warning naming the cause and the fix when `window.liveSocket` never
+  initializes. False-positive-free (a slow-but-present bundle still defines
+  `liveSocket`) and zero added cost on connected/static pages.
+
+### Fixed
+
+- **`Query` `text` filter now works with `visible: :any`.** Validation
+  rejected a `text` filter whenever visibility wasn't strictly `true`,
+  wrongly tripping on `visible: :any`. Since `:any` still includes visible
+  elements (webdriver can read their text), only `visible: false`
+  (hidden-only) is incompatible. `visible: :any` is the right tool for
+  matching content that may be off-viewport (e.g. stream items in a
+  scrollable container). (Inherited from upstream Wallaby.)
+
+### Docs
+
+- **Setup:** new "Build your JS assets for browser tests" note — the
+  generated `test` alias doesn't build assets and `:dev` watchers hide it;
+  add `assets.build` to the `test` alias.
+- **API / Migrating:** define what a *patch* is — any server-driven
+  re-render of the mounted LiveView (`onPatchEnd`): an `assign` re-render,
+  `handle_info`, `assign_async`, or `push_patch`. **Not** just `push_patch`,
+  and not `push_navigate`/`redirect` (navigations) or client-only
+  `Phoenix.LiveView.JS` commands.
+
 ## Wallabidi 0.4.0-rc.9 (2026-05-31)
 
 ### Docs
