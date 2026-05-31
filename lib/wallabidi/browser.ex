@@ -1517,6 +1517,16 @@ defmodule Wallabidi.Browser do
         driver.visit(session, request_url(path))
     end
 
+    # On remote drivers, wait for the LiveView client to connect (a no-op
+    # for non-LiveView pages, near-instant once joined). This makes the
+    # documented "visit/2 waits for the LiveSocket to connect" true, and
+    # gives the `no-livesocket` diagnostic (unbuilt test assets) a place to
+    # fire on a plain visit — the most common entry point. Best-effort:
+    # the result is advisory, downstream actions still auto-wait.
+    if remote_session?(session) do
+      _ = Wallabidi.Remote.LiveViewAware.await_liveview_connected(session)
+    end
+
     session
   end
 
@@ -1892,6 +1902,19 @@ defmodule Wallabidi.Browser do
 
   @doc """
   Waits for the next LiveView DOM patch.
+
+  A *patch* is LiveView applying a server-rendered diff to the DOM of the
+  currently-mounted view (its client's `onPatchEnd`). That covers **any**
+  server-driven re-render — an `assign` re-render from a `phx-*` handler,
+  `handle_info` (e.g. a PubSub broadcast), `assign_async` results, or
+  `push_patch` (same view, URL changes). It is **not** limited to
+  `push_patch`, and does **not** include `push_navigate`/`redirect` (those
+  mount a new view / load a new page — different waits handle them) or
+  client-only `Phoenix.LiveView.JS` commands (no server diff).
+
+  Resolves on the **next single** patch. For an interaction that produces
+  several (e.g. `phx-change` per keystroke) or "is the page idle," use
+  `settle/2` instead.
 
   Installed automatically via JavaScript — no `app.js` changes needed.
 

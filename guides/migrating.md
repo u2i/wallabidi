@@ -23,7 +23,7 @@ All of this is installed via injected JavaScript — no changes to your `app.js`
 **Lazy elements**: Most Browser APIs that find then immediately operate (`Browser.text`, `attr`, `fill_in`, `click`, `has_text?`...) skip the V8-object-id ref-fetch that Wallaby would do — the element op re-resolves the query inline on the page. Saves one round-trip per element op without changing semantics.
 
 **New features**:
-- `await_patch/2` — Wait for the next LiveView DOM patch. Useful for server-pushed updates that aren't triggered by a browser interaction.
+- `await_patch/2` — Wait for the next LiveView DOM patch (any server-driven re-render of the mounted view that fires `onPatchEnd` — an `assign` re-render, `handle_info`, `assign_async`, or `push_patch` — **not** just `push_patch`, and not `push_navigate`/`redirect`, which are navigations). Useful for server-pushed updates that aren't triggered by a browser interaction. See the [API guide](api.html#what-patch-means-here) for the full definition.
 
 **Four drivers**: LiveView (in-process, no browser), Lightpanda (headless CDP), Chrome CDP (full browser, direct DevTools Protocol), Chrome BiDi (full browser, W3C WebDriver BiDi via chromium-bidi). Tests declare their minimum requirement with `@tag :headless` or `@tag :browser`.
 

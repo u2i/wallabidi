@@ -128,6 +128,29 @@ session
 |> assert_has(css(".alert", text: "Welcome!"))
 ```
 
+## What "patch" means here
+
+A **patch** is LiveView applying a server-rendered diff to the DOM of the
+*currently mounted* view — the moment its client fires `onPatchEnd`. This
+is the common case, **not** just `push_patch`: any server-driven
+re-render of the live view is a patch, including
+
+- a `phx-click` / `phx-submit` / `phx-change` handler that `assign`s and re-renders,
+- `handle_info` (e.g. a PubSub broadcast) that re-renders,
+- `assign_async` results landing,
+- `push_patch` (same view, URL changes, re-renders) — one *kind* of patch, not the definition.
+
+These are **not** patches, and wallabidi waits on them differently:
+
+- `push_navigate` / `<.link navigate>` — a *different* LiveView mounts (classified `:navigate`; wallabidi awaits the reconnect).
+- `redirect` / full-page load — a new document (`:full_page`; awaits page load).
+- client-only `Phoenix.LiveView.JS` commands (`JS.toggle`, …) and `push_event` — no server diff to the live DOM, so no patch.
+
+`await_patch/2` waits for the **next single** patch. For an interaction
+that produces several (typing into a `phx-change` field fires one per
+keystroke) or for "is the page done updating," use [`settle`](#settle),
+which waits for patch *quiescence* plus no pending HTTP / `phx-*-loading`.
+
 ## Testing LiveView optimistic UI
 
 Default interactions auto-await the LiveView patch that follows the

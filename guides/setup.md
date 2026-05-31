@@ -262,6 +262,35 @@ Application.put_env(:wallabidi, :base_url, YourAppWeb.Endpoint.url())
 > end
 > ```
 
+### Build your JS assets for browser tests
+
+A real-browser driver loads your app over HTTP and runs **your** JavaScript
+— the LiveSocket your `app.js` creates is what connects the WebSocket and
+drives every LiveView update (`phx-*` events, `stream_insert`, async
+assigns). In `:dev` Phoenix's watchers rebuild assets live, so this Just
+Works when you load a page by hand. **Under `mix test` nothing builds
+them** — the generated `test` alias builds the database but not assets —
+so the LiveView client never boots and dynamic content never appears
+(while static, mount-rendered content does, which makes the failure
+baffling).
+
+Build assets as part of the test run by adding `assets.build` to your
+`test` alias:
+
+```elixir
+# mix.exs
+defp aliases do
+  [
+    test: ["ecto.create --quiet", "ecto.migrate --quiet", "assets.build", "test"]
+    # ...
+  ]
+end
+```
+
+or run `MIX_ENV=test mix assets.build` before the suite in CI. If you
+forget, wallabidi logs a warning the first time it visits a LiveView page
+whose `window.liveSocket` never initialized, pointing back here.
+
 ## Test isolation
 
 Browser tests need sandbox access propagated to every server-side process the

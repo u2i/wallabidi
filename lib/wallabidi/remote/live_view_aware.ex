@@ -174,9 +174,58 @@ defmodule Wallabidi.Remote.LiveViewAware do
     js = "window.__w.run([['await_lv_connected', #{pre_url_js}, #{timeout}]])"
 
     case Protocol.eval_async(session, js, timeout + 1_000) do
-      {:ok, true} -> {:ok, :connected}
-      {:ok, "no-liveview"} -> {:ok, :no_liveview}
-      _ -> {:error, :timeout}
+      {:ok, true} ->
+        {:ok, :connected}
+
+      {:ok, "no-liveview"} ->
+        {:ok, :no_liveview}
+
+      {:ok, "no-livesocket"} ->
+        # LiveView markup was served but window.liveSocket never appeared:
+        # the app's JS bundle isn't loaded in the test env. Surface the
+        # cause loudly (once per session) — otherwise this manifests as a
+        # baffling "dynamic content never renders" assertion timeout far
+        # downstream, even though the page looks fine when loaded manually
+        # in dev (where Phoenix's watchers build assets live).
+        warn_no_livesocket_once(session)
+        {:error, :timeout}
+
+      _ ->
+        {:error, :timeout}
     end
+  end
+
+  @no_livesocket_flag {__MODULE__, :warned_no_livesocket}
+
+  defp warn_no_livesocket_once(%Session{id: id}) do
+    key = {@no_livesocket_flag, id}
+
+    unless Process.get(key) do
+      Process.put(key, true)
+
+      require Logger
+
+      Logger.warning("""
+      [wallabidi] LiveView page served, but window.liveSocket never \
+      initialized — the page's JavaScript bundle does not appear to be \
+      loaded in the test environment.
+
+      LiveView interactivity (WebSocket connect, phx-* events, \
+      stream_insert, async updates) is driven by your app's own JS. In \
+      :dev Phoenix's watchers build assets live, so this works when you \
+      load the page manually; under `mix test` nothing builds them, so \
+      the LiveView client never boots and dynamic content never appears.
+
+      Build your assets for the test run — e.g. add `assets.build` to your \
+      `test` alias in mix.exs:
+
+          test: ["assets.build", "test"]
+
+      or run `MIX_ENV=test mix assets.build` before the suite. See the \
+      wallabidi Setup guide ("Phoenix").\
+      """)
+    end
+
+    :ok
   end
 end

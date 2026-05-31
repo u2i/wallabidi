@@ -495,7 +495,13 @@ W.liveViewConnected = function() {
 
 // Wait until the current page's LiveSocket is connected. preUrl forces
 // a "wait for URL change first" mode used post-navigation. Resolves
-// true / 'no-liveview' / false (timeout).
+// true / 'no-liveview' / 'no-livesocket' / false (timeout).
+//
+// 'no-livesocket' is the diagnostic case: the page IS a LiveView (has
+// [data-phx-session]) but window.liveSocket never appeared by the
+// deadline — almost always the app's JS bundle isn't built/served in the
+// test env, so the LiveView client never booted. We distinguish it from
+// a plain timeout (false) so the Elixir side can point at the real cause.
 W.awaitLiveViewConnected = function(preUrl, timeoutMs) {
   return new Promise(function(resolve) {
     var deadline = Date.now() + (timeoutMs || 5000);
@@ -511,7 +517,10 @@ W.awaitLiveViewConnected = function(preUrl, timeoutMs) {
       if (!document.querySelector('[data-phx-session]')) return resolve('no-liveview');
       var ls = window.liveSocket;
       if (ls && ls.main && !ls.main.joinPending) return resolve(true);
-      if (Date.now() > deadline) return resolve(false);
+      if (Date.now() > deadline) {
+        // LV markup present but no liveSocket ever defined → JS never booted.
+        return resolve(typeof window.liveSocket === 'undefined' ? 'no-livesocket' : false);
+      }
       setTimeout(check, 30);
     }
     check();
