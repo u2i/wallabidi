@@ -109,7 +109,7 @@ defmodule Wallabidi.Mixfile do
         "README.md",
         "LICENSE.md",
         "priv/cdp",
-        "priv/perf-matrix.svg",
+        "assets/perf-matrix.svg",
         "priv/run_command.sh",
         # Bootstrap reads these at compile time via @external_resource
         # — they must be in the tarball so the consumer's compile sees them.
@@ -145,7 +145,11 @@ defmodule Wallabidi.Mixfile do
       ],
       source_ref: "v#{@version}",
       source_url: @source_url,
-      main: "readme"
+      main: "readme",
+      # Copy assets/ (the perf chart referenced by the README) into the
+      # generated docs at doc/assets/, so `assets/perf-matrix.svg` resolves
+      # on hexdocs as well as on GitHub.
+      assets: %{"assets" => "assets"}
     ]
   end
 

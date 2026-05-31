@@ -16,7 +16,7 @@ Wallabidi is a fork of [Wallaby](https://github.com/elixir-wallaby/wallaby) with
 
 | Driver | Speed | What it does | When to use |
 |--------|-------|-------------|-------------|
-| **LiveView** | ~0ms/test | Renders pages in-process via Phoenix.ConnTest. No browser. | Default for local dev — instant feedback |
+| **LiveView** | ~30ms/test | Renders pages in-process via Phoenix.ConnTest. No browser. | Default for local dev — fastest feedback |
 | **Lightpanda** | ~50ms/test | Headless JS-capable browser via CDP. No CSS rendering. | Fast path for full functional suites — nearly LiveView speed |
 | **Chrome (CDP)** | ~200ms/test | Full browser via Chrome DevTools Protocol. Real multi-threading via Chrome's per-target threads. | Full fidelity (CSS, screenshots, mouse). Best concurrent throughput today. |
 | **Chrome (BiDi)** | ~600ms/test | Full browser via WebDriver BiDi (chromium-bidi → Chrome). Cross-engine portable. | Future-proof choice as BiDi matures; aspirationally replaces CDP. |
@@ -68,7 +68,7 @@ Wallabidi starts a supervisor for the primary `:driver` plus each distinct `:hea
 
 Each driver scales differently with `--max-cases`. The values below come from running the [perf_bench](https://github.com/u2i/perf_bench) LV scenario suite on a 16-thread Mac laptop (M-series). perf_bench is a separate harness containing 136 LiveView-focused scenarios — happy paths only, no waiting-for-absence tests — so it's a better fit for cross-driver measurements than the wallabidi integration suite, which contains plenty of error-case waits.
 
-![per-test wall time vs max-cases](priv/perf-matrix.svg)
+![per-test wall time vs max-cases](assets/perf-matrix.svg)
 
 Wall time in seconds for the [perf_bench](https://github.com/u2i/perf_bench) LiveView scenario suite (136 tests) at each `--max-cases`:
 
@@ -82,21 +82,36 @@ Wall time in seconds for the [perf_bench](https://github.com/u2i/perf_bench) Liv
 
 ⚠ flag = flaky failures at this concurrency. Chrome BiDi's mc=16 trips chromium-bidi's BiDi Mapper contention; Wallaby's mc=8+ trips chromedriver session-creation timeouts.
 
-**Recommended `--max-cases` per driver:**
+**Recommended `--max-cases`:**
 
-| Driver | Recommended | Why |
-|--------|-------------|-----|
-| **BiDi** | `8` | chromium-bidi's BiDi Mapper is single-threaded JS in one Chrome tab. mc=8 captures the scaling win; mc=16 trips structural flakes. |
-| **CDP** | `4` | CDP's flat-session protocol multiplexes parallel work across Chrome's per-target threads. mc=4 is the sweet spot; past that you save no wallclock. |
-| **Lightpanda** | `8`–`16` | In-process WS, scales linearly to mc=8 then plateaus at LP's `--cdp-max-connections` limit. |
-| **LiveView** | `8`–`16` | No external process; just BEAM. Use as much concurrency as ExUnit allows. |
+For **LiveView, Lightpanda, and CDP, leave `--max-cases` at ExUnit's
+default** (`System.schedulers_online()`). They all run cleanly there —
+LiveView and Lightpanda keep scaling to it, and CDP simply plateaus past
+mc=4 (no further speedup, but no flakes either, so there's nothing to cap
+for correctness).
+
+**Only BiDi benefits from a cap.** chromium-bidi's BiDi Mapper is
+single-threaded JS in one Chrome tab; it scales to ~mc=8, and at the
+typical 16-core default it trips Mapper contention and goes flaky/slow
+(259s with flakes vs. 68s at mc=8). Cap it:
+
+```bash
+WALLABIDI_DRIVER=chrome mix test --max-cases 8
+```
+
+| Driver | `--max-cases` | Why |
+|--------|---------------|-----|
+| **LiveView** | default | No external process; scales with the BEAM. |
+| **Lightpanda** | default | Scales to ~mc=8 then plateaus at LP's `--cdp-max-connections`; higher is harmless. |
+| **CDP** | default | Plateaus past mc=4 — no win, but no flakes, so no need to cap. |
+| **BiDi** | `8` | Single-threaded Mapper; the default (~16) trips structural flakes. |
 
 **When to pick which driver in CI:**
 
-- *Default:* let wallabidi route each test to the cheapest driver that supports it. Most LiveView-app tests run on the LiveView driver and are nearly free.
-- *JS-heavy app:* Lightpanda at mc=8 — fastest real headless option, within 2× of LiveView at scale.
-- *Need full browser fidelity (CSS, screenshots, mouse events):* CDP at mc=4.
-- *Cross-browser portability or BiDi spec features:* BiDi at mc=8. Slower than CDP today because the BiDi protocol serializes through a single Mapper per Chrome; will improve as chromium-bidi or successor implementations add parallel mapping.
+- *Default:* let wallabidi route each test to the cheapest driver that supports it. Most LiveView-app tests run on the LiveView driver and are the fastest path.
+- *JS-heavy app:* Lightpanda — fastest real headless option, within 2× of LiveView at scale.
+- *Need full browser fidelity (CSS, screenshots, mouse events):* CDP.
+- *Cross-browser portability or BiDi spec features:* BiDi, capped at `--max-cases 8`. Slower than CDP today because the BiDi protocol serializes through a single Mapper per Chrome; will improve as chromium-bidi or successor implementations add parallel mapping.
 
 ## Why fork?
 
