@@ -14,6 +14,7 @@ defmodule Wallabidi.Integration.LiveApp.Router do
 
     live_session :default do
       live("/counter", Wallabidi.Integration.LiveApp.CounterLive)
+      live("/stream-timer", Wallabidi.Integration.LiveApp.StreamTimerLive)
       live("/async", Wallabidi.Integration.LiveApp.AsyncLive)
       live("/text-change", Wallabidi.Integration.LiveApp.TextChangeLive)
       live("/nav-source", Wallabidi.Integration.LiveApp.NavSourceLive)

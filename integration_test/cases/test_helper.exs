@@ -94,7 +94,11 @@ excludes =
           cdp_only: true,
           # In-process LV driver makes no real HTTP request, so it carries
           # no User-Agent — the sandbox-metadata-in-UA test is N/A here.
-          sandbox_metadata: true
+          sandbox_metadata: true,
+          # Self-scheduled Process.send_after patch chains have no real
+          # browser/WS lifecycle in the in-process LV driver (events
+          # dispatch synchronously) — N/A here.
+          timer_patch: true
         ]
 
     # LP has a full JS implementation and a WebSocket client and runs
