@@ -84,6 +84,16 @@ config :wallabidi, Wallabidi.TestApp.Endpoint,
 
 config :wallabidi, ecto_repos: [Wallabidi.TestApp.Repo]
 
+# FunWithFlags: sandbox_case 0.4+ isolates flags via a persistence adapter
+# (no bytecode patching). Route persistence through it and disable the
+# cache so lookups reach the sandbox-aware store.
+config :fun_with_flags, :persistence,
+  adapter: SandboxCase.Sandbox.FwfAdapter,
+  sandbox_real_adapter: FunWithFlags.Store.Persistent.Ecto,
+  repo: Wallabidi.TestApp.Repo
+
+config :fun_with_flags, :cache, enabled: false
+
 # Sandbox case — batteries-included test isolation
 config :sandbox_case,
   otp_app: :wallabidi,

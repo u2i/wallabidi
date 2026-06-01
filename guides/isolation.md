@@ -11,7 +11,7 @@ Browser tests need sandbox access propagated to every server-side process the br
 ```elixir
 # mix.exs
 {:sandbox_shim, "~> 0.1"},                                  # all envs (compile-time only)
-{:sandbox_case, "~> 0.3", only: :test},                     # test only
+{:sandbox_case, "~> 0.4.0-rc", only: :test},                # test only
 {:wallabidi, "~> 0.4.0-rc", only: :test, runtime: false},   # test only
 ```
 
@@ -99,32 +99,47 @@ If `cachex` is a `only: :test` dep, guard the child spec so dev/prod don't refer
 
 ### FunWithFlags
 
-`fun_with_flags: true` isolates flag state per test, but FunWithFlags is **not** turnkey: by default it starts a Redis backend and will crash your app's boot if Redis isn't configured. Point it at a backend first — the Ecto backend is the simplest for a Phoenix app:
+`fun_with_flags: true` isolates flag state per test. Requires `sandbox_case ~> 0.4.0-rc` (earlier versions used a different, bytecode-based mechanism). FunWithFlags is **not** turnkey — three things to configure:
+
+**1. A persistence backend (all envs).** By default FWF starts a Redis backend and crashes your app's boot if Redis isn't configured. Point it at one — the Ecto backend is simplest for a Phoenix app:
 
 ```elixir
-# config/config.exs (all envs)
-config :fun_with_flags, :cache_bust_notifications, enabled: false
-
+# config/config.exs (dev/prod use the real adapter directly)
 config :fun_with_flags, :persistence,
   adapter: FunWithFlags.Store.Persistent.Ecto,
   repo: YourApp.Repo
 ```
 
+Then run FWF's Ecto migration (copy it from `deps/fun_with_flags/priv/ecto_repo/migrations/` and adapt the column types to your database — the template is Postgres-flavored). See the [FunWithFlags docs](https://hexdocs.pm/fun_with_flags) for other backends.
+
+**2. The sandbox persistence adapter (`:test`).** `sandbox_case` isolates FunWithFlags through a custom persistence adapter — there is no bytecode patching. In the test env, wrap your real adapter with `SandboxCase.Sandbox.FwfAdapter`:
+
 ```elixir
-# config/test.exs — REQUIRED for per-test isolation
+# config/test.exs
+config :fun_with_flags, :persistence,
+  adapter: SandboxCase.Sandbox.FwfAdapter,
+  sandbox_real_adapter: FunWithFlags.Store.Persistent.Ecto,
+  repo: YourApp.Repo
+```
+
+The adapter routes to a per-test isolated ETS table when a test is sandboxed, and delegates to `sandbox_real_adapter` otherwise. (`SandboxCase.Sandbox.setup/1` validates this wiring and raises with guidance if it's missing.)
+
+**3. The cache, disabled in `:test`.**
+
+```elixir
+# config/test.exs
 config :fun_with_flags, :cache, enabled: false
 ```
 
-> **Disable the FunWithFlags cache in `:test`.** FunWithFlags puts a
-> single global ETS read-cache in front of its store. With the cache on,
-> one test's flag value can be served to another concurrent test straight
-> from that shared cache — bypassing the sandbox entirely — so flag
-> isolation leaks even with everything else wired correctly. Disabling the
-> cache routes every lookup through the (sandboxed) store. This must be
-> set at compile time (in `config/test.exs`), since FunWithFlags picks its
-> store module at compile time.
-
-Then run FunWithFlags' Ecto migration (copy it from `deps/fun_with_flags/priv/ecto_repo/migrations/` and adapt the column types to your database — the template is Postgres-flavored). See the [FunWithFlags docs](https://hexdocs.pm/fun_with_flags) for other backends.
+> FunWithFlags puts a single global ETS read-cache in front of its store.
+> With the cache on, one test's flag value can be served to another
+> concurrent test straight from that shared cache — bypassing the sandbox
+> — so isolation leaks even when everything else is wired correctly.
+> Disabling it routes every lookup through the (sandboxed) adapter. This
+> must be set at compile time (in `config/test.exs`); FWF picks its store
+> module at compile time. Disabling the cache also makes the Redis
+> cache-bust-notifier boot crash impossible, so you don't need a separate
+> `config :fun_with_flags, :cache_bust_notifications, enabled: false`.
 
 ## Wiring sandbox_shim into your app
 
