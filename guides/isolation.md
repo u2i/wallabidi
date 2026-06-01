@@ -110,6 +110,20 @@ config :fun_with_flags, :persistence,
   repo: YourApp.Repo
 ```
 
+```elixir
+# config/test.exs — REQUIRED for per-test isolation
+config :fun_with_flags, :cache, enabled: false
+```
+
+> **Disable the FunWithFlags cache in `:test`.** FunWithFlags puts a
+> single global ETS read-cache in front of its store. With the cache on,
+> one test's flag value can be served to another concurrent test straight
+> from that shared cache — bypassing the sandbox entirely — so flag
+> isolation leaks even with everything else wired correctly. Disabling the
+> cache routes every lookup through the (sandboxed) store. This must be
+> set at compile time (in `config/test.exs`), since FunWithFlags picks its
+> store module at compile time.
+
 Then run FunWithFlags' Ecto migration (copy it from `deps/fun_with_flags/priv/ecto_repo/migrations/` and adapt the column types to your database — the template is Postgres-flavored). See the [FunWithFlags docs](https://hexdocs.pm/fun_with_flags) for other backends.
 
 ## Wiring sandbox_shim into your app
