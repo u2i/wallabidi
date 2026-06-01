@@ -9,11 +9,11 @@ defmodule Wallabidi.Integration.LiveView.StreamTimerTest do
   (`onPatchEnd` + MutationObserver) surviving across several unsolicited
   patches.
 
-  Runs on the JS drivers only (the in-process LV driver has no timer/WS
-  patch lifecycle) — see the `:timer_patch` tag.
+  Runs on every driver — including the in-process LV driver, where
+  `Phoenix.LiveViewTest` processes the `send_after`-driven `handle_info`
+  messages and re-renders, so the same assertions hold.
   """
   use Wallabidi.Integration.SessionCase, async: false
-  @moduletag :timer_patch
 
   @base Application.compile_env(:wallabidi, :live_app_url, "http://localhost:4321")
 
