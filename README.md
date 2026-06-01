@@ -216,7 +216,7 @@ config :wallabidi,
 
 ## Credits
 
-Wallabidi is built on the foundation of [Wallaby](https://github.com/elixir-wallaby/wallaby), created by [Mitchell Hanberg](https://github.com/mhanberg) and [contributors](https://github.com/elixir-wallaby/wallaby/graphs/contributors). The Browser, Query, Element, Feature, and DSL APIs are theirs. Wallabidi adds the BiDi transport layer, new DX features, and removes the Selenium/HTTP legacy code.
+Wallabidi is built on the foundation of [Wallaby](https://github.com/elixir-wallaby/wallaby), the work of its original author and [many contributors](https://github.com/elixir-wallaby/wallaby/graphs/contributors) over the years, and currently maintained by [Mitchell Hanberg](https://github.com/mhanberg). The Browser, Query, Element, Feature, and DSL APIs are theirs. Wallabidi adds the BiDi transport layer, new DX features, and removes the Selenium/HTTP legacy code.
 
 Licensed under MIT, same as Wallaby.
 
