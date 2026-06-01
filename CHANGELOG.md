@@ -1,5 +1,46 @@
 # Changelog
 
+## Wallabidi 0.4.0-rc.11 (2026-06-01)
+
+### Changed
+
+- **Test isolation now requires `sandbox_case ~> 0.4.0-rc`.** sandbox_case
+  0.4 isolates FunWithFlags through a custom persistence adapter instead of
+  runtime bytecode patching, which changes the FunWithFlags test config.
+  If you use `fun_with_flags: true`, point persistence at the sandbox
+  adapter in your test env:
+
+  ```elixir
+  # config/test.exs
+  config :fun_with_flags, :persistence,
+    adapter: SandboxCase.Sandbox.FwfAdapter,
+    sandbox_real_adapter: FunWithFlags.Store.Persistent.Ecto,
+    repo: MyApp.Repo
+
+  config :fun_with_flags, :cache, enabled: false
+  ```
+
+  `SandboxCase.Sandbox.setup/1` validates this and raises with guidance if
+  it's missing. See the [Test Isolation guide](guides/isolation.md).
+
+### Fixed
+
+- **FunWithFlags isolation could leak across concurrent tests.** The guide
+  disabled FWF's cache-bust notifications but not its read cache;
+  FunWithFlags keeps a single global ETS cache in front of the store, so
+  with it enabled one test's flag value could be served to another from
+  that shared cache, bypassing the sandbox. The Test Isolation guide now
+  requires `config :fun_with_flags, :cache, enabled: false` in
+  `config/test.exs` (which also removes the need for the separate
+  `cache_bust_notifications` setting).
+
+### Tests
+
+- Added coverage for self-scheduled post-mount patch chains — a LiveView
+  that streams content via a `Process.send_after` chain with no browser
+  interaction (the auto-wait must ride past several unsolicited patches).
+  Runs on all drivers, including the in-process LiveView driver.
+
 ## Wallabidi 0.4.0-rc.10 (2026-05-31)
 
 ### Added
