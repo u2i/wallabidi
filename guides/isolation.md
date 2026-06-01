@@ -11,7 +11,7 @@ Browser tests need sandbox access propagated to every server-side process the br
 ```elixir
 # mix.exs
 {:sandbox_shim, "~> 0.1"},                                  # all envs (compile-time only)
-{:sandbox_case, "~> 0.4.0-rc", only: :test},                # test only
+{:sandbox_case, "~> 0.4.0", only: :test},                   # test only
 {:wallabidi, "~> 0.4.0-rc", only: :test, runtime: false},   # test only
 ```
 
@@ -99,7 +99,7 @@ If `cachex` is a `only: :test` dep, guard the child spec so dev/prod don't refer
 
 ### FunWithFlags
 
-`fun_with_flags: true` isolates flag state per test. Requires `sandbox_case ~> 0.4.0-rc` (earlier versions used a different, bytecode-based mechanism). FunWithFlags is **not** turnkey — three things to configure:
+`fun_with_flags: true` isolates flag state per test. Requires `sandbox_case ~> 0.4.0` (earlier versions used a different, bytecode-based mechanism). FunWithFlags is **not** turnkey — three things to configure:
 
 **1. A persistence backend (all envs).** By default FWF starts a Redis backend and crashes your app's boot if Redis isn't configured. Point it at one — the Ecto backend is simplest for a Phoenix app:
 

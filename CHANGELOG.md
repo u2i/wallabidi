@@ -1,5 +1,33 @@
 # Changelog
 
+## Wallabidi 0.4.0 (2026-06-01)
+
+First stable 0.4.0 release. Highlights since the 0.3 line (see the rc
+entries below for detail):
+
+- **Four drivers with a sensible default ladder** — untagged tests on the
+  in-process LiveView driver, `@tag :headless` on Lightpanda, `@tag
+  :browser` on Chrome (CDP) — routed in a single `mix test` run, no config
+  required. `WALLABIDI_DRIVER` pins a whole run to one driver for CI.
+- **Sandbox isolation across every remote driver** — the BEAM sandbox
+  owner is propagated via the User-Agent on Chrome CDP, Chrome BiDi, and
+  Lightpanda, so `sandbox_case`/`sandbox_shim` DB isolation composes with
+  all of them.
+- **Browser-aware install** — `mix wallabidi.install` prefers a
+  pre-installed Chromium and requires one on arm64 Linux (where Chrome for
+  Testing has no build), rather than failing obscurely.
+- **LiveView DX** — `visit/2` awaits the LiveSocket connection and warns
+  clearly when a page's JS bundle isn't built in the test env (the most
+  common "dynamic content never renders" trap).
+- **Test isolation requires `sandbox_case ~> 0.4.0`**, which isolates
+  FunWithFlags through a persistence adapter (no bytecode patching). See
+  the [Test Isolation guide](guides/isolation.md) for the FunWithFlags
+  config (sandbox adapter + cache disabled).
+
+### Changed
+
+- Depend on `sandbox_case ~> 0.4.0` (final).
+
 ## Wallabidi 0.4.0-rc.11 (2026-06-01)
 
 ### Changed
