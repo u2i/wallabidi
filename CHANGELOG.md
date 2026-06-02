@@ -1,5 +1,51 @@
 # Changelog
 
+## Wallabidi 0.4.1 (2026-06-02)
+
+Patch release: test-suite reliability, a lock-free transport hot path, and
+wider CI coverage. No public API changes.
+
+### Added
+
+- **Event-driven-await regression detector** — replaces the wall-clock
+  `SlowTestGuard`. Each test now fails if an event-driven await (`visit`,
+  `click`, `await_patch`, …) silently falls back to its timeout instead of
+  resolving on a browser event (`onPatchEnd` / `MutationObserver` /
+  page-ready). This catches a masked regression — where a broken
+  event path passes anyway via a lucky retry — that the old wall-clock
+  guard couldn't distinguish from infrastructure cost (Chrome cold start,
+  runner contention). Opt out a structurally-timing-out test with
+  `@tag :expected_await_timeout`; downgrade to a warning with
+  `WALLABIDI_AWAIT_MODE=warn`. (#37)
+- CI now also tests **Elixir 1.18** (on OTP 27) and tracks the latest
+  **1.20 release candidate** (rc.6). `mix.exs` already declared `~> 1.18`;
+  this exercises the floor. (#38)
+
+### Changed
+
+- **Lock-free `SharedConnection` reads via `persistent_term`** — the shared
+  browser WebSocket pid is read without serialization on the hot path;
+  only the one-time connect is serialized. Removes a per-`get/1` GenServer
+  round-trip and the race-and-close crash that could occur when closing a
+  not-yet-handshaked socket. (#36)
+- Chrome startup timeout raised to 30s and concurrent `ws_url` callers are
+  parked until the browser is ready, rather than each racing startup. (#34)
+
+### Fixed
+
+- Linting/dialyzer/driver-tag fixes and a Chrome startup-timeout fix that
+  were causing intermittent CI failures. (#34)
+
+### Docs
+
+- Corrected Wallaby attribution — Mitchell Hanberg is a maintainer, not the
+  creator.
+- `guides/setup.md` now states the real version requirement (Elixir 1.18+;
+  1.18 on OTP 25–27, 1.19+ on OTP 28), matching the `~> 1.18` constraint.
+- Install snippets in the setup/migrating/isolation guides now pin
+  `{:wallabidi, "~> 0.4"}` (the 0.4 stable line) instead of the now-stale
+  `~> 0.4.0-rc`.
+
 ## Wallabidi 0.4.0 (2026-06-01)
 
 First stable 0.4.0 release. Highlights since the 0.3 line (see the rc

@@ -6,7 +6,7 @@ Requires Elixir 1.18+ (1.18 on OTP 25–27; 1.19+ on OTP 28). Use `mix wallabidi
 
 ```elixir
 def deps do
-  [{:wallabidi, "~> 0.4.0-rc", runtime: false, only: :test}]
+  [{:wallabidi, "~> 0.4", runtime: false, only: :test}]
 end
 ```
 

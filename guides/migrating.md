@@ -43,7 +43,7 @@ All of this is installed via injected JavaScript — no changes to your `app.js`
 
 ```elixir
 # mix.exs
-{:wallabidi, "~> 0.4.0-rc", runtime: false, only: :test}
+{:wallabidi, "~> 0.4", runtime: false, only: :test}
 ```
 
 2. Find and replace in your project:

@@ -12,7 +12,7 @@ Browser tests need sandbox access propagated to every server-side process the br
 # mix.exs
 {:sandbox_shim, "~> 0.1"},                                  # all envs (compile-time only)
 {:sandbox_case, "~> 0.4.0", only: :test},                   # test only
-{:wallabidi, "~> 0.4.0-rc", only: :test, runtime: false},   # test only
+{:wallabidi, "~> 0.4", only: :test, runtime: false},        # test only
 ```
 
 > **Add a dep for every adapter you enable.** `sandbox_case` integrates
