@@ -8,13 +8,26 @@ defmodule Wallabidi.Remote.Chrome.SharedConnection do
   # Lazy-connect on first `get/1` call — by then the driver supervisor
   # has already started either a local Chrome (`Chrome.Server`) or we
   # have a remote URL to connect to.
+  #
+  # A GenServer (not an Agent) serializes the connect: the first `get/1`
+  # establishes the one shared WS while concurrent callers park in the
+  # mailbox and are answered once it's ready. This means exactly one
+  # connection is ever created — no redundant sockets, no racing — and the
+  # one-time startup wait (Chrome booting, handled by `Chrome.Server`)
+  # isn't multiplied across callers. Once connected, `get/1` is a cheap
+  # `Process.alive?` reply.
 
-  use Agent
+  use GenServer
 
   alias Wallabidi.Remote.WebSocket
 
+  # Must exceed Chrome.Server's @startup_timeout (30s): on a cold start the
+  # first get/1 blocks in connect until Chrome emits its DevTools URL, and
+  # parked callers wait for that same reply.
+  @get_timeout 40_000
+
   def start_link(_opts) do
-    Agent.start_link(fn -> nil end, name: __MODULE__)
+    GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
   @doc """
@@ -24,63 +37,21 @@ defmodule Wallabidi.Remote.Chrome.SharedConnection do
   """
   @spec get(module) :: pid
   def get(driver_mod) do
-    # Fast path: return the live shared pid. This is a cheap read under the
-    # Agent lock (just `Process.alive?`), so concurrent acquirers don't
-    # block each other once connected.
-    case live_pid() do
-      pid when is_pid(pid) ->
-        pid
-
-      nil ->
-        # Slow path: connect WITHOUT holding the Agent lock — the connect
-        # does a GenServer.call to the Chrome server (cold start can be
-        # seconds) plus a WS handshake, and doing that inside the Agent's
-        # update fn serialized all concurrent first-acquirers behind one
-        # lock, timing the rest out (the cause of the CI flake). Instead we
-        # connect outside the lock, then commit under it with a
-        # double-check so only one connection wins; redundant ones (from a
-        # concurrent connect race) are closed.
-        commit(connect(driver_mod))
-    end
+    GenServer.call(__MODULE__, {:get, driver_mod}, @get_timeout)
   end
 
-  # Returns the stored pid if alive, else nil — and clears a dead pid so
-  # the next caller reconnects. Cheap; safe to call under contention.
-  defp live_pid do
-    Agent.get_and_update(__MODULE__, fn
-      pid when is_pid(pid) -> if Process.alive?(pid), do: {pid, pid}, else: {nil, nil}
-      nil -> {nil, nil}
-    end)
-  end
+  @impl true
+  def init(nil), do: {:ok, %{pid: nil}}
 
-  # Store the freshly-connected pid, unless another concurrent acquirer
-  # already stored a live one — in which case keep theirs and close ours.
-  #
-  # The Agent update fn returns `{return_value, new_state}`. We encode the
-  # decision in the return_value (a tagged tuple) and set new_state to the
-  # pid we keep.
-  defp commit(new_pid) do
-    decision =
-      Agent.get_and_update(__MODULE__, fn
-        existing when is_pid(existing) ->
-          if Process.alive?(existing) do
-            {{:keep_existing, existing}, existing}
-          else
-            {{:took_new, new_pid}, new_pid}
-          end
-
-        nil ->
-          {{:took_new, new_pid}, new_pid}
-      end)
-
-    case decision do
-      {:keep_existing, existing} ->
-        # Lost the race — discard the duplicate WS so it doesn't leak.
-        WebSocket.close(new_pid)
-        existing
-
-      {:took_new, pid} ->
-        pid
+  @impl true
+  def handle_call({:get, driver_mod}, _from, %{pid: pid} = state) do
+    if is_pid(pid) and Process.alive?(pid) do
+      {:reply, pid, state}
+    else
+      # Connect once. Concurrent callers are parked in the mailbox and get
+      # this same pid when we reply — no second connect, nothing to close.
+      new_pid = connect(driver_mod)
+      {:reply, new_pid, %{state | pid: new_pid}}
     end
   end
 
