@@ -24,13 +24,64 @@ defmodule Wallabidi.Remote.Chrome.SharedConnection do
   """
   @spec get(module) :: pid
   def get(driver_mod) do
-    Agent.get_and_update(__MODULE__, fn
+    # Fast path: return the live shared pid. This is a cheap read under the
+    # Agent lock (just `Process.alive?`), so concurrent acquirers don't
+    # block each other once connected.
+    case live_pid() do
       pid when is_pid(pid) ->
-        if Process.alive?(pid), do: {pid, pid}, else: connect(driver_mod)
+        pid
 
       nil ->
-        connect(driver_mod)
+        # Slow path: connect WITHOUT holding the Agent lock — the connect
+        # does a GenServer.call to the Chrome server (cold start can be
+        # seconds) plus a WS handshake, and doing that inside the Agent's
+        # update fn serialized all concurrent first-acquirers behind one
+        # lock, timing the rest out (the cause of the CI flake). Instead we
+        # connect outside the lock, then commit under it with a
+        # double-check so only one connection wins; redundant ones (from a
+        # concurrent connect race) are closed.
+        commit(connect(driver_mod))
+    end
+  end
+
+  # Returns the stored pid if alive, else nil — and clears a dead pid so
+  # the next caller reconnects. Cheap; safe to call under contention.
+  defp live_pid do
+    Agent.get_and_update(__MODULE__, fn
+      pid when is_pid(pid) -> if Process.alive?(pid), do: {pid, pid}, else: {nil, nil}
+      nil -> {nil, nil}
     end)
+  end
+
+  # Store the freshly-connected pid, unless another concurrent acquirer
+  # already stored a live one — in which case keep theirs and close ours.
+  #
+  # The Agent update fn returns `{return_value, new_state}`. We encode the
+  # decision in the return_value (a tagged tuple) and set new_state to the
+  # pid we keep.
+  defp commit(new_pid) do
+    decision =
+      Agent.get_and_update(__MODULE__, fn
+        existing when is_pid(existing) ->
+          if Process.alive?(existing) do
+            {{:keep_existing, existing}, existing}
+          else
+            {{:took_new, new_pid}, new_pid}
+          end
+
+        nil ->
+          {{:took_new, new_pid}, new_pid}
+      end)
+
+    case decision do
+      {:keep_existing, existing} ->
+        # Lost the race — discard the duplicate WS so it doesn't leak.
+        WebSocket.close(new_pid)
+        existing
+
+      {:took_new, pid} ->
+        pid
+    end
   end
 
   defp connect(driver_mod) do
@@ -55,11 +106,11 @@ defmodule Wallabidi.Remote.Chrome.SharedConnection do
       end
 
     # WebSocket.start_link would link to the *current caller* (the test
-    # process invoking Agent.get_and_update), so the shared WS would die
-    # when each test exits. Use `start/1` for an unlinked process whose
-    # lifetime is tied to the SharedConnection Agent instead.
+    # process invoking get/1), so the shared WS would die when each test
+    # exits. Use `start/1` for an unlinked process whose lifetime is tied
+    # to the SharedConnection Agent instead.
     {:ok, pid} = WebSocket.start(ws_url)
-    {pid, pid}
+    pid
   end
 
   # Same /json/version discovery logic as ChromeCDP.SharedConnection.
