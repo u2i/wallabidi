@@ -324,13 +324,11 @@ defmodule Wallabidi.Installer do
   # cwd-relative for in-tree development (where Mix.Project is wallabidi
   # itself).
   defp bidi_server_dir do
-    case Application.app_dir(:wallabidi, "priv/bidi-server") do
-      path when is_binary(path) ->
-        if File.dir?(path), do: path, else: cwd_bidi_server_dir()
-
-      _ ->
-        cwd_bidi_server_dir()
-    end
+    # Application.app_dir/2 returns a path string (and raises ArgumentError
+    # if :wallabidi isn't loaded — caught below). Use it when it points at a
+    # real dir, otherwise fall back to cwd-relative for in-tree dev.
+    path = Application.app_dir(:wallabidi, "priv/bidi-server")
+    if File.dir?(path), do: path, else: cwd_bidi_server_dir()
   rescue
     ArgumentError -> cwd_bidi_server_dir()
   end

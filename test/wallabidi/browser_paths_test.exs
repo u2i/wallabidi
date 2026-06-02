@@ -51,14 +51,27 @@ defmodule Wallabidi.BrowserPathsTest do
       # The lightpanda dep exposes target/0 + release/0, so this resolves.
       assert is_binary(dir)
       assert String.starts_with?(dir, Path.join(".browsers", "lightpanda"))
-      assert dir == Path.join([".browsers", "lightpanda", "#{Lightpanda.target()}-#{Lightpanda.release()}"])
+
+      assert dir ==
+               Path.join([
+                 ".browsers",
+                 "lightpanda",
+                 "#{Lightpanda.target()}-#{Lightpanda.release()}"
+               ])
     end
   end
 
   describe "chrome_for_testing_unsupported?/2" do
     test "true only on arm/aarch64 Linux" do
-      assert BrowserPaths.chrome_for_testing_unsupported?({:unix, :linux}, "aarch64-unknown-linux-gnu")
-      assert BrowserPaths.chrome_for_testing_unsupported?({:unix, :linux}, "armv7l-unknown-linux-gnueabihf")
+      assert BrowserPaths.chrome_for_testing_unsupported?(
+               {:unix, :linux},
+               "aarch64-unknown-linux-gnu"
+             )
+
+      assert BrowserPaths.chrome_for_testing_unsupported?(
+               {:unix, :linux},
+               "armv7l-unknown-linux-gnueabihf"
+             )
     end
 
     test "false on x86_64 Linux (Chrome for Testing ships a build)" do
@@ -66,7 +79,10 @@ defmodule Wallabidi.BrowserPathsTest do
     end
 
     test "false on macOS regardless of arch (system Chrome / CfT both fine)" do
-      refute BrowserPaths.chrome_for_testing_unsupported?({:unix, :darwin}, "aarch64-apple-darwin")
+      refute BrowserPaths.chrome_for_testing_unsupported?(
+               {:unix, :darwin},
+               "aarch64-apple-darwin"
+             )
     end
 
     test "false on Windows" do

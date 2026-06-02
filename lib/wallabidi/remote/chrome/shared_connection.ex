@@ -8,13 +8,26 @@ defmodule Wallabidi.Remote.Chrome.SharedConnection do
   # Lazy-connect on first `get/1` call — by then the driver supervisor
   # has already started either a local Chrome (`Chrome.Server`) or we
   # have a remote URL to connect to.
+  #
+  # A GenServer (not an Agent) serializes the connect: the first `get/1`
+  # establishes the one shared WS while concurrent callers park in the
+  # mailbox and are answered once it's ready. This means exactly one
+  # connection is ever created — no redundant sockets, no racing — and the
+  # one-time startup wait (Chrome booting, handled by `Chrome.Server`)
+  # isn't multiplied across callers. Once connected, `get/1` is a cheap
+  # `Process.alive?` reply.
 
-  use Agent
+  use GenServer
 
   alias Wallabidi.Remote.WebSocket
 
+  # Must exceed Chrome.Server's @startup_timeout (30s): on a cold start the
+  # first get/1 blocks in connect until Chrome emits its DevTools URL, and
+  # parked callers wait for that same reply.
+  @get_timeout 40_000
+
   def start_link(_opts) do
-    Agent.start_link(fn -> nil end, name: __MODULE__)
+    GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
   @doc """
@@ -24,13 +37,22 @@ defmodule Wallabidi.Remote.Chrome.SharedConnection do
   """
   @spec get(module) :: pid
   def get(driver_mod) do
-    Agent.get_and_update(__MODULE__, fn
-      pid when is_pid(pid) ->
-        if Process.alive?(pid), do: {pid, pid}, else: connect(driver_mod)
+    GenServer.call(__MODULE__, {:get, driver_mod}, @get_timeout)
+  end
 
-      nil ->
-        connect(driver_mod)
-    end)
+  @impl true
+  def init(nil), do: {:ok, %{pid: nil}}
+
+  @impl true
+  def handle_call({:get, driver_mod}, _from, %{pid: pid} = state) do
+    if is_pid(pid) and Process.alive?(pid) do
+      {:reply, pid, state}
+    else
+      # Connect once. Concurrent callers are parked in the mailbox and get
+      # this same pid when we reply — no second connect, nothing to close.
+      new_pid = connect(driver_mod)
+      {:reply, new_pid, %{state | pid: new_pid}}
+    end
   end
 
   defp connect(driver_mod) do
@@ -55,11 +77,11 @@ defmodule Wallabidi.Remote.Chrome.SharedConnection do
       end
 
     # WebSocket.start_link would link to the *current caller* (the test
-    # process invoking Agent.get_and_update), so the shared WS would die
-    # when each test exits. Use `start/1` for an unlinked process whose
-    # lifetime is tied to the SharedConnection Agent instead.
+    # process invoking get/1), so the shared WS would die when each test
+    # exits. Use `start/1` for an unlinked process whose lifetime is tied
+    # to the SharedConnection Agent instead.
     {:ok, pid} = WebSocket.start(ws_url)
-    {pid, pid}
+    pid
   end
 
   # Same /json/version discovery logic as ChromeCDP.SharedConnection.

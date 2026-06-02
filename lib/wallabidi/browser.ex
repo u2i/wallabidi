@@ -871,29 +871,29 @@ defmodule Wallabidi.Browser do
   defp click_deferred(parent, query) do
     session = get_session(parent)
 
-    cond do
-      is_nil(session) or is_nil(session.driver_spec) ->
-        # No spec (LV driver, or unusual session shape) → fall through
-        # to the normal click. There's no awaiting machinery to skip.
-        click_auto(parent, query)
+    # No spec (LV driver, or unusual session shape) → fall through to the
+    # normal click; there's no awaiting machinery to skip.
+    if is_nil(session) or is_nil(session.driver_spec) do
+      click_auto(parent, query)
+    else
+      orchestrator = Wallabidi.Remote.Driver.Orchestrator
 
-      true ->
-        case find_lazy(parent, query) do
-          %Element{} = element ->
-            case Wallabidi.Remote.Driver.Orchestrator.click_deferred(session.driver_spec, element) do
-              {:ok, pre_page_id} ->
-                %{session | pending_await: {:page_ready_after, pre_page_id}}
+      case find_lazy(parent, query) do
+        %Element{} = element ->
+          case orchestrator.click_deferred(session.driver_spec, element) do
+            {:ok, pre_page_id} ->
+              %{session | pending_await: {:page_ready_after, pre_page_id}}
 
-              {:error, _} ->
-                # Click dispatch failed (e.g. transport issue). Don't
-                # stash a half-baked await — fall back to whatever
-                # surface error handling the assertion does.
-                session
-            end
+            {:error, _} ->
+              # Click dispatch failed (e.g. transport issue). Don't stash a
+              # half-baked await — fall back to whatever surface error
+              # handling the assertion does.
+              session
+          end
 
-          other ->
-            other
-        end
+        other ->
+          other
+      end
     end
   end
 
