@@ -52,7 +52,12 @@ defmodule Wallabidi.Test.SlowTestGuard do
      %{
        threshold_us: threshold_ms * 1000,
        mode: mode,
-       offenders: []
+       offenders: [],
+       # The one-time Chrome cold-start (connect + WS handshake) is paid
+       # synchronously by whichever test's setup triggers it. It's shared
+       # startup, not that test's own work, so we discount it from at most
+       # one test (the one it would otherwise push over budget).
+       startup_discount_spent?: false
      }}
   end
 
@@ -65,10 +70,17 @@ defmodule Wallabidi.Test.SlowTestGuard do
       time when is_integer(time) ->
         budget_us = budget_for(test, state.threshold_us)
 
-        if time > budget_us do
-          {:noreply, %{state | offenders: [{test, time, budget_us} | state.offenders]}}
-        else
-          {:noreply, state}
+        cond do
+          time <= budget_us ->
+            {:noreply, state}
+
+          # Over budget, but the shared one-time Chrome startup (still
+          # unspent) accounts for the overrun → discount it once and clear.
+          not state.startup_discount_spent? and time - startup_us() <= budget_us ->
+            {:noreply, %{state | startup_discount_spent?: true}}
+
+          true ->
+            {:noreply, %{state | offenders: [{test, time, budget_us} | state.offenders]}}
         end
     end
   end
@@ -95,6 +107,13 @@ defmodule Wallabidi.Test.SlowTestGuard do
   end
 
   def handle_cast(_event, state), do: {:noreply, state}
+
+  # One-time Chrome cold-start cost (µs), read from the shared connection.
+  # Zero unless a Chrome connection was established this run.
+  defp startup_us do
+    mod = Wallabidi.Remote.Chrome.SharedConnection
+    if Code.ensure_loaded?(mod), do: mod.connect_us(), else: 0
+  end
 
   # Tag handling:
   #   * `slow: N` (integer ms) — explicit budget

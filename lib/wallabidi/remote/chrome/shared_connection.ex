@@ -40,6 +40,17 @@ defmodule Wallabidi.Remote.Chrome.SharedConnection do
     GenServer.call(__MODULE__, {:get, driver_mod}, @get_timeout)
   end
 
+  # Microseconds spent in the one-time connect (Chrome cold start + WS
+  # handshake), or 0 if not yet connected. The connect cost is incurred
+  # once, synchronously, by whichever caller triggers it — which in tests
+  # is some unlucky test's setup. SlowTestGuard reads this to discount the
+  # shared startup from that test's runtime budget. Stored in
+  # persistent_term so a formatter process can read it without coupling.
+  @connect_us_key {__MODULE__, :connect_us}
+
+  @spec connect_us() :: non_neg_integer()
+  def connect_us, do: :persistent_term.get(@connect_us_key, 0)
+
   @impl true
   def init(nil), do: {:ok, %{pid: nil}}
 
@@ -50,7 +61,8 @@ defmodule Wallabidi.Remote.Chrome.SharedConnection do
     else
       # Connect once. Concurrent callers are parked in the mailbox and get
       # this same pid when we reply — no second connect, nothing to close.
-      new_pid = connect(driver_mod)
+      {us, new_pid} = :timer.tc(fn -> connect(driver_mod) end)
+      :persistent_term.put(@connect_us_key, us)
       {:reply, new_pid, %{state | pid: new_pid}}
     end
   end
