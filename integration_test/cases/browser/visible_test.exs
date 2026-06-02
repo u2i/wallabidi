@@ -33,7 +33,6 @@ defmodule Wallabidi.Integration.Browser.VisibleTest do
     setup :visit_page
 
     # The `false` case waits the full max_wait_time before returning.
-    @tag :polling
     test "returns a boolean", %{page: page} do
       assert page
              |> visible?(Query.css("#visible")) == true

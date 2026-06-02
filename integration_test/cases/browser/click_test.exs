@@ -51,8 +51,6 @@ defmodule Wallabidi.Integration.Browser.ClickTest do
       assert selected?(page, Query.css("#option2"))
     end
 
-    @tag :polling
-
     test "throw an error if a label exists but does not have a for attribute", %{page: page} do
       bad_form =
         page
@@ -62,8 +60,6 @@ defmodule Wallabidi.Integration.Browser.ClickTest do
         click(bad_form, Query.radio_button("Radio with bad label"))
       end
     end
-
-    @tag :polling
 
     test "throw an error if the query matches multiple labels", %{page: page} do
       assert_raise Wallabidi.QueryError, ~r/Expected (.*) 1/, fn ->
@@ -94,8 +90,6 @@ defmodule Wallabidi.Integration.Browser.ClickTest do
     test "escapes quotes", %{page: page} do
       assert click(page, Query.checkbox("I'm a checkbox"))
     end
-
-    @tag :polling
 
     test "throw an error if a label exists but does not have a for attribute", %{page: page} do
       assert_raise Wallabidi.QueryError, fn ->

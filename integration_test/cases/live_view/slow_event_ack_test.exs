@@ -17,7 +17,6 @@ defmodule Wallabidi.Integration.LiveView.SlowEventAckTest do
 
   @base Application.compile_env(:wallabidi, :live_app_url, "http://localhost:4321")
 
-  @tag :polling
   test "click returns only after the server has acked the slow event",
        %{session: session} do
     # After the click, current_url should already be the destination. If

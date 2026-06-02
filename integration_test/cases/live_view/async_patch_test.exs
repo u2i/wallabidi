@@ -39,7 +39,6 @@ defmodule Wallabidi.Integration.LiveView.AsyncPatchTest do
   end
 
   describe "phx-trigger-action" do
-    @tag :polling
     test "click on submit button awaits the full-page redirect", %{session: session} do
       # The click fires phx-submit, which flips trigger_action, which fires
       # a native POST to /trigger-action-target, which redirects to

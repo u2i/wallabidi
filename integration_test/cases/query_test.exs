@@ -87,7 +87,6 @@ defmodule Wallabidi.Integration.QueryTest do
 
   describe "filtering queries by visibility" do
     @tag :headless
-    @tag :polling
     test "finds elements that are invisible", %{session: session} do
       assert_raise Wallabidi.QueryError, fn ->
         session
@@ -114,8 +113,6 @@ defmodule Wallabidi.Integration.QueryTest do
       assert Enum.count(element) == 2
     end
   end
-
-  @tag :polling
 
   test "queries can check the number of elements", %{session: session} do
     assert_raise Wallabidi.QueryError, fn ->
@@ -158,8 +155,6 @@ defmodule Wallabidi.Integration.QueryTest do
                    |> Browser.find(Query.css(".user", at: 5))
                  end
   end
-
-  @tag :polling
 
   test "queries can specify element text", %{session: session} do
     assert_raise Wallabidi.QueryError, fn ->
