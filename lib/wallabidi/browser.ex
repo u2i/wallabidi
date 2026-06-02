@@ -1995,6 +1995,12 @@ defmodule Wallabidi.Browser do
             result
 
           :timeout ->
+            # We classified this interaction as :patch (a server-driven
+            # patch was expected) but the patch never fired within the
+            # budget — the event-driven path fell back to its timeout. Flag
+            # it: the test may still pass via a downstream retry, masking a
+            # broken patch-await.
+            Wallabidi.Test.AwaitMonitor.record_timeout(:patch)
             result
 
           :page_navigated ->

@@ -330,6 +330,11 @@ defmodule Wallabidi.Remote.Driver.Orchestrator do
             # timeout if the bootstrap sees a `nav_pending` (LV
             # `live_redirect`/`redirect` payload), so callers' assert_has
             # retries take it from here without us polling current_url.
+            #
+            # But "silently" is exactly the masked-regression case: the
+            # click expected a patch/page-ready that never fired, and only
+            # a downstream assert_has retry will recover. Flag it.
+            Wallabidi.Test.AwaitMonitor.record_timeout(:click_patch)
             {:ok, nil}
 
           err ->
