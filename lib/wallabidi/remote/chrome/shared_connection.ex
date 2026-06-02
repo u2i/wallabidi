@@ -8,11 +8,31 @@ defmodule Wallabidi.Remote.Chrome.SharedConnection do
   # Lazy-connect on first `get/1` call — by then the driver supervisor
   # has already started either a local Chrome (`Chrome.Server`) or we
   # have a remote URL to connect to.
+  #
+  # The connected pid is an immutable, process-wide value, so the read
+  # path needs no serialization: `get/1` reads it lock-free from
+  # `:persistent_term` and returns it directly. Only the rare *write* (the
+  # one-time cold connect, or a reconnect after the WS dies) is serialized,
+  # through a thin Agent — so exactly one connection is ever created
+  # (concurrent first-acquirers all resolve to the same pid via a
+  # double-check), and the one-time startup wait isn't multiplied. Every
+  # subsequent `get/1` (≈ once per test) is a lock-free term read, not a
+  # message round-trip.
 
   use Agent
 
   alias Wallabidi.Remote.WebSocket
 
+  @pid_key {__MODULE__, :ws_pid}
+
+  # Must exceed Chrome.Server's @startup_timeout (30s): on a cold start the
+  # serialized connect blocks until Chrome emits its DevTools URL, and
+  # callers queued behind it wait for that same connect.
+  @connect_timeout 40_000
+
+  # The Agent holds no state — the pid lives in :persistent_term. The Agent
+  # exists purely to serialize the connect (its mailbox is the one-at-a-time
+  # gate). State is `nil`.
   def start_link(_opts) do
     Agent.start_link(fn -> nil end, name: __MODULE__)
   end
@@ -24,13 +44,38 @@ defmodule Wallabidi.Remote.Chrome.SharedConnection do
   """
   @spec get(module) :: pid
   def get(driver_mod) do
-    Agent.get_and_update(__MODULE__, fn
+    case :persistent_term.get(@pid_key, nil) do
       pid when is_pid(pid) ->
-        if Process.alive?(pid), do: {pid, pid}, else: connect(driver_mod)
+        if Process.alive?(pid), do: pid, else: connect_serialized(driver_mod)
 
       nil ->
-        connect(driver_mod)
-    end)
+        connect_serialized(driver_mod)
+    end
+  end
+
+  # Serialize the connect through the Agent. The update fn double-checks
+  # persistent_term: a caller queued behind a concurrent connect will see
+  # the now-live pid and return it rather than connecting again.
+  defp connect_serialized(driver_mod) do
+    Agent.get_and_update(
+      __MODULE__,
+      fn nil ->
+        pid =
+          case :persistent_term.get(@pid_key, nil) do
+            p when is_pid(p) -> if Process.alive?(p), do: p, else: do_connect(driver_mod)
+            nil -> do_connect(driver_mod)
+          end
+
+        {pid, nil}
+      end,
+      @connect_timeout
+    )
+  end
+
+  defp do_connect(driver_mod) do
+    pid = connect(driver_mod)
+    :persistent_term.put(@pid_key, pid)
+    pid
   end
 
   defp connect(driver_mod) do
@@ -55,11 +100,11 @@ defmodule Wallabidi.Remote.Chrome.SharedConnection do
       end
 
     # WebSocket.start_link would link to the *current caller* (the test
-    # process invoking Agent.get_and_update), so the shared WS would die
-    # when each test exits. Use `start/1` for an unlinked process whose
-    # lifetime is tied to the SharedConnection Agent instead.
+    # process invoking get/1), so the shared WS would die when each test
+    # exits. Use `start/1` for an unlinked process whose lifetime is tied
+    # to the SharedConnection Agent instead.
     {:ok, pid} = WebSocket.start(ws_url)
-    {pid, pid}
+    pid
   end
 
   # Same /json/version discovery logic as ChromeCDP.SharedConnection.
