@@ -25,14 +25,19 @@ defmodule Wallabidi.Integration.Browser.EventCaptureTest do
   # Lightpanda CDP, while bubble-phase listeners on document do.
 
   use Wallabidi.Integration.SessionCase, async: false
+  # Needs a JS-capable browser (execute_script + real DOM event flow).
+  # :headless runs it on Lightpanda + both Chrome drivers and excludes the
+  # in-process LiveView driver, which has no execute_script.
+  @moduletag :headless
 
   @base Application.compile_env(:wallabidi, :live_app_url, "http://localhost:4321")
 
   @phases ["root-capture", "root-bubble", "document-capture", "document-bubble"]
 
   describe "DOM event propagation parity (vanilla page)" do
-    # No capability tag — DOM event flow is the spec; every JS-capable
-    # driver should pass this. Filing the failures here is the point.
+    # DOM event flow is the spec; every JS-capable driver should pass this
+    # (module is tagged :headless, so it runs on Lightpanda + both Chrome
+    # drivers — not the in-process LiveView driver).
     test "Wallabidi.Browser.click fires all four phases", %{session: session} do
       session = visit(session, @base <> "/event-capture")
       assert_all_zero(session)

@@ -74,7 +74,11 @@ defmodule Wallabidi.LiveView do
   def set_latency(%Session{} = session, latency_ms)
       when is_integer(latency_ms) and latency_ms >= 0 do
     if remote?(session) do
-      _ = eval_silent(session, "window.liveSocket && window.liveSocket.enableLatencySim(#{latency_ms})")
+      _ =
+        eval_silent(
+          session,
+          "window.liveSocket && window.liveSocket.enableLatencySim(#{latency_ms})"
+        )
     end
 
     session
