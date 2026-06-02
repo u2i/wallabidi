@@ -41,15 +41,11 @@ defmodule Wallabidi.Integration.Browser.FindTest do
       assert List.first(users) |> Element.text() == "Chris"
     end
 
-    @tag :polling
-
     test "throws a not found error if the element could not be found", %{page: page} do
       assert_raise Wallabidi.QueryError, ~r/Expected to find/, fn ->
         find(page, Query.css("#not-there"))
       end
     end
-
-    @tag :polling
 
     test "throws a not found error if the xpath could not be found", %{page: page} do
       assert_raise Wallabidi.QueryError, ~r/Expected (.*) xpath '\/\/test-element'/, fn ->
@@ -57,15 +53,11 @@ defmodule Wallabidi.Integration.Browser.FindTest do
       end
     end
 
-    @tag :polling
-
     test "ambiguous queries raise an exception", %{page: page} do
       assert_raise Wallabidi.QueryError, ~r/Expected (.*) 1(.*) but 5/, fn ->
         find(page, Query.css(".user"))
       end
     end
-
-    @tag :polling
 
     test "throws errors if element should not be visible", %{page: page} do
       assert_raise Wallabidi.QueryError, ~r/invisible/, fn ->
@@ -74,7 +66,6 @@ defmodule Wallabidi.Integration.Browser.FindTest do
     end
 
     @tag :headless
-    @tag :polling
     test "find/2 raises an error if the element is not visible", %{session: session} do
       session
       |> visit("page_1.html")
@@ -146,8 +137,6 @@ defmodule Wallabidi.Integration.Browser.FindTest do
 
     assert find(session, Query.css(".orange", count: 5)) |> length == 5
   end
-
-  @tag :polling
 
   test "finding one or more elements", %{session: session} do
     session

@@ -8,7 +8,6 @@ defmodule Wallabidi.Integration.LiveViewSmoke.TriggerActionTest do
   @tag :native_form_submit
   @tag :cross_lv_nav
   # Real validate→flip→submit→POST→redirect chain across two LV processes.
-  @tag :polling
   test "phx-trigger-action: validate → flip → native submit → POST → redirect", %{
     session: session
   } do
