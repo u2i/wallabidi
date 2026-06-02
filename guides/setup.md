@@ -1,6 +1,6 @@
 # Setup
 
-Requires Elixir 1.19+, OTP 28+. Use `mix wallabidi.install` to download the browsers the drivers need (Chrome for Testing, Lightpanda, and the chromium-bidi Node deps) into `.browsers/`, or point the `WALLABIDI_*_PATH` env vars at existing binaries.
+Requires Elixir 1.18+ (1.18 on OTP 25–27; 1.19+ on OTP 28). Use `mix wallabidi.install` to download the browsers the drivers need (Chrome for Testing, Lightpanda, and the chromium-bidi Node deps) into `.browsers/`, or point the `WALLABIDI_*_PATH` env vars at existing binaries.
 
 ## Installation
 
