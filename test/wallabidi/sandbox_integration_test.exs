@@ -10,11 +10,7 @@ defmodule Wallabidi.SandboxIntegrationTest do
   4. Mimic stubs propagate to request processes
   5. Multiple sessions share the same sandbox
   """
-  # async: false — these are browser-driven (pinned to :chrome_cdp) and
-  # share Chrome's connection; running them concurrently with the rest of
-  # the unit suite intermittently times out Chrome's SharedConnection
-  # under CI load. Serial is cheap here (8 tests) and removes the flake.
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
   use SandboxCase.Sandbox.Case
   use Wallabidi.DSL
   use Mimic

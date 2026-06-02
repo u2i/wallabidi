@@ -18,7 +18,11 @@ defmodule Wallabidi.Remote.Chrome.Server do
     calls_awaiting_readiness: []
   ]
 
-  @startup_timeout 15_000
+  # Time to wait for Chrome to emit its DevTools WebSocket URL. 30s (was
+  # 15s) — a cold Chrome on a contended CI runner can take >15s to start,
+  # which surfaced as intermittent :startup_timeout failures. Matches the
+  # chromium-bidi server's startup budget.
+  @startup_timeout 30_000
 
   def child_spec(opts) do
     %{id: __MODULE__, start: {__MODULE__, :start_link, [opts]}}
