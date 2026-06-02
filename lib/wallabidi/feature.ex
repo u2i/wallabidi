@@ -50,10 +50,19 @@ defmodule Wallabidi.Feature do
             unquote(__MODULE__).Utils.register_session_cleanup(sandbox, test_pid)
           end
 
+          await_context = context
+
           on_exit(fn ->
             # Sandbox checkin runs cleanup callbacks first, then
             # await_orphans, rollback, kill, check logs
             unquote(__MODULE__).Utils.checkin_sandbox(sandbox)
+
+            # Fail the test if any event-driven await fell back to its
+            # timeout during the body (a masked regression — see
+            # Wallabidi.Test.AwaitMonitor). Runs in a separate process, so
+            # we pass the captured test_pid; context carries the name + any
+            # @tag :expected_await_timeout opt-out.
+            Wallabidi.Test.AwaitMonitor.check!(test_pid, await_context)
           end)
 
           result

@@ -10,6 +10,23 @@ defmodule Wallabidi.Integration.SessionCase do
   end
 
   setup :inject_test_session
+  setup :guard_event_driven_awaits
+
+  @doc false
+  def guard_event_driven_awaits(context) do
+    test_pid = self()
+
+    on_exit(fn ->
+      # Fail the test if any event-driven await fell back to its timeout
+      # during the body (a masked regression — see
+      # Wallabidi.Test.AwaitMonitor). Runs in a separate process, so pass
+      # the captured test_pid; context carries the name + any
+      # @tag :expected_await_timeout opt-out.
+      Wallabidi.Test.AwaitMonitor.check!(test_pid, context)
+    end)
+
+    :ok
+  end
 
   @doc """
   Starts a test session with the default opts for the given driver

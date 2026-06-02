@@ -144,23 +144,18 @@ ex_unit_opts =
 
 ExUnit.configure(ex_unit_opts)
 
-# SlowTestGuard fails the suite if any test exceeds its runtime
-# budget. Default budget is 1500ms — anything slower is either a
-# perf regression in the driver, an unwanted polling fallback, or a
-# legitimately-slow test that needs `@tag slow: N_ms` (or `@tag :slow`
-# for the 4s default). Override threshold/mode via env:
+# AwaitMonitor detects event-driven-await regressions directly: if an
+# interaction wallabidi classified as patch/navigate silently falls back
+# to its timeout (the event mechanism broke), the test is failed in
+# Wallabidi.Feature's on_exit — regardless of wall-clock time. This
+# replaces the old wall-clock SlowTestGuard, whose per-test budget was
+# polluted by one-time costs (Chrome cold start, connection acquisition)
+# and runner load, producing flaky failures unrelated to event-driven-ness.
 #
-#   WALLABIDI_SLOW_TEST_MS=2000  WALLABIDI_SLOW_TEST_MODE=warn
-#
-# BiDi has slower per-test wall time (every fresh session waits for
-# chromium-bidi's session.subscribe round-trip — ~1-12s depending on
-# Mapper warmth). Default to :warn mode there so the SlowTestGuard
-# surfaces offenders without failing the CI job on every run.
-if driver in [:chrome_bidi_v2, :chrome] and is_nil(System.get_env("WALLABIDI_SLOW_TEST_MODE")) do
-  System.put_env("WALLABIDI_SLOW_TEST_MODE", "warn")
-end
+# WALLABIDI_AWAIT_MODE=warn records + reports without failing (validation).
+Wallabidi.Test.AwaitMonitor.setup()
 
-ExUnit.start(formatters: [ExUnit.CLIFormatter, Wallabidi.Test.SlowTestGuard])
+ExUnit.start(formatters: [ExUnit.CLIFormatter])
 
 # --- Start LiveApp endpoint (LiveView integration tests) ---
 Application.put_env(:wallabidi, Wallabidi.Integration.LiveApp.Endpoint,
