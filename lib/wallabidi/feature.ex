@@ -272,12 +272,7 @@ defmodule Wallabidi.Feature do
       end
 
       defp repo_started?(repo) do
-        case Ecto.Repo.Registry.lookup(repo) do
-          {_, _, _} -> true
-          _ -> false
-        end
-      rescue
-        _ -> false
+        not is_nil(Process.whereis(repo))
       end
 
       defp checkout_ecto_repos(repo, async) do
