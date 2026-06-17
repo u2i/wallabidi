@@ -59,14 +59,23 @@ defmodule Wallabidi.Remote.Chrome.SharedConnectionTest do
   end
 
   test "a dead stored pid triggers the (serialized) reconnect path", %{fake_ws: fake_ws} do
+    # Ensure the Agent is running (it may have been crashed by a prior test).
+    case Process.whereis(SharedConnection) do
+      nil -> SharedConnection.start_link([])
+      _ -> :ok
+    end
+
     # Store a dead pid; get/1 should NOT return it — it should fall to the
-    # connect path. We don't have a real driver, so the connect raises; the
+    # connect path. We don't have a real driver, so the connect fails; the
     # point is that the dead pid is rejected (not returned as-is).
     Agent.stop(fake_ws)
     refute Process.alive?(fake_ws)
     :persistent_term.put(@pid_key, fake_ws)
 
-    assert catch_exit(SharedConnection.get(:no_driver)) != nil or
-             catch_error(SharedConnection.get(:no_driver)) != nil
+    # The error surfaces as an exit from the Agent process (not the caller),
+    # because the failure happens inside the Agent's handle_call.  Catch
+    # the exit and assert that's what happens — proving the dead pid was
+    # rejected and a reconnect was attempted.
+    assert catch_exit(SharedConnection.get(:no_driver)) != nil
   end
 end
