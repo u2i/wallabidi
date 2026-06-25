@@ -1,5 +1,6 @@
 defmodule Wallabidi.Integration.LiveApp.Endpoint do
   use Phoenix.Endpoint, otp_app: :wallabidi
+  import SandboxShim
 
   @session_options [
     store: :cookie,
@@ -8,10 +9,9 @@ defmodule Wallabidi.Integration.LiveApp.Endpoint do
   ]
 
   # === Sandbox integration (from TestApp) ===
-  import SandboxShim
   sandbox_plugs()
   sandbox_socket("/live", Phoenix.LiveView.Socket,
-    websocket: [connect_info: [:user_agent, session: @session_options]]
+    websocket: [connect_info: [session: @session_options]]
   )
 
   # === Phoenix assets (from TestApp) ===

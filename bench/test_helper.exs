@@ -72,4 +72,25 @@ Application.put_env(:wallabidi, :base_url, "http://localhost:4321")
 
 Application.put_env(:wallabidi, :live_app_url, "http://localhost:4321")
 
+# --- Start Testcontainers GenServer ---
+Testcontainers.start_link()
+
+# --- Start PostgreSQL container ---
+{:ok, pg_container} =
+  Testcontainers.start_container(
+    Testcontainers.PostgresContainer.new()
+    |> Testcontainers.PostgresContainer.with_image("postgres:18-alpine")
+    |> Testcontainers.PostgresContainer.with_user("wallabidi")
+    |> Testcontainers.PostgresContainer.with_password("wallabidi")
+    |> Testcontainers.PostgresContainer.with_database("wallabidi_test")
+  )
+
+Application.put_env(:wallabidi, Wallabidi.Integration.LiveApp.Repo,
+  Testcontainers.PostgresContainer.connection_parameters(pg_container) ++
+    [pool: Ecto.Adapters.SQL.Sandbox, pool_size: 10]
+)
+
+{:ok, _} = Wallabidi.Integration.LiveApp.Repo.start_link()
+Ecto.Migrator.up(Wallabidi.Integration.LiveApp.Repo, 1, Wallabidi.Integration.LiveApp.Migration)
+
 ExUnit.start()

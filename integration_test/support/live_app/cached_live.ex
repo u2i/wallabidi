@@ -1,6 +1,7 @@
 defmodule Wallabidi.Integration.LiveApp.CachedLive do
   use Phoenix.LiveView
   import SandboxShim
+  
   sandbox_on_mount()
 
   alias Wallabidi.Integration.LiveApp.{Repo, User}

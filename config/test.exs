@@ -71,7 +71,11 @@ config :wallabidi,
 
 # Test app configuration (now merged with Integration LiveApp)
 config :wallabidi, Wallabidi.Integration.LiveApp.Repo,
-  database: "integration_test/support/test.db",
+  database: System.get_env("DB_DATABASE") || "wallabidi_test",
+  username: System.get_env("DB_USERNAME") || "wallabidi",
+  password: System.get_env("DB_PASSWORD") || "wallabidi",
+  hostname: System.get_env("DB_HOSTNAME") || "localhost",
+  port: String.to_integer(System.get_env("DB_PORT") || "5432"),
   pool: Ecto.Adapters.SQL.Sandbox,
   pool_size: 10
 

@@ -156,6 +156,33 @@ ExUnit.configure(ex_unit_opts)
 Wallabidi.Test.AwaitMonitor.setup()
 
 ExUnit.start(formatters: [ExUnit.CLIFormatter])
+Testcontainers.start_link()
+
+# --- Start PostgreSQL container ---
+{:ok, pg_container} =
+  Testcontainers.start_container(
+    Testcontainers.PostgresContainer.new()
+    |> Testcontainers.PostgresContainer.with_image("postgres:18-alpine")
+    |> Testcontainers.PostgresContainer.with_user("wallabidi")
+    |> Testcontainers.PostgresContainer.with_password("wallabidi")
+    |> Testcontainers.PostgresContainer.with_database("wallabidi_test")
+  )
+
+# Apply container config to the repo (overrides config/test.exs)
+Application.put_env(:wallabidi, Wallabidi.Integration.LiveApp.Repo,
+  Testcontainers.PostgresContainer.connection_parameters(pg_container) ++
+    [pool: Ecto.Adapters.SQL.Sandbox, pool_size: 10]
+)
+
+# --- Start Repo, run migrations, start Cachex, setup sandboxes (integration tests) ---
+# Mox.defmock must be called before SandboxCase.Sandbox.setup()
+Mox.defmock(Wallabidi.Integration.LiveApp.MockWeather, for: Wallabidi.Integration.LiveApp.WeatherBehaviour)
+Application.put_env(:wallabidi, :weather_module, Wallabidi.Integration.LiveApp.MockWeather)
+
+{:ok, _} = Wallabidi.Integration.LiveApp.Repo.start_link()
+Ecto.Migrator.up(Wallabidi.Integration.LiveApp.Repo, 1, Wallabidi.Integration.LiveApp.Migration)
+{:ok, _} = Cachex.start_link(:test_app_cache)
+SandboxCase.Sandbox.setup()
 
 # --- Start LiveApp endpoint (LiveView integration tests) ---
 Application.put_env(:wallabidi, Wallabidi.Integration.LiveApp.Endpoint,

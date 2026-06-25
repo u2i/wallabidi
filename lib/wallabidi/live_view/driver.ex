@@ -69,7 +69,8 @@ defmodule Wallabidi.LiveView.Driver do
       driver: __MODULE__,
       server: endpoint,
       session_url: "",
-      url: ""
+      url: "",
+      metadata: Keyword.get(opts, :metadata)
     }
 
     {:ok, session}
@@ -116,7 +117,14 @@ defmodule Wallabidi.LiveView.Driver do
 
   defp visit_endpoint(session, path) do
     conn =
-      @conn_test.build_conn()
+      case session.metadata do
+        nil -> @conn_test.build_conn()
+        meta ->
+          @conn_test.build_conn()
+          |> Plug.Conn.put_req_header("user-agent",
+            Wallabidi.Metadata.append("LiveViewDriver/1.0", meta)
+          )
+      end
       |> Plug.Conn.put_private(:phoenix_endpoint, session.server)
       |> @conn_test.dispatch(session.server, :get, path)
 
@@ -135,11 +143,11 @@ defmodule Wallabidi.LiveView.Driver do
 
       true ->
         :not_found
-    end
-  rescue
-    _e ->
-      :not_found
-  end
+end
+rescue
+  _e ->
+    :not_found
+end
 
   @impl true
   def current_url(session) do

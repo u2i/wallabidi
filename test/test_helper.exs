@@ -2,10 +2,28 @@
 # integration_test/ and run via the per-driver test.* aliases. Excluding
 # :browser keeps BiDi/CDP end-to-end tests from being pulled in by the
 # default `mix test` command.
-ExUnit.configure(exclude: [pending: true, browser: true, sandbox: true])
+ExUnit.configure(exclude: [pending: true, browser: true])
 EventEmitter.start_link([])
 
-# Start the merged LiveApp (Ecto repo + migrations + endpoint + Cachex)
+# --- Start PostgreSQL container (testcontainers) ---
+Testcontainers.start_link()
+
+{:ok, pg_container} =
+  Testcontainers.start_container(
+    Testcontainers.PostgresContainer.new()
+    |> Testcontainers.PostgresContainer.with_image("postgres:18-alpine")
+    |> Testcontainers.PostgresContainer.with_user("wallabidi")
+    |> Testcontainers.PostgresContainer.with_password("wallabidi")
+    |> Testcontainers.PostgresContainer.with_database("wallabidi_test")
+  )
+
+# Apply container config to the repo (overrides config/test.exs)
+Application.put_env(:wallabidi, Wallabidi.Integration.LiveApp.Repo,
+  Testcontainers.PostgresContainer.connection_parameters(pg_container) ++
+    [pool: Ecto.Adapters.SQL.Sandbox, pool_size: 10]
+)
+
+# --- Start Repo, run migrations, start endpoint, start Cachex ---
 {:ok, _} = Wallabidi.Integration.LiveApp.Repo.start_link()
 Ecto.Migrator.up(Wallabidi.Integration.LiveApp.Repo, 1, Wallabidi.Integration.LiveApp.Migration)
 {:ok, _} = Wallabidi.Integration.LiveApp.Endpoint.start_link()

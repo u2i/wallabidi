@@ -88,10 +88,11 @@ defmodule Wallabidi.Mixfile do
       {:plug_cowboy, "~> 2.7"},
       # Test-only deps
       {:lightpanda, ">= 0.0.0", only: :test},
-      {:sandbox_case, "~> 0.4.0", only: :test},
+      {:sandbox_case, "~> 0.4.0", runtime: false},
       {:cachex, "~> 4.1", only: :test},
       {:fun_with_flags, "~> 1.11", only: :test, runtime: false},
-      {:ecto_sqlite3, "~> 0.22", only: :test},
+      {:testcontainers, "~> 2.3", only: :test},
+      {:postgrex, "~> 0.19", only: :test},
       {:bandit, "~> 1.0", only: :test},
       {:mimic, "~> 1.7", only: :test},
       {:mox, "~> 1.2", only: :test}
