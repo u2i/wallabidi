@@ -1,4 +1,4 @@
-defmodule Wallabidi.SandboxIntegrationTest do
+defmodule Wallabidi.Integration.SandboxPropagationTest do
   @moduledoc """
   Integration tests that exercise the full sandbox propagation chain
   using a real Phoenix app with Ecto, LiveView, Cachex, and Mimic.
@@ -8,24 +8,28 @@ defmodule Wallabidi.SandboxIntegrationTest do
   2. assign_async tasks can access the sandbox
   3. Cachex 4.1+ workers can access the sandbox via $callers
   4. Mimic stubs propagate to request processes
-  5. Multiple sessions share the same sandbox
+  5. Mox stubs propagate to request processes
+  6. Multiple sessions share the same sandbox
+
+  These tests use a real browser driver (Chrome CDP, Chrome BiDi, or
+  Lightpanda) to exercise cross-process sandbox propagation over HTTP,
+  not the in-process LiveView default.
   """
   use ExUnit.Case, async: true
   use SandboxCase.Sandbox.Case
-  use Wallabidi.DSL
+  use Wallabidi.Integration.SessionCase
   use Mimic
 
-  alias Wallabidi.TestApp.{Repo, User}
+  @moduletag :sandbox
+
+  alias Wallabidi.Integration.LiveApp.{Repo, User}
+
+  @base Application.compile_env(:wallabidi, :live_app_url, "http://localhost:4321")
 
   setup %{sandbox: sandbox} do
     metadata = SandboxCase.Sandbox.ecto_metadata(sandbox)
-    # Pin a real browser driver — this suite exercises cross-process
-    # sandbox propagation over HTTP, not the in-process LiveView default.
-    {:ok, session} = Wallabidi.start_session(driver: :chrome_cdp, metadata: metadata)
 
-    on_exit(fn ->
-      Wallabidi.end_session(session)
-    end)
+    {:ok, session} = start_test_session(metadata: metadata)
 
     %{session: session}
   end
@@ -35,7 +39,7 @@ defmodule Wallabidi.SandboxIntegrationTest do
       Repo.insert!(%User{name: "Alice"})
 
       session
-      |> visit("/users")
+      |> visit(@base <> "/users")
       |> assert_has(Query.text("Alice"))
     end
   end
@@ -45,7 +49,7 @@ defmodule Wallabidi.SandboxIntegrationTest do
       Repo.insert!(%User{name: "Bob"})
 
       session
-      |> visit("/dashboard")
+      |> visit(@base <> "/dashboard")
       |> assert_has(Query.text("Stats: 1"))
     end
   end
@@ -56,7 +60,7 @@ defmodule Wallabidi.SandboxIntegrationTest do
       Repo.insert!(%User{name: "Charlie"})
 
       session
-      |> visit("/cached")
+      |> visit(@base <> "/cached")
       |> assert_has(Query.text("Charlie"))
     end
 
@@ -66,7 +70,7 @@ defmodule Wallabidi.SandboxIntegrationTest do
       Repo.insert!(%User{name: "Diana"})
 
       session
-      |> visit("/cached")
+      |> visit(@base <> "/cached")
       |> assert_has(Query.text("Diana"))
       |> refute_has(Query.text("Charlie"))
     end
@@ -74,34 +78,34 @@ defmodule Wallabidi.SandboxIntegrationTest do
 
   describe "2. Async with Mimic stubs" do
     test "Mimic stub visible to LiveView process", %{session: session} do
-      Mimic.stub(Wallabidi.TestApp.ExternalService, :fetch_greeting, fn ->
+      Mimic.stub(Wallabidi.Integration.LiveApp.ExternalService, :fetch_greeting, fn ->
         "Hello from test"
       end)
 
       session
-      |> visit("/greeting")
+      |> visit(@base <> "/greeting")
       |> assert_has(Query.text("Hello from test"))
     end
   end
 
   describe "Mox stub propagation" do
     test "Mox stub visible to LiveView process", %{session: session} do
-      Mox.stub(Wallabidi.TestApp.MockWeather, :get_temperature, fn -> "72°F" end)
+      Mox.stub(Wallabidi.Integration.LiveApp.MockWeather, :get_temperature, fn -> "72°F" end)
 
       session
-      |> visit("/weather")
+      |> visit(@base <> "/weather")
       |> assert_has(Query.text("72°F"))
     end
   end
 
   describe "5. Mimic stub propagation to GenServer" do
     test "GenServer spawned from LiveView sees Mimic stub", %{session: session} do
-      Mimic.stub(Wallabidi.TestApp.PriceService, :fetch_price, fn ->
+      Mimic.stub(Wallabidi.Integration.LiveApp.PriceService, :fetch_price, fn ->
         "$1.23"
       end)
 
       session
-      |> visit("/price")
+      |> visit(@base <> "/price")
       |> assert_has(Query.text("$1.23"))
     end
   end
@@ -110,13 +114,13 @@ defmodule Wallabidi.SandboxIntegrationTest do
     test "two sessions share sandbox data", %{session: session1} do
       # Create a second session with the same metadata
       metadata = Phoenix.Ecto.SQL.Sandbox.metadata_for(Repo, self())
-      {:ok, session2} = Wallabidi.start_session(driver: :chrome_cdp, metadata: metadata)
+      {:ok, session2} = start_test_session(metadata: metadata)
 
       Repo.insert!(%User{name: "Diana"})
 
       # Both sessions should see the same data
-      session1 |> visit("/users") |> assert_has(Query.text("Diana"))
-      session2 |> visit("/users") |> assert_has(Query.text("Diana"))
+      session1 |> visit(@base <> "/users") |> assert_has(Query.text("Diana"))
+      session2 |> visit(@base <> "/users") |> assert_has(Query.text("Diana"))
 
       Wallabidi.end_session(session2)
     end

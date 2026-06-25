@@ -1,9 +1,9 @@
-defmodule Wallabidi.TestApp.PriceLive do
+defmodule Wallabidi.Integration.LiveApp.PriceLive do
   use Phoenix.LiveView
   import SandboxShim
   sandbox_on_mount()
 
-  alias Wallabidi.TestApp.PriceServer
+  alias Wallabidi.Integration.LiveApp.PriceServer
 
   def mount(_params, _session, socket) do
     # start_supervised/1 passes $callers to the GenServer so

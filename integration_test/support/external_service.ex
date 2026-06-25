@@ -1,4 +1,4 @@
-defmodule Wallabidi.TestApp.ExternalService do
+defmodule Wallabidi.Integration.LiveApp.ExternalService do
   @moduledoc """
   A module that can be mocked with Mimic in tests.
   """

@@ -174,8 +174,6 @@ Application.put_env(:wallabidi, Wallabidi.Integration.LiveApp.Endpoint,
 # LiveView driver needs an endpoint configured
 Application.put_env(:wallabidi, :endpoint, Wallabidi.Integration.LiveApp.Endpoint)
 
-# --- Start static test server (forms.html, page_1.html, etc.) ---
-{:ok, server} = Wallabidi.Integration.TestServer.start()
-Application.put_env(:wallabidi, :base_url, server.base_url)
+Application.put_env(:wallabidi, :base_url, "http://localhost:4321")
 
 Application.put_env(:wallabidi, :live_app_url, "http://localhost:4321")

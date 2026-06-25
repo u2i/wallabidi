@@ -1,4 +1,4 @@
-defmodule Wallabidi.TestApp.User do
+defmodule Wallabidi.Integration.LiveApp.User do
   use Ecto.Schema
 
   schema "users" do

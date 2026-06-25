@@ -1,4 +1,4 @@
-defmodule Wallabidi.TestApp.Migration do
+defmodule Wallabidi.Integration.LiveApp.Migration do
   use Ecto.Migration
 
   def change do

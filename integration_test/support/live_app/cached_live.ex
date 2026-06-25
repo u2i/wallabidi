@@ -1,9 +1,9 @@
-defmodule Wallabidi.TestApp.CachedLive do
+defmodule Wallabidi.Integration.LiveApp.CachedLive do
   use Phoenix.LiveView
   import SandboxShim
   sandbox_on_mount()
 
-  alias Wallabidi.TestApp.{Repo, User}
+  alias Wallabidi.Integration.LiveApp.{Repo, User}
 
   def mount(_params, _session, socket) do
     # Use Cachex.fetch which spawns a Courier worker via spawn_link.

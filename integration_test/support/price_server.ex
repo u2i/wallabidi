@@ -1,4 +1,4 @@
-defmodule Wallabidi.TestApp.PriceServer do
+defmodule Wallabidi.Integration.LiveApp.PriceServer do
   @moduledoc """
   A GenServer that fetches prices from an external service.
 
@@ -28,7 +28,7 @@ defmodule Wallabidi.TestApp.PriceServer do
 
   @impl true
   def handle_call(:fetch_price, _from, state) do
-    price = Wallabidi.TestApp.PriceService.fetch_price()
+    price = Wallabidi.Integration.LiveApp.PriceService.fetch_price()
     {:reply, price, state}
   end
 end

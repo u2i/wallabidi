@@ -1,9 +1,9 @@
-defmodule Wallabidi.TestApp.UsersLive do
+defmodule Wallabidi.Integration.LiveApp.UsersLive do
   use Phoenix.LiveView
   import SandboxShim
   sandbox_on_mount()
 
-  alias Wallabidi.TestApp.{Repo, User}
+  alias Wallabidi.Integration.LiveApp.{Repo, User}
 
   def mount(_params, _session, socket) do
     users = Repo.all(User)

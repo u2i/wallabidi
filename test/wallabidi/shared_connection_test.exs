@@ -14,10 +14,12 @@ defmodule Wallabidi.Remote.Chrome.SharedConnectionTest do
     # only checks Process.alive?, it doesn't talk to it on the read path.
     {:ok, fake_ws} = Agent.start_link(fn -> :ok end)
 
-    {:ok, agent} =
+    # Always start a fresh Agent — a prior test may have left a dead one.
+    agent =
       case Process.whereis(SharedConnection) do
         nil -> SharedConnection.start_link([])
-        pid -> {:ok, pid}
+        pid ->
+          if Process.alive?(pid), do: pid, else: SharedConnection.start_link([])
       end
 
     on_exit(fn ->
@@ -58,24 +60,26 @@ defmodule Wallabidi.Remote.Chrome.SharedConnectionTest do
     assert Enum.all?(results, &(&1 == fake_ws))
   end
 
-  test "a dead stored pid triggers the (serialized) reconnect path", %{fake_ws: fake_ws} do
-    # Ensure the Agent is running (it may have been crashed by a prior test).
-    case Process.whereis(SharedConnection) do
-      nil -> SharedConnection.start_link([])
-      _ -> :ok
-    end
-
+test "a dead stored pid triggers the (serialized) reconnect path", %{fake_ws: fake_ws} do
     # Store a dead pid; get/1 should NOT return it — it should fall to the
-    # connect path. We don't have a real driver, so the connect fails; the
+    # connect path.  We don't have a real driver, so the connect fails; the
     # point is that the dead pid is rejected (not returned as-is).
     Agent.stop(fake_ws)
     refute Process.alive?(fake_ws)
     :persistent_term.put(@pid_key, fake_ws)
 
-    # The error surfaces as an exit from the Agent process (not the caller),
-    # because the failure happens inside the Agent's handle_call.  Catch
-    # the exit and assert that's what happens — proving the dead pid was
-    # rejected and a reconnect was attempted.
-    assert catch_exit(SharedConnection.get(:no_driver)) != nil
+    # A dead pid triggers a reconnect attempt.  The connection fails (no
+    # driver), but the dead pid was rejected — that's what we verify.
+    assert catch_error(SharedConnection.get(:no_driver)) != nil
+  end
+
+  test "a failed reconnect leaves the agent alive for the next attempt", _ do
+    # Force a connection failure (no driver).  The Agent must survive it.
+    catch_error(SharedConnection.get(:no_driver))
+
+    # The Agent is still running — a subsequent call will attempt another
+    # reconnect rather than starting from scratch.  (This call also fails,
+    # but the point is the Agent is alive.)
+    assert is_pid(Process.whereis(SharedConnection))
   end
 end
