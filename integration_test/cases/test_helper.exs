@@ -41,12 +41,6 @@ driver =
 Application.stop(:wallabidi)
 Application.put_env(:wallabidi, :driver, driver)
 
-# Kill stale browser processes from previous runs — Port.close
-# sends SIGTERM which Lightpanda/Chrome ignore, so they accumulate
-# and exhaust file descriptors across repeated test runs.
-System.cmd("pkill", ["-9", "-f", "lightpanda.*serve"], stderr_to_stdout: true)
-System.cmd("pkill", ["-9", "-f", "Google Chrome for Testing"], stderr_to_stdout: true)
-
 # --- Start wallabidi app (primary driver's supervisor) ---
 {:ok, _} = Application.ensure_all_started(:wallabidi)
 
@@ -221,13 +215,10 @@ Application.put_env(:wallabidi, :base_url, "http://localhost:4321")
 
 Application.put_env(:wallabidi, :live_app_url, "http://localhost:4321")
 
-# Kill stale browser processes when the test suite exits —
-# Port.close/1 sends SIGTERM which Lightpanda/Chrome ignore, and the
-# one_for_one supervisor restarts the GenServer during shutdown,
-# spawning a fresh OS process. Kill everything after the BEAM stops.
 System.at_exit(fn _ ->
-  # Stop the wallabidi app first so supervisors don't restart children
+  # Stop the wallabidi app so supervisors don't restart browser children
+  # during BEAM shutdown. The run_command.sh wrapper kills browser OS
+  # processes when their stdin pipe closes (which happens as part of
+  # normal shutdown and on BEAM kill -9).
   Application.stop(:wallabidi)
-  System.cmd("pkill", ["-9", "-f", "lightpanda.*serve"], stderr_to_stdout: true)
-  System.cmd("pkill", ["-9", "-f", "Google Chrome for Testing"], stderr_to_stdout: true)
 end)

@@ -96,6 +96,5 @@ Ecto.Migrator.up(Wallabidi.Integration.LiveApp.Repo, 1, Wallabidi.Integration.Li
 ExUnit.start()
 
 System.at_exit(fn _ ->
-  System.cmd("pkill", ["-9", "-f", "lightpanda.*serve"], stderr_to_stdout: true)
-  System.cmd("pkill", ["-9", "-f", "Google Chrome for Testing"], stderr_to_stdout: true)
+  Application.stop(:wallabidi)
 end)
