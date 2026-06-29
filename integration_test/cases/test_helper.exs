@@ -16,9 +16,13 @@ Logger.configure(level: :warning)
 #                          excludes the in-process LV driver
 #   :browser            — needs Chrome specifically (screenshots, CDP network
 #                          throttle, layout metrics, XPath, localStorage)
+#   :lightpanda_only    — tests a Lightpanda-specific behaviour or quirk;
+#                          only runs on the :lightpanda driver
+#   :chrome_only        — tests a Chrome-specific behaviour or quirk;
+#                          only runs on the :chrome / :chrome_cdp drivers
 #   :lightpanda_ni      — known LP bug or unimplemented feature (temporary;
 #                          should track to a fix, not a permanent capability gate)
-#   :cdp_only           — driver-internal CDP wire test
+#   :cdp_only           — driver-internal CDP wire test (unit-level, not LP/Chrome)
 #   :live_view_only     — exercises the in-process LV driver itself
 
 # --- Configure primary driver ---
@@ -87,6 +91,8 @@ excludes =
           browser: true,
           headless: true,
           cdp_only: true,
+          lightpanda_only: true,
+          chrome_only: true,
           # In-process LV driver makes no real HTTP request, so it carries
           # no User-Agent — the sandbox-metadata-in-UA test is N/A here.
           sandbox_metadata: true
@@ -99,20 +105,27 @@ excludes =
     # generic LV scenario. Keep :live_view_only excluded on LP.
     driver == :lightpanda ->
       excludes ++
-        [browser: true, lightpanda_ni: true, live_view_only: true, cdp_only: true]
+        [
+          browser: true,
+          lightpanda_ni: true,
+          live_view_only: true,
+          cdp_only: true,
+          chrome_only: true
+        ]
 
     # Chrome BiDi has known stability issues on GHA Linux runners
     # (chromium-bidi Mapper subscribe stalls + cascading session crashes
     # under contention). Tests tagged :bidi_unstable are skipped on BiDi
     # only; they still run on Chrome CDP for coverage.
     driver == :chrome ->
-      excludes ++ [live_view_only: true, cdp_only: true, bidi_unstable: true]
+      excludes ++
+        [live_view_only: true, cdp_only: true, bidi_unstable: true, lightpanda_only: true]
 
     driver == :chrome_cdp ->
-      excludes ++ [live_view_only: true, cdp_only: true]
+      excludes ++ [live_view_only: true, cdp_only: true, lightpanda_only: true]
 
     true ->
-      excludes ++ [live_view_only: true, cdp_only: true]
+      excludes ++ [live_view_only: true, cdp_only: true, lightpanda_only: true]
   end
 
 ex_unit_opts = [exclude: excludes]

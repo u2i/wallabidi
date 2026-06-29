@@ -9,7 +9,7 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
   """
   use ExUnit.Case, async: false
 
-  @moduletag :cdp_only
+  @moduletag :lightpanda_only
 
   alias Wallabidi.Integration.V2SessionHelper
   alias Wallabidi.Query
