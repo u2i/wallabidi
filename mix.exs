@@ -87,7 +87,7 @@ defmodule Wallabidi.Mixfile do
       {:sandbox_shim, "~> 0.1"},
       {:plug_cowboy, "~> 2.7"},
       # Test-only deps
-      {:lightpanda, "~> 0.3.3", only: :test},
+      {:lightpanda, "~> 0.3.4-rc.0", github: "u2i/lightpanda", tag: "v0.3.4-rc.0", only: :test},
       {:sandbox_case, "~> 0.4.0", runtime: false},
       {:cachex, "~> 4.1", only: :test},
       {:fun_with_flags, "~> 1.11", only: :test, runtime: false},
