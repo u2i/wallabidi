@@ -131,13 +131,13 @@ defmodule Wallabidi do
       :live_view ->
         Wallabidi.LiveView.Driver.start_session(opts)
 
-      d when d in [:lightpanda, :lightpanda_v2] ->
+      :lightpanda ->
         Wallabidi.Remote.Drivers.LightpandaCDP.start_session(opts)
 
-      d when d in [:chrome_cdp, :chrome_cdp_v2] ->
+      :chrome_cdp ->
         Wallabidi.Remote.Drivers.ChromeCDP.start_session(opts)
 
-      d when d in [:chrome, :chrome_bidi_v2] ->
+      :chrome ->
         Wallabidi.Remote.Drivers.ChromeBiDi.start_session(opts)
 
       _browser ->
@@ -191,9 +191,9 @@ defmodule Wallabidi do
 
   @pinnable_drivers ~w(
     live_view
-    lightpanda lightpanda_v2
-    chrome_cdp chrome_cdp_v2
-    chrome chrome_bidi_v2
+    lightpanda
+    chrome_cdp
+    chrome
   )
 
   @doc """
@@ -223,9 +223,9 @@ defmodule Wallabidi do
   def driver_module_for(driver) do
     case driver do
       :live_view -> Wallabidi.LiveView.Driver
-      d when d in [:lightpanda, :lightpanda_v2] -> Wallabidi.Remote.Drivers.LightpandaCDP
-      d when d in [:chrome_cdp, :chrome_cdp_v2] -> Wallabidi.Remote.Drivers.ChromeCDP
-      d when d in [:chrome, :chrome_bidi_v2] -> Wallabidi.Remote.Drivers.ChromeBiDi
+      :lightpanda -> Wallabidi.Remote.Drivers.LightpandaCDP
+      :chrome_cdp -> Wallabidi.Remote.Drivers.ChromeCDP
+      :chrome -> Wallabidi.Remote.Drivers.ChromeBiDi
       _ -> Wallabidi.Remote.Drivers.ChromeCDP
     end
   end

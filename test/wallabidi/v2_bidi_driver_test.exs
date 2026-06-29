@@ -26,7 +26,7 @@ defmodule Wallabidi.V2BiDiDriverTest do
   end
 
   test "start_session returns a populated V2BiDiDriver session" do
-    {:ok, session} = Wallabidi.start_session(driver: :chrome_bidi_v2)
+    {:ok, session} = Wallabidi.start_session(driver: :chrome)
 
     try do
       assert session.driver == Wallabidi.Remote.Drivers.ChromeBiDi
@@ -45,7 +45,7 @@ defmodule Wallabidi.V2BiDiDriverTest do
   end
 
   test "Browser.all routes through V2.BiDiClient.find_elements for V2BiDi sessions" do
-    {:ok, session} = Wallabidi.start_session(driver: :chrome_bidi_v2)
+    {:ok, session} = Wallabidi.start_session(driver: :chrome)
 
     try do
       html = "<div class='item'>a</div><div class='item'>b</div>"

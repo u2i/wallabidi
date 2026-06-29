@@ -27,11 +27,8 @@ Logger.configure(level: :warning)
 driver =
   case System.get_env("WALLABIDI_DRIVER") do
     "chrome" -> :chrome
-    "chrome_bidi_v2" -> :chrome_bidi_v2
     "live_view" -> :live_view
     "lightpanda" -> :lightpanda
-    "lightpanda_v2" -> :lightpanda_v2
-    "chrome_cdp_v2" -> :chrome_cdp_v2
     _ -> :chrome_cdp
   end
 
@@ -102,7 +99,7 @@ excludes =
     # cases/live_view/feature_test.exs is :live_view_only because it
     # exercises the in-process LV-driver's Feature dispatch — not a
     # generic LV scenario. Keep :live_view_only excluded on LP.
-    driver in [:lightpanda, :lightpanda_v2] ->
+    driver == :lightpanda ->
       # :headless tests rely on Chromium features (real screenshots,
       # Phoenix.LiveView.JS dispatch, XPath, real localStorage) that
       # Lightpanda's lighter JS engine doesn't reach yet.
@@ -113,15 +110,10 @@ excludes =
     # (chromium-bidi Mapper subscribe stalls + cascading session crashes
     # under contention). Tests tagged :bidi_unstable are skipped on BiDi
     # only; they still run on Chrome CDP for coverage.
-    driver in [:chrome, :chrome_bidi_v2] ->
+    driver == :chrome ->
       excludes ++ [live_view_only: true, cdp_only: true, bidi_unstable: true]
 
-    # All Chrome-driven runs go through V2 implementations now (the
-    # old :chrome / :chrome_cdp atoms route to V2 modules in
-    # lib/wallabidi.ex). :cdp_only tests reference V1-internal modules
-    # (Wallabidi.ChromeCDP.SharedConnection, Wallabidi.Remote.Protocol.eval,
-    # Wallabidi.Remote.CDP.Ops.*) and are excluded everywhere V1 isn't running.
-    driver in [:chrome_cdp_v2, :chrome_cdp] ->
+    driver == :chrome_cdp ->
       excludes ++ [live_view_only: true, cdp_only: true]
 
     true ->
@@ -141,10 +133,10 @@ ex_unit_opts = [exclude: excludes]
 # safe ceiling locally.
 ex_unit_opts =
   cond do
-    driver == :chrome_bidi_v2 and is_nil(System.get_env("WALLABIDI_MAX_CASES")) ->
+    driver == :chrome and is_nil(System.get_env("WALLABIDI_MAX_CASES")) ->
       Keyword.put(ex_unit_opts, :max_cases, 8)
 
-    driver in [:chrome_cdp, :chrome_cdp_v2, :chrome, :lightpanda, :lightpanda_v2] and
+    driver in [:chrome_cdp, :chrome, :lightpanda] and
         is_nil(System.get_env("WALLABIDI_MAX_CASES")) ->
       Keyword.put(ex_unit_opts, :max_cases, 16)
 
