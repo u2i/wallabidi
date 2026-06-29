@@ -71,8 +71,12 @@ defmodule Wallabidi.Remote.Transport.PerSession.Actor do
 
     case GenServer.start(__MODULE__, {ws_url, init_fun, teardown_fun, owner}) do
       {:ok, pid} ->
-        session = GenServer.call(pid, :get_session)
-        {:ok, %{session | pid: pid}}
+        try do
+          session = GenServer.call(pid, :get_session)
+          {:ok, %{session | pid: pid}}
+        catch
+          :exit, reason -> {:error, {:transport_error, reason}}
+        end
 
       {:error, {:init_failed, reason}} ->
         {:error, reason}
@@ -223,6 +227,10 @@ defmodule Wallabidi.Remote.Transport.PerSession.Actor do
     {:reply, Common.current_context_id(state), state}
   end
 
+  def handle_call(:get_page_id, _from, state) do
+    {:reply, state.last_page_id, state}
+  end
+
   def handle_call({:push_frame, context_id}, _from, state) do
     {:reply, :ok, Common.push_frame(state, context_id)}
   end
@@ -266,7 +274,7 @@ defmodule Wallabidi.Remote.Transport.PerSession.Actor do
         {:noreply, state}
 
       {:error, conn, reason, _responses} ->
-        Logger.warning(
+        Logger.debug(
           "PerSession.Actor transport error pid=#{inspect(self())} reason=#{inspect(reason)}"
         )
 

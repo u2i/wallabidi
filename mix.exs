@@ -87,7 +87,7 @@ defmodule Wallabidi.Mixfile do
       {:sandbox_shim, "~> 0.1"},
       {:plug_cowboy, "~> 2.7"},
       # Test-only deps
-      {:lightpanda, ">= 0.0.0", only: :test},
+      {:lightpanda, "~> 0.3.3", only: :test},
       {:sandbox_case, "~> 0.4.0", runtime: false},
       {:cachex, "~> 4.1", only: :test},
       {:fun_with_flags, "~> 1.11", only: :test, runtime: false},
@@ -176,11 +176,22 @@ defmodule Wallabidi.Mixfile do
     args = if IO.ANSI.enabled?(), do: ["--color" | args], else: ["--no-color" | args]
     IO.puts("==> #{label}: WALLABIDI_DRIVER=#{driver} mix test --no-start")
 
+    # Kill stale browser processes from previous runs. This runs in the
+    # parent mix process, which survives even if the child BEAM crashes
+    # with emfile before its own at_exit cleanup can run.
+    System.cmd("pkill", ["-9", "-f", "lightpanda.*serve"], stderr_to_stdout: true)
+    System.cmd("pkill", ["-9", "-f", "Google Chrome for Testing"], stderr_to_stdout: true)
+
     {_, res} =
       System.cmd("mix", ["test", "--no-start" | args],
         into: IO.binstream(:stdio, :line),
         env: [{"WALLABIDI_DRIVER", driver}]
       )
+
+    # Kill again after the child exits — it may have crashed before
+    # its at_exit ran, leaving browser processes behind.
+    System.cmd("pkill", ["-9", "-f", "lightpanda.*serve"], stderr_to_stdout: true)
+    System.cmd("pkill", ["-9", "-f", "Google Chrome for Testing"], stderr_to_stdout: true)
 
     if res > 0 do
       System.at_exit(fn _ -> exit({:shutdown, 1}) end)

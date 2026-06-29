@@ -292,6 +292,17 @@ defmodule Wallabidi.Remote.Transport.Session do
   end
 
   @doc """
+  Returns the most recent pageId reported by the bootstrap, or `nil`
+  if no page_ready event has arrived yet.
+  """
+  @spec get_page_id(Wallabidi.Session.t()) :: String.t() | nil
+  def get_page_id(%Wallabidi.Session{pid: pid}) when is_pid(pid) do
+    GenServer.call(pid, :get_page_id)
+  catch
+    :exit, _ -> nil
+  end
+
+  @doc """
   Pushes a frame onto the focus stack. Subsequent JS evaluations run
   inside that frame's realm.
 
@@ -423,15 +434,24 @@ defmodule Wallabidi.Remote.Transport.Session do
           opts
       end
 
-    wire_id = WebSocket.cast_send(state.ws_pid, self(), method, params, opts)
-    pending = Map.put(state.pending_calls, wire_id, from)
-    {:noreply, %{state | pending_calls: pending}}
+    try do
+      wire_id = WebSocket.cast_send(state.ws_pid, self(), method, params, opts)
+      pending = Map.put(state.pending_calls, wire_id, from)
+      {:noreply, %{state | pending_calls: pending}}
+    catch
+      :exit, _ -> {:reply, {:error, :session_closed}, state}
+    end
   end
 
   def handle_call({:subscribe, event_method, routing_key}, _from, state) do
     key = routing_key || state.session.browsing_context || :global
-    :ok = WebSocket.subscribe(state.ws_pid, event_method, key, self())
-    {:reply, :ok, state}
+
+    try do
+      :ok = WebSocket.subscribe(state.ws_pid, event_method, key, self())
+      {:reply, :ok, state}
+    catch
+      :exit, _ -> {:reply, {:error, :session_closed}, state}
+    end
   end
 
   def handle_call({:await_page_load, loader_id, name, timeout_ms}, from, state) do
@@ -484,6 +504,10 @@ defmodule Wallabidi.Remote.Transport.Session do
     {:reply, Common.current_context_id(state), state}
   end
 
+  def handle_call(:get_page_id, _from, state) do
+    {:reply, state.last_page_id, state}
+  end
+
   def handle_call({:push_frame, context_id}, _from, state) do
     {:reply, :ok, Common.push_frame(state, context_id)}
   end
@@ -516,7 +540,12 @@ defmodule Wallabidi.Remote.Transport.Session do
           opts
       end
 
-    _ = WebSocket.cast_send(state.ws_pid, self(), method, params, opts)
+    try do
+      _ = WebSocket.cast_send(state.ws_pid, self(), method, params, opts)
+    catch
+      :exit, _ -> :ok
+    end
+
     {:noreply, state}
   end
 

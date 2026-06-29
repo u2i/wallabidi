@@ -156,6 +156,13 @@ defmodule Wallabidi.Remote.Transport.Protocol do
     :exit, _ -> nil
   end
 
+  @spec get_page_id(Session.t()) :: String.t() | nil
+  def get_page_id(%Session{pid: pid}) when is_pid(pid) do
+    GenServer.call(pid, :get_page_id)
+  catch
+    :exit, _ -> nil
+  end
+
   @spec push_frame(Session.t(), integer) :: :ok
   def push_frame(%Session{pid: pid}, context_id) when is_integer(context_id) do
     GenServer.call(pid, {:push_frame, context_id})

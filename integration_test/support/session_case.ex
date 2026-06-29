@@ -46,19 +46,35 @@ defmodule Wallabidi.Integration.SessionCase do
   def inject_test_session(_context) do
     {:ok, session} = start_test_session()
 
+    on_exit(fn ->
+      try do
+        Wallabidi.end_session(session)
+      catch
+        :exit, _ -> :ok
+      end
+    end)
+
     {:ok, %{session: session}}
   end
 
   defp retry(0, f), do: f.()
 
   defp retry(times, f) do
-    case f.() do
+    case safe_call(fn -> f.() end) do
       {:ok, session} ->
         {:ok, session}
 
       _ ->
         Process.sleep(250)
         retry(times - 1, f)
+    end
+  end
+
+  defp safe_call(fun) do
+    try do
+      fun.()
+    catch
+      :exit, reason -> {:error, {:exit, reason}}
     end
   end
 end

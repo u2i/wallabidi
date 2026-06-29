@@ -41,6 +41,12 @@ driver =
 Application.stop(:wallabidi)
 Application.put_env(:wallabidi, :driver, driver)
 
+# Kill stale browser processes from previous runs — Port.close
+# sends SIGTERM which Lightpanda/Chrome ignore, so they accumulate
+# and exhaust file descriptors across repeated test runs.
+System.cmd("pkill", ["-9", "-f", "lightpanda.*serve"], stderr_to_stdout: true)
+System.cmd("pkill", ["-9", "-f", "Google Chrome for Testing"], stderr_to_stdout: true)
+
 # --- Start wallabidi app (primary driver's supervisor) ---
 {:ok, _} = Application.ensure_all_started(:wallabidi)
 
@@ -130,16 +136,26 @@ excludes =
 
 ex_unit_opts = [exclude: excludes]
 
+# Cap per-driver parallelism when WALLABIDI_MAX_CASES is not set.
+#
 # chromium-bidi's session.subscribe handler stalls under high
-# concurrency — at default max_cases (System.schedulers_online()
-# = typically 16) we see intermittent 10s timeouts. Cap parallelism
-# so the BiDi V2 suite is reliable. CDP-based drivers don't have
-# this issue (single shared WS).
+# concurrency — cap at 8 for reliable BiDi V2 runs.
+#
+# Chrome CDP and Lightpanda: default max_cases (System.schedulers_online()
+# = typically 36) overwhelms Chrome with too many concurrent targets /
+# Lightpanda with too many simultaneous WS connects. 16 is the observed
+# safe ceiling locally.
 ex_unit_opts =
-  if driver == :chrome_bidi_v2 and is_nil(System.get_env("WALLABIDI_MAX_CASES")) do
-    Keyword.put(ex_unit_opts, :max_cases, 8)
-  else
-    ex_unit_opts
+  cond do
+    driver == :chrome_bidi_v2 and is_nil(System.get_env("WALLABIDI_MAX_CASES")) ->
+      Keyword.put(ex_unit_opts, :max_cases, 8)
+
+    driver in [:chrome_cdp, :chrome_cdp_v2, :chrome, :lightpanda, :lightpanda_v2] and
+        is_nil(System.get_env("WALLABIDI_MAX_CASES")) ->
+      Keyword.put(ex_unit_opts, :max_cases, 16)
+
+    true ->
+      ex_unit_opts
   end
 
 ExUnit.configure(ex_unit_opts)
@@ -204,3 +220,14 @@ Application.put_env(:wallabidi, :endpoint, Wallabidi.Integration.LiveApp.Endpoin
 Application.put_env(:wallabidi, :base_url, "http://localhost:4321")
 
 Application.put_env(:wallabidi, :live_app_url, "http://localhost:4321")
+
+# Kill stale browser processes when the test suite exits —
+# Port.close/1 sends SIGTERM which Lightpanda/Chrome ignore, and the
+# one_for_one supervisor restarts the GenServer during shutdown,
+# spawning a fresh OS process. Kill everything after the BEAM stops.
+System.at_exit(fn _ ->
+  # Stop the wallabidi app first so supervisors don't restart children
+  Application.stop(:wallabidi)
+  System.cmd("pkill", ["-9", "-f", "lightpanda.*serve"], stderr_to_stdout: true)
+  System.cmd("pkill", ["-9", "-f", "Google Chrome for Testing"], stderr_to_stdout: true)
+end)

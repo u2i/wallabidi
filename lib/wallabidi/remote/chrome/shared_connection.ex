@@ -61,8 +61,8 @@ defmodule Wallabidi.Remote.Chrome.SharedConnection do
            __MODULE__,
            fn nil ->
              case :persistent_term.get(@pid_key, nil) do
-               p when is_pid(p) -> if Process.alive?(p), do: {:ok, p}, else: {:error, driver_mod}
-               nil -> {:error, driver_mod}
+               p when is_pid(p) -> if Process.alive?(p), do: {{:ok, p}, nil}, else: {{:error, driver_mod}, nil}
+               nil -> {{:error, driver_mod}, nil}
              end
            end,
            @connect_timeout

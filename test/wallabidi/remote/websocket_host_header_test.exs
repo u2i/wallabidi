@@ -1,5 +1,7 @@
 defmodule Wallabidi.Remote.WebSocketHostHeaderTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
+
+  require Logger
 
   # Verifies that the WebSocket upgrade request sent by
   # Wallabidi.Remote.WebSocket carries `Host: localhost`.
@@ -13,20 +15,46 @@ defmodule Wallabidi.Remote.WebSocketHostHeaderTest do
   alias Wallabidi.Remote.BiDi.WebSocketClient
   alias Wallabidi.Remote.WebSocket
 
+  # The fake server replies 500, which the WS process logs at :error.
+  # Suppress globally for this module — the 500 is intentional.
+  # The WS processes crash on the 500, so trap exits to prevent
+  # the linked BiDi client from taking the test down with it.
+  setup do
+    Process.flag(:trap_exit, true)
+    level = Logger.level()
+    Logger.configure(level: :critical)
+    on_exit(fn -> Logger.configure(level: level) end)
+    :ok
+  end
+
   test "Remote.WebSocket upgrade carries Host: localhost regardless of target hostname" do
     {port, listen_socket} = listen_loopback()
     spawn_accept(listen_socket, self())
     ws_url = "ws://127.0.0.1:#{port}/devtools/browser/abc"
-    _ = WebSocket.start(ws_url)
+    {:ok, pid} = WebSocket.start(ws_url)
     assert_host_localhost!()
+    # Wait for the WS process to process the 500 and exit so its
+    # log messages are emitted while Logger is still suppressed.
+    ref = Process.monitor(pid)
+    receive do
+      {:DOWN, ^ref, :process, ^pid, _} -> :ok
+    after
+      2_000 -> :ok
+    end
   end
 
   test "Remote.BiDi.WebSocketClient upgrade carries Host: localhost" do
     {port, listen_socket} = listen_loopback()
     spawn_accept(listen_socket, self())
     ws_url = "ws://127.0.0.1:#{port}/session/abc"
-    _ = WebSocketClient.start_link(ws_url)
+    {:ok, pid} = WebSocketClient.start_link(ws_url)
     assert_host_localhost!()
+    ref = Process.monitor(pid)
+    receive do
+      {:DOWN, ^ref, :process, ^pid, _} -> :ok
+    after
+      2_000 -> :ok
+    end
   end
 
   defp spawn_accept(listen_socket, parent) do

@@ -516,7 +516,22 @@ W.awaitLiveViewConnected = function(preUrl, timeoutMs) {
       }
       if (!document.querySelector('[data-phx-session]')) return resolve('no-liveview');
       var ls = window.liveSocket;
-      if (ls && ls.main && !ls.main.joinPending) return resolve(true);
+      if (ls && ls.main && !ls.main.joinPending) {
+        // Channel is joined. Also wait for the first onPatchEnd so the
+        // initial mount diff is in the DOM before we return. Without this,
+        // a click immediately after visit can capture a prePageId from
+        // before the mount patch fires bumpPageId — that bumpPageId then
+        // satisfies await_page_ready_after for the click's own patch,
+        // returning before the click's patch has actually landed.
+        //
+        // Short deadline: if onPatchEnd hasn't arrived within 500ms of
+        // join completing (e.g. Lightpanda quirk where domCallbacks isn't
+        // always populated), proceed anyway — assert_has retries handle it.
+        if (W.observedPatch) return resolve(true);
+        if (!W._joinedAt) W._joinedAt = Date.now();
+        if (Date.now() - W._joinedAt > 500) return resolve(true);
+        return setTimeout(check, 20);
+      }
       if (Date.now() > deadline) {
         // LV markup present but no liveSocket ever defined → JS never booted.
         return resolve(typeof window.liveSocket === 'undefined' ? 'no-livesocket' : false);
@@ -843,7 +858,21 @@ function installLvHook() {
           transition('LVReady');
         }
         W.check();
-        bumpPageId('onPatchEnd');
+        // If any form just had phx-trigger-action flipped truthy, a native
+        // form submit is about to fire a full page navigation. Signal
+        // nav_pending so Elixir extends the page_ready timeout to cover
+        // the POST+redirect chain, then do NOT bumpPageId — the destination
+        // page's bootstrap will fire page_ready when it's actually ready.
+        var triggered = document.querySelector('form[phx-trigger-action]');
+        var isTriggerAction = triggered && (function() {
+          var v = triggered.getAttribute('phx-trigger-action');
+          return v !== null && v !== 'false' && v !== '';
+        })();
+        if (isTriggerAction) {
+          send({type: 'nav_pending', to: null, kind: 'hard'});
+        } else {
+          bumpPageId('onPatchEnd');
+        }
       };
       // Watch the socket wire for live_redirect / redirect payloads —
       // these arrive in the click's phx_reply BEFORE the destination
