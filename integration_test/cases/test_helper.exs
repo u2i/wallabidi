@@ -130,16 +130,26 @@ excludes =
 
 ex_unit_opts = [exclude: excludes]
 
+# Cap per-driver parallelism when WALLABIDI_MAX_CASES is not set.
+#
 # chromium-bidi's session.subscribe handler stalls under high
-# concurrency — at default max_cases (System.schedulers_online()
-# = typically 16) we see intermittent 10s timeouts. Cap parallelism
-# so the BiDi V2 suite is reliable. CDP-based drivers don't have
-# this issue (single shared WS).
+# concurrency — cap at 8 for reliable BiDi V2 runs.
+#
+# Chrome CDP and Lightpanda: default max_cases (System.schedulers_online()
+# = typically 36) overwhelms Chrome with too many concurrent targets /
+# Lightpanda with too many simultaneous WS connects. 16 is the observed
+# safe ceiling locally.
 ex_unit_opts =
-  if driver == :chrome_bidi_v2 and is_nil(System.get_env("WALLABIDI_MAX_CASES")) do
-    Keyword.put(ex_unit_opts, :max_cases, 8)
-  else
-    ex_unit_opts
+  cond do
+    driver == :chrome_bidi_v2 and is_nil(System.get_env("WALLABIDI_MAX_CASES")) ->
+      Keyword.put(ex_unit_opts, :max_cases, 8)
+
+    driver in [:chrome_cdp, :chrome_cdp_v2, :chrome, :lightpanda, :lightpanda_v2] and
+        is_nil(System.get_env("WALLABIDI_MAX_CASES")) ->
+      Keyword.put(ex_unit_opts, :max_cases, 16)
+
+    true ->
+      ex_unit_opts
   end
 
 ExUnit.configure(ex_unit_opts)
@@ -156,6 +166,38 @@ ExUnit.configure(ex_unit_opts)
 Wallabidi.Test.AwaitMonitor.setup()
 
 ExUnit.start(formatters: [ExUnit.CLIFormatter])
+Testcontainers.start_link()
+
+# --- Start PostgreSQL container ---
+{:ok, pg_container} =
+  Testcontainers.start_container(
+    Testcontainers.PostgresContainer.new()
+    |> Testcontainers.PostgresContainer.with_image("postgres:18-alpine")
+    |> Testcontainers.PostgresContainer.with_user("wallabidi")
+    |> Testcontainers.PostgresContainer.with_password("wallabidi")
+    |> Testcontainers.PostgresContainer.with_database("wallabidi_test")
+  )
+
+# Apply container config to the repo (overrides config/test.exs)
+Application.put_env(
+  :wallabidi,
+  Wallabidi.Integration.LiveApp.Repo,
+  Testcontainers.PostgresContainer.connection_parameters(pg_container) ++
+    [pool: Ecto.Adapters.SQL.Sandbox, pool_size: 10]
+)
+
+# --- Start Repo, run migrations, start Cachex, setup sandboxes (integration tests) ---
+# Mox.defmock must be called before SandboxCase.Sandbox.setup()
+Mox.defmock(Wallabidi.Integration.LiveApp.MockWeather,
+  for: Wallabidi.Integration.LiveApp.WeatherBehaviour
+)
+
+Application.put_env(:wallabidi, :weather_module, Wallabidi.Integration.LiveApp.MockWeather)
+
+{:ok, _} = Wallabidi.Integration.LiveApp.Repo.start_link()
+Ecto.Migrator.up(Wallabidi.Integration.LiveApp.Repo, 1, Wallabidi.Integration.LiveApp.Migration)
+{:ok, _} = Cachex.start_link(:test_app_cache)
+SandboxCase.Sandbox.setup()
 
 # --- Start LiveApp endpoint (LiveView integration tests) ---
 Application.put_env(:wallabidi, Wallabidi.Integration.LiveApp.Endpoint,
@@ -174,8 +216,14 @@ Application.put_env(:wallabidi, Wallabidi.Integration.LiveApp.Endpoint,
 # LiveView driver needs an endpoint configured
 Application.put_env(:wallabidi, :endpoint, Wallabidi.Integration.LiveApp.Endpoint)
 
-# --- Start static test server (forms.html, page_1.html, etc.) ---
-{:ok, server} = Wallabidi.Integration.TestServer.start()
-Application.put_env(:wallabidi, :base_url, server.base_url)
+Application.put_env(:wallabidi, :base_url, "http://localhost:4321")
 
 Application.put_env(:wallabidi, :live_app_url, "http://localhost:4321")
+
+System.at_exit(fn _ ->
+  # Stop the wallabidi app so supervisors don't restart browser children
+  # during BEAM shutdown. The run_command.sh wrapper kills browser OS
+  # processes when their stdin pipe closes (which happens as part of
+  # normal shutdown and on BEAM kill -9).
+  Application.stop(:wallabidi)
+end)

@@ -9,8 +9,6 @@ defmodule Wallabidi.Integration.Browser.AssertCssTest do
     assert has_css?(page, ".user")
   end
 
-  @tag :polling
-
   test "has_css/2 returns false if the css is not on the page", %{session: session} do
     page =
       session
@@ -26,8 +24,6 @@ defmodule Wallabidi.Integration.Browser.AssertCssTest do
 
     assert has_css?(page, Query.css(".dashboard"), ".users")
   end
-
-  @tag :polling
 
   test "has_css/3 returns false if the css is not on the page", %{session: session} do
     page =
@@ -45,8 +41,6 @@ defmodule Wallabidi.Integration.Browser.AssertCssTest do
     assert has_no_css?(page, ".something_else")
   end
 
-  @tag :polling
-
   test "has_no_css/2 returns false if the css is on the page", %{session: session} do
     page =
       session
@@ -54,8 +48,6 @@ defmodule Wallabidi.Integration.Browser.AssertCssTest do
 
     refute has_no_css?(page, ".user")
   end
-
-  @tag :polling
 
   test "has_no_css/3 returns false if the css is on the page", %{session: session} do
     page =

@@ -4,6 +4,7 @@
 erl_crash.dump
 *.ez
 /.tool-versions-e
+/integration_test/support/test.db*
 
 /screenshots
 /doc

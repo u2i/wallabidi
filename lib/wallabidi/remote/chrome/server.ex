@@ -101,7 +101,7 @@ defmodule Wallabidi.Remote.Chrome.Server do
     if state.port, do: catch_port_close(state.port)
 
     if os_pid do
-      System.cmd("kill", ["-9", to_string(os_pid)])
+      System.cmd("kill", ["-9", to_string(os_pid)], stderr_to_stdout: true)
     end
 
     :ok

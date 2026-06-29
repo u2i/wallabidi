@@ -5,7 +5,6 @@ defmodule Wallabidi.Integration.Browser.StaleElementsTest do
 
   describe "when a DOM element becomes stale" do
     @tag :headless
-    @tag :polling
     test "the query is retried", %{session: session} do
       element =
         session
@@ -16,7 +15,6 @@ defmodule Wallabidi.Integration.Browser.StaleElementsTest do
     end
 
     @tag :headless
-    @tag :polling
     test "when a DOM element disappears", %{session: session} do
       element =
         session

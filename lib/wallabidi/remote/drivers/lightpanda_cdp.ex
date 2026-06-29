@@ -78,7 +78,8 @@ defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
           extra_args: [
             "--cdp-max-connections",
             Integer.to_string(@cdp_max_connections)
-          ]
+          ],
+          wrapper_script: wrapper_script()
         ]
 
         [{@lightpanda_server, opts}]
@@ -205,8 +206,12 @@ defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
       Code.ensure_loaded?(@lightpanda_server) ->
         {Transport.IsolatedProcess,
          [
-           # credo:disable-for-next-line Credo.Check.Refactor.Apply
-           spawn_fun: fn -> apply(@lightpanda_server, :start_link, [[name: nil]]) end,
+           spawn_fun: fn ->
+             # credo:disable-for-next-line Credo.Check.Refactor.Apply
+             apply(@lightpanda_server, :start_link, [
+               [name: nil, wrapper_script: wrapper_script()]
+             ])
+           end,
            # credo:disable-for-next-line Credo.Check.Refactor.Apply
            url_fun: fn server -> apply(@lightpanda_server, :ws_url, [server]) end,
            extra_capabilities: base_caps
@@ -221,6 +226,12 @@ defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
   def end_session(%Session{} = session) do
     Protocol.stop(session)
     :ok
+  end
+
+  # ----- Helpers -----
+
+  defp wrapper_script do
+    Path.absname("priv/run_command.sh", Application.app_dir(:wallabidi))
   end
 
   # ----- Per-driver overrides -----

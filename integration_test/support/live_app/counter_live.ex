@@ -1,5 +1,8 @@
 defmodule Wallabidi.Integration.LiveApp.CounterLive do
   use Phoenix.LiveView
+  import SandboxShim
+
+  sandbox_on_mount()
 
   def mount(_params, _session, socket) do
     {:ok, assign(socket, count: 0, message: nil)}

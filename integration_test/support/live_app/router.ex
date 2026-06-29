@@ -12,8 +12,19 @@ defmodule Wallabidi.Integration.LiveApp.Router do
   scope "/" do
     pipe_through(:browser)
 
-    live_session :default do
+    # === Sandbox-backed LiveViews (from TestApp) ===
+    live_session :sandbox do
+      live("/users", Wallabidi.Integration.LiveApp.UsersLive)
+      live("/dashboard", Wallabidi.Integration.LiveApp.DashboardLive)
+      live("/cached", Wallabidi.Integration.LiveApp.CachedLive)
+      live("/greeting", Wallabidi.Integration.LiveApp.GreetingLive)
+      live("/weather", Wallabidi.Integration.LiveApp.WeatherLive)
+      live("/price", Wallabidi.Integration.LiveApp.PriceLive)
       live("/counter", Wallabidi.Integration.LiveApp.CounterLive)
+    end
+
+    # === Integration test LiveViews ===
+    live_session :default do
       live("/stream-timer", Wallabidi.Integration.LiveApp.StreamTimerLive)
       live("/async", Wallabidi.Integration.LiveApp.AsyncLive)
       live("/text-change", Wallabidi.Integration.LiveApp.TextChangeLive)

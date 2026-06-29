@@ -1,4 +1,4 @@
-defmodule Wallabidi.TestApp.PriceService do
+defmodule Wallabidi.Integration.LiveApp.PriceService do
   @moduledoc """
   A module that can be mocked with Mimic in tests.
   Simulates an external API call.

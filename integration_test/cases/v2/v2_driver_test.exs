@@ -19,7 +19,7 @@ defmodule Wallabidi.Integration.V2.DriverTest do
   describe "V2Driver via @behaviour Wallabidi.Driver" do
     test "visit + current_url + page_title", %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)
-      url = base <> "index.html"
+      url = base <> "/index.html"
 
       assert :ok = V2Driver.visit(session, url)
       assert {:ok, ^url} = V2Driver.current_url(session)
@@ -30,7 +30,7 @@ defmodule Wallabidi.Integration.V2.DriverTest do
 
     test "find_elements + click + text + attribute", %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)
-      :ok = V2Driver.visit(session, base <> "index.html")
+      :ok = V2Driver.visit(session, base <> "/index.html")
 
       {:ok, [header]} = V2Driver.find_elements(session, Wallabidi.Query.css("#header"))
       assert {:ok, "header"} = V2Driver.attribute(header, "id")
@@ -45,7 +45,7 @@ defmodule Wallabidi.Integration.V2.DriverTest do
 
     test "set_value + clear + send_keys round-trip", %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)
-      :ok = V2Driver.visit(session, base <> "forms.html")
+      :ok = V2Driver.visit(session, base <> "/forms.html")
 
       {:ok, [input]} = V2Driver.find_elements(session, Wallabidi.Query.css("#name_field"))
 
@@ -61,7 +61,7 @@ defmodule Wallabidi.Integration.V2.DriverTest do
 
     test "execute_script + page_source", %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)
-      :ok = V2Driver.visit(session, base <> "index.html")
+      :ok = V2Driver.visit(session, base <> "/index.html")
 
       assert {:ok, 4} = V2Driver.execute_script(session, "2 + 2", [])
       assert {:ok, html} = V2Driver.page_source(session)
@@ -71,7 +71,7 @@ defmodule Wallabidi.Integration.V2.DriverTest do
     @tag slow: 6_000
     test "cookies round-trip", %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)
-      :ok = V2Driver.visit(session, base <> "index.html")
+      :ok = V2Driver.visit(session, base <> "/index.html")
 
       assert {:ok, _} = V2Driver.set_cookie(session, "v2drv", "yes", url: base)
       {:ok, cookies} = V2Driver.cookies(session)

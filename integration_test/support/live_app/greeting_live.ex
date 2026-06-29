@@ -1,9 +1,10 @@
-defmodule Wallabidi.TestApp.GreetingLive do
+defmodule Wallabidi.Integration.LiveApp.GreetingLive do
   use Phoenix.LiveView
   import SandboxShim
+
   sandbox_on_mount()
 
-  alias Wallabidi.TestApp.ExternalService
+  alias Wallabidi.Integration.LiveApp.ExternalService
 
   def mount(_params, _session, socket) do
     greeting = ExternalService.fetch_greeting()

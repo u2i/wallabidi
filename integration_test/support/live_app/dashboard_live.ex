@@ -1,9 +1,10 @@
-defmodule Wallabidi.TestApp.DashboardLive do
+defmodule Wallabidi.Integration.LiveApp.DashboardLive do
   use Phoenix.LiveView
   import SandboxShim
+
   sandbox_on_mount()
 
-  alias Wallabidi.TestApp.{Repo, User}
+  alias Wallabidi.Integration.LiveApp.{Repo, User}
 
   def mount(_params, _session, socket) do
     if connected?(socket) do

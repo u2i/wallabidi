@@ -190,6 +190,10 @@ defmodule Wallabidi.Remote.Transport.BiDi.SessionActor do
     {:reply, Common.current_context_id(state), state}
   end
 
+  def handle_call(:get_page_id, _from, state) do
+    {:reply, state.last_page_id, state}
+  end
+
   def handle_call({:push_frame, context_id}, _from, state) do
     {:reply, :ok, Common.push_frame(state, context_id)}
   end

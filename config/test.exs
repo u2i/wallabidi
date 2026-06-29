@@ -69,20 +69,24 @@ config :wallabidi,
 #   WALLABIDI_CHROME_PATH=/path/to/chrome
 #   WALLABIDI_LIGHTPANDA_PATH=/path/to/lightpanda
 
-# Test app configuration
-config :wallabidi, Wallabidi.TestApp.Repo,
-  database: "test/support/test_app/test.db",
+# Test app configuration (now merged with Integration LiveApp)
+config :wallabidi, Wallabidi.Integration.LiveApp.Repo,
+  database: System.get_env("DB_DATABASE") || "wallabidi_test",
+  username: System.get_env("DB_USERNAME") || "wallabidi",
+  password: System.get_env("DB_PASSWORD") || "wallabidi",
+  hostname: System.get_env("DB_HOSTNAME") || "localhost",
+  port: String.to_integer(System.get_env("DB_PORT") || "5432"),
   pool: Ecto.Adapters.SQL.Sandbox,
   pool_size: 10
 
-config :wallabidi, Wallabidi.TestApp.Endpoint,
-  http: [ip: {0, 0, 0, 0}, port: 4002],
+config :wallabidi, Wallabidi.Integration.LiveApp.Endpoint,
+  http: [ip: {0, 0, 0, 0}, port: 4321],
   server: true,
   secret_key_base: String.duplicate("a", 64),
   live_view: [signing_salt: "test_salt"],
   check_origin: false
 
-config :wallabidi, ecto_repos: [Wallabidi.TestApp.Repo]
+config :wallabidi, ecto_repos: [Wallabidi.Integration.LiveApp.Repo]
 
 # FunWithFlags: sandbox_case 0.4+ isolates flags via a persistence adapter
 # (no bytecode patching). Route persistence through it and disable the
@@ -90,21 +94,21 @@ config :wallabidi, ecto_repos: [Wallabidi.TestApp.Repo]
 config :fun_with_flags, :persistence,
   adapter: SandboxCase.Sandbox.FwfAdapter,
   sandbox_real_adapter: FunWithFlags.Store.Persistent.Ecto,
-  repo: Wallabidi.TestApp.Repo
+  repo: Wallabidi.Integration.LiveApp.Repo
 
 config :fun_with_flags, :cache, enabled: false
 
 # Sandbox case — batteries-included test isolation
 config :sandbox_case,
   otp_app: :wallabidi,
-  mox_mocks: [Wallabidi.TestApp.MockWeather],
+  mox_mocks: [Wallabidi.Integration.LiveApp.MockWeather],
   sandbox: [
     ecto: true,
     cachex: [:test_app_cache],
     fun_with_flags: true,
     mimic: [
-      Wallabidi.TestApp.ExternalService,
-      Wallabidi.TestApp.PriceService
+      Wallabidi.Integration.LiveApp.ExternalService,
+      Wallabidi.Integration.LiveApp.PriceService
     ],
     logger: [fail_on: false]
   ]

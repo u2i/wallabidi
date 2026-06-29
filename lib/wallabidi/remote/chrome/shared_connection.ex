@@ -57,25 +57,26 @@ defmodule Wallabidi.Remote.Chrome.SharedConnection do
   # persistent_term: a caller queued behind a concurrent connect will see
   # the now-live pid and return it rather than connecting again.
   defp connect_serialized(driver_mod) do
-    Agent.get_and_update(
-      __MODULE__,
-      fn nil ->
-        pid =
-          case :persistent_term.get(@pid_key, nil) do
-            p when is_pid(p) -> if Process.alive?(p), do: p, else: do_connect(driver_mod)
-            nil -> do_connect(driver_mod)
-          end
+    case Agent.get_and_update(
+           __MODULE__,
+           fn nil ->
+             case :persistent_term.get(@pid_key, nil) do
+               p when is_pid(p) ->
+                 if Process.alive?(p), do: {{:ok, p}, nil}, else: {{:error, driver_mod}, nil}
 
-        {pid, nil}
-      end,
-      @connect_timeout
-    )
+               nil ->
+                 {{:error, driver_mod}, nil}
+             end
+           end,
+           @connect_timeout
+         ) do
+      {:ok, pid} -> pid
+      {:error, driver_mod} -> do_connect(driver_mod)
+    end
   end
 
   defp do_connect(driver_mod) do
-    pid = connect(driver_mod)
-    :persistent_term.put(@pid_key, pid)
-    pid
+    connect(driver_mod)
   end
 
   defp connect(driver_mod) do
