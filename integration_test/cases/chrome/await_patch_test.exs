@@ -330,7 +330,7 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
   end
 
   describe "fill_in + submit (#9)" do
-    @tag :browser
+    @tag :headless
     test "fill_in awaits the set_value patch, not the clear patch", %{
       session: session,
       live_url: url

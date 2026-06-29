@@ -53,7 +53,7 @@ defmodule Wallabidi.Integration.LiveView.AsyncPatchTest do
   end
 
   describe "cross-session PubSub" do
-    @tag :browser
+    @tag :headless
     test "session B sees the broadcast from session A", %{session: session_a} do
       {:ok, session_b} = start_test_session()
 

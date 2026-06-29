@@ -12,12 +12,10 @@ Logger.configure(level: :warning)
 #                          in-process LV-driver is scoped to one LV process
 #                          at a time, so it can't follow these.
 #   :native_form_submit — needs <button type=submit> traversal (LV-driver can't)
-#   :headless           — needs a JS-capable headless browser (Chrome / LP)
-#   :browser            — needs full real browser (Chrome only — currently)
-#                          this is a TODO marker: tests carry it because they
-#                          were originally written for Chrome. Each one should
-#                          be re-evaluated and downgraded to a sharper tag if
-#                          LP can also run it.
+#   :headless           — needs a real headless browser (Lightpanda or Chrome);
+#                          excludes the in-process LV driver
+#   :browser            — needs Chrome specifically (screenshots, CDP network
+#                          throttle, layout metrics, XPath, localStorage)
 #   :lightpanda_ni      — known LP bug or unimplemented feature (temporary;
 #                          should track to a fix, not a permanent capability gate)
 #   :cdp_only           — driver-internal CDP wire test
@@ -100,11 +98,8 @@ excludes =
     # exercises the in-process LV-driver's Feature dispatch — not a
     # generic LV scenario. Keep :live_view_only excluded on LP.
     driver == :lightpanda ->
-      # :headless tests rely on Chromium features (real screenshots,
-      # Phoenix.LiveView.JS dispatch, XPath, real localStorage) that
-      # Lightpanda's lighter JS engine doesn't reach yet.
       excludes ++
-        [browser: true, headless: true, lightpanda_ni: true, live_view_only: true, cdp_only: true]
+        [browser: true, lightpanda_ni: true, live_view_only: true, cdp_only: true]
 
     # Chrome BiDi has known stability issues on GHA Linux runners
     # (chromium-bidi Mapper subscribe stalls + cascading session crashes
