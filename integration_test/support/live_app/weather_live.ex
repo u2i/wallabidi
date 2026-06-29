@@ -1,11 +1,17 @@
 defmodule Wallabidi.Integration.LiveApp.WeatherLive do
   use Phoenix.LiveView
   import SandboxShim
-  
+
   sandbox_on_mount()
 
   def mount(_params, _session, socket) do
-    mock = Application.get_env(:wallabidi, :weather_module, Wallabidi.Integration.LiveApp.WeatherBehaviour)
+    mock =
+      Application.get_env(
+        :wallabidi,
+        :weather_module,
+        Wallabidi.Integration.LiveApp.WeatherBehaviour
+      )
+
     temp = mock.get_temperature()
     {:ok, assign(socket, temperature: temp)}
   end

@@ -17,7 +17,9 @@ defmodule Wallabidi.Remote.Chrome.SharedConnectionTest do
     # Always start a fresh Agent — a prior test may have left a dead one.
     agent =
       case Process.whereis(SharedConnection) do
-        nil -> SharedConnection.start_link([])
+        nil ->
+          SharedConnection.start_link([])
+
         pid ->
           if Process.alive?(pid), do: pid, else: SharedConnection.start_link([])
       end

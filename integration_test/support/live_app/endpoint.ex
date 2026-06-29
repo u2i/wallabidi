@@ -10,6 +10,7 @@ defmodule Wallabidi.Integration.LiveApp.Endpoint do
 
   # === Sandbox integration (from TestApp) ===
   sandbox_plugs()
+
   sandbox_socket("/live", Phoenix.LiveView.Socket,
     websocket: [connect_info: [session: @session_options]]
   )

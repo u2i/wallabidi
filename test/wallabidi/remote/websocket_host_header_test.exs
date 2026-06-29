@@ -36,6 +36,7 @@ defmodule Wallabidi.Remote.WebSocketHostHeaderTest do
     # Wait for the WS process to process the 500 and exit so its
     # log messages are emitted while Logger is still suppressed.
     ref = Process.monitor(pid)
+
     receive do
       {:DOWN, ^ref, :process, ^pid, _} -> :ok
     after
@@ -50,6 +51,7 @@ defmodule Wallabidi.Remote.WebSocketHostHeaderTest do
     {:ok, pid} = WebSocketClient.start_link(ws_url)
     assert_host_localhost!()
     ref = Process.monitor(pid)
+
     receive do
       {:DOWN, ^ref, :process, ^pid, _} -> :ok
     after

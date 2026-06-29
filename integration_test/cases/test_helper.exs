@@ -179,14 +179,19 @@ Testcontainers.start_link()
   )
 
 # Apply container config to the repo (overrides config/test.exs)
-Application.put_env(:wallabidi, Wallabidi.Integration.LiveApp.Repo,
+Application.put_env(
+  :wallabidi,
+  Wallabidi.Integration.LiveApp.Repo,
   Testcontainers.PostgresContainer.connection_parameters(pg_container) ++
     [pool: Ecto.Adapters.SQL.Sandbox, pool_size: 10]
 )
 
 # --- Start Repo, run migrations, start Cachex, setup sandboxes (integration tests) ---
 # Mox.defmock must be called before SandboxCase.Sandbox.setup()
-Mox.defmock(Wallabidi.Integration.LiveApp.MockWeather, for: Wallabidi.Integration.LiveApp.WeatherBehaviour)
+Mox.defmock(Wallabidi.Integration.LiveApp.MockWeather,
+  for: Wallabidi.Integration.LiveApp.WeatherBehaviour
+)
+
 Application.put_env(:wallabidi, :weather_module, Wallabidi.Integration.LiveApp.MockWeather)
 
 {:ok, _} = Wallabidi.Integration.LiveApp.Repo.start_link()

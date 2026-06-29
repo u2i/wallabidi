@@ -206,9 +206,11 @@ defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
       Code.ensure_loaded?(@lightpanda_server) ->
         {Transport.IsolatedProcess,
          [
-           # credo:disable-for-next-line Credo.Check.Refactor.Apply
            spawn_fun: fn ->
-             apply(@lightpanda_server, :start_link, [[name: nil, wrapper_script: wrapper_script()]])
+             # credo:disable-for-next-line Credo.Check.Refactor.Apply
+             apply(@lightpanda_server, :start_link, [
+               [name: nil, wrapper_script: wrapper_script()]
+             ])
            end,
            # credo:disable-for-next-line Credo.Check.Refactor.Apply
            url_fun: fn server -> apply(@lightpanda_server, :ws_url, [server]) end,

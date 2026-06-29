@@ -118,10 +118,13 @@ defmodule Wallabidi.LiveView.Driver do
   defp visit_endpoint(session, path) do
     conn =
       case session.metadata do
-        nil -> @conn_test.build_conn()
+        nil ->
+          @conn_test.build_conn()
+
         meta ->
           @conn_test.build_conn()
-          |> Plug.Conn.put_req_header("user-agent",
+          |> Plug.Conn.put_req_header(
+            "user-agent",
             Wallabidi.Metadata.append("LiveViewDriver/1.0", meta)
           )
       end
@@ -143,11 +146,11 @@ defmodule Wallabidi.LiveView.Driver do
 
       true ->
         :not_found
-end
-rescue
-  _e ->
-    :not_found
-end
+    end
+  rescue
+    _e ->
+      :not_found
+  end
 
   @impl true
   def current_url(session) do

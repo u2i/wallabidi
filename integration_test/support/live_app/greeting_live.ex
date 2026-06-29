@@ -1,7 +1,7 @@
 defmodule Wallabidi.Integration.LiveApp.GreetingLive do
   use Phoenix.LiveView
   import SandboxShim
-  
+
   sandbox_on_mount()
 
   alias Wallabidi.Integration.LiveApp.ExternalService
