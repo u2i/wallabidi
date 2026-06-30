@@ -46,3 +46,7 @@ Application.put_env(:wallabidi, :weather_module, Wallabidi.Integration.LiveApp.M
 SandboxCase.Sandbox.setup()
 
 ExUnit.start()
+
+System.at_exit(fn _ ->
+  Application.stop(:wallabidi)
+end)

@@ -48,7 +48,7 @@ end
 
 # LiveApp endpoint
 Application.put_env(:wallabidi, Wallabidi.Integration.LiveApp.Endpoint,
-  http: [ip: {0, 0, 0, 0}, port: 4321, transport_options: [socket_opts: [reuseaddr: true]]],
+  http: [ip: {0, 0, 0, 0}, port: 4321],
   server: true,
   check_origin: false,
   secret_key_base: String.duplicate("x", 64),
