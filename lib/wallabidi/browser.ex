@@ -230,6 +230,16 @@ defmodule Wallabidi.Browser do
   defp remote_session?(%Session{driver: Wallabidi.Remote.Drivers.LightpandaCDP}), do: true
   defp remote_session?(_), do: false
 
+  defp maybe_snapshot_page_id(%Session{pending_await: nil} = session) when is_struct(session) do
+    if remote_session?(session) do
+      Wallabidi.LiveView.defer_next_patch(session)
+    else
+      session
+    end
+  end
+
+  defp maybe_snapshot_page_id(parent), do: parent
+
   defp remote_client(%Session{driver: Wallabidi.Remote.Drivers.ChromeBiDi}),
     do: Wallabidi.Remote.BiDi.Client
 
@@ -662,6 +672,7 @@ defmodule Wallabidi.Browser do
 
   def execute_script(%{driver: driver} = parent, script, arguments, callback)
       when is_list(arguments) and is_function(callback) do
+    parent = maybe_snapshot_page_id(parent)
     {:ok, value} = driver.execute_script(parent, script, arguments)
     callback.(value)
     parent
