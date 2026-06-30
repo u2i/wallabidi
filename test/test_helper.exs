@@ -53,5 +53,10 @@ ExUnit.start()
 # closes and System.cmd in the parent considers this process done.
 ExUnit.after_suite(fn _ ->
   Application.stop(:wallabidi)
-  Supervisor.stop(Wallabidi.Integration.LiveApp.Endpoint)
+
+  try do
+    Supervisor.stop(Wallabidi.Integration.LiveApp.Endpoint)
+  catch
+    :exit, _ -> :ok
+  end
 end)
