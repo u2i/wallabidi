@@ -230,5 +230,9 @@ System.at_exit(fn _ ->
   # The endpoint is started directly (not under the wallabidi OTP app),
   # so Application.stop/1 doesn't close it. Stop it explicitly so the
   # port is released before the next driver process starts.
-  Supervisor.stop(Wallabidi.Integration.LiveApp.Endpoint)
+  try do
+    Supervisor.stop(Wallabidi.Integration.LiveApp.Endpoint)
+  catch
+    :exit, _ -> :ok
+  end
 end)
