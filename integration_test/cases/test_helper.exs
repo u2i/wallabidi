@@ -202,6 +202,7 @@ SandboxCase.Sandbox.setup()
 # --- Start LiveApp endpoint (LiveView integration tests) ---
 Application.put_env(:wallabidi, Wallabidi.Integration.LiveApp.Endpoint,
   http: [ip: {0, 0, 0, 0}, port: 4321],
+  adapter: Bandit.PhoenixAdapter,
   server: true,
   check_origin: false,
   secret_key_base: String.duplicate("x", 64),
@@ -226,4 +227,8 @@ System.at_exit(fn _ ->
   # processes when their stdin pipe closes (which happens as part of
   # normal shutdown and on BEAM kill -9).
   Application.stop(:wallabidi)
+  # The endpoint is started directly (not under the wallabidi OTP app),
+  # so Application.stop/1 doesn't close it. Stop it explicitly so the
+  # port is released before the next driver process starts.
+  Supervisor.stop(Wallabidi.Integration.LiveApp.Endpoint)
 end)
