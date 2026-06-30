@@ -47,7 +47,6 @@ defmodule Wallabidi.LiveView do
   a remote driver.
   """
 
-  alias Wallabidi.Browser
   alias Wallabidi.Remote.LiveViewAware
   alias Wallabidi.Remote.Protocol
   alias Wallabidi.Remote.Transport.Protocol, as: TransportProtocol
@@ -129,8 +128,7 @@ defmodule Wallabidi.LiveView do
   bootstrap with that pre-click id. If it holds `:armed` (a deferred
   fill_in/clear/set_value/send_keys), waits for the patch promise
   installed by `prepare_patch`. If neither — no prior `:defer` —
-  falls back to arm-and-await for the next patch, matching
-  `Browser.await_patch/2`.
+  falls back to arm-and-await for the next patch.
 
   ## Options
 
@@ -150,9 +148,8 @@ defmodule Wallabidi.LiveView do
         %{session | pending_await: nil}
 
       nil ->
-        # No deferred wait: behave like Browser.await_patch — arm a
-        # fresh promise and wait for the next patch.
-        Browser.await_patch(session, opts)
+        # No deferred wait: arm a fresh promise and wait for the next patch.
+        _ = LiveViewAware.arm_and_await(session, timeout)
         session
     end
   end

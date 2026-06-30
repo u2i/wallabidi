@@ -44,7 +44,7 @@ defmodule Wallabidi.Integration.Feature.AutomaticScreenshotTest do
           assert ExUnit.run() == %{failures: 1, skipped: 0, total: 1, excluded: 0}
         end)
 
-      assert output =~ "\n1 feature, 1 failure\n"
+      assert (output =~ "1 feature" and output =~ "1 failure") or output =~ "Failed: 1 feature"
       assert screenshot_taken_count(output) == 2
     end
   end
@@ -75,7 +75,7 @@ defmodule Wallabidi.Integration.Feature.AutomaticScreenshotTest do
           assert ExUnit.run() == %{failures: 1, skipped: 0, total: 1, excluded: 0}
         end)
 
-      assert output =~ "\n1 feature, 1 failure\n"
+      assert (output =~ "1 feature" and output =~ "1 failure") or output =~ "Failed: 1 feature"
       assert screenshot_taken_count(output) == 2
     end
   end

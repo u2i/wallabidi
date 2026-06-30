@@ -1946,9 +1946,8 @@ defmodule Wallabidi.Browser do
       |> assert_has(Query.css(".updated"))
   """
   @spec await_patch(session, keyword()) :: session
-  def await_patch(%Session{driver: driver} = session, opts \\ []) do
-    driver.await_patch(session, opts)
-    session
+  def await_patch(%Session{} = session, opts \\ []) do
+    Wallabidi.LiveView.await_patch(session, opts)
   end
 
   # Wraps an interaction with prepare_patch/await_patch.
