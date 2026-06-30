@@ -170,13 +170,13 @@ defmodule Wallabidi.LiveView do
   @spec defer_next_patch(Session.t()) :: Session.t()
   def defer_next_patch(%Session{} = session) do
     if remote?(session) do
-      pre_page_id =
-        case eval_silent(session, "window.__w && window.__w.pageId") do
-          {:ok, id} when is_binary(id) -> id
-          _ -> nil
-        end
+      case eval_silent(session, "window.__w && window.__w.pageId") do
+        {:ok, id} when is_binary(id) ->
+          %{session | pending_await: {:page_ready_after, id}}
 
-      %{session | pending_await: {:page_ready_after, pre_page_id}}
+        _ ->
+          session
+      end
     else
       session
     end
