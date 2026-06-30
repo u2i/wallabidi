@@ -5,10 +5,7 @@ Logger.configure(level: :warning)
 driver =
   case System.get_env("WALLABIDI_DRIVER") do
     "chrome" -> :chrome
-    "chrome_bidi_v2" -> :chrome_bidi_v2
-    "chrome_cdp_v2" -> :chrome_cdp_v2
     "lightpanda" -> :lightpanda
-    "lightpanda_v2" -> :lightpanda_v2
     "live_view" -> :live_view
     _ -> :chrome_cdp
   end
@@ -26,10 +23,7 @@ primary_mod =
   case driver do
     :chrome -> Wallabidi.Chrome
     :chrome_cdp -> Wallabidi.ChromeCDP
-    :chrome_bidi_v2 -> Wallabidi.BiDiDriver
-    :chrome_cdp_v2 -> Wallabidi.ChromeDriver
-    :lightpanda -> Wallabidi.Lightpanda
-    :lightpanda_v2 -> Wallabidi.LightpandaDriver
+    :lightpanda -> Wallabidi.Remote.Drivers.LightpandaCDP
     _ -> nil
   end
 
@@ -37,10 +31,7 @@ secondaries =
   [
     {Wallabidi.Chrome, Wallabidi.Chrome.Supervisor},
     {Wallabidi.ChromeCDP, Wallabidi.ChromeCDP.Supervisor},
-    {Wallabidi.BiDiDriver, Wallabidi.BiDiDriver},
-    {Wallabidi.ChromeDriver, Wallabidi.ChromeDriver},
-    {Wallabidi.LightpandaDriver, Wallabidi.LightpandaDriver},
-    {Wallabidi.Lightpanda, Wallabidi.Lightpanda.Supervisor}
+    {Wallabidi.Remote.Drivers.LightpandaCDP, Wallabidi.Remote.Drivers.LightpandaCDP.Supervisor}
   ]
   |> Enum.reject(fn {mod, _name} -> mod == primary_mod end)
 

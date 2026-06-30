@@ -46,3 +46,12 @@ Application.put_env(:wallabidi, :weather_module, Wallabidi.Integration.LiveApp.M
 SandboxCase.Sandbox.setup()
 
 ExUnit.start()
+
+# Stop the endpoint synchronously after tests finish so the port is
+# released before the next driver process (in mix test.all) tries to bind.
+# at_exit is too late — the BEAM may still hold the socket when stdout
+# closes and System.cmd in the parent considers this process done.
+ExUnit.after_suite(fn _ ->
+  Application.stop(:wallabidi)
+  Supervisor.stop(Wallabidi.Integration.LiveApp.Endpoint)
+end)

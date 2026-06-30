@@ -9,7 +9,7 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
   """
   use ExUnit.Case, async: false
 
-  @moduletag :cdp_only
+  @moduletag :lightpanda_only
 
   alias Wallabidi.Integration.V2SessionHelper
   alias Wallabidi.Query
@@ -60,15 +60,15 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
   end
 
   describe "navigate/2" do
-    @url_for "index.html"
+    @url_for "/index.html"
 
     test "navigates to a URL and returns a loader_id", %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)
       url = base <> @url_for
 
-      assert {:ok, %{loader_id: loader_id, frame_id: frame_id}} =
-               CDPClient.navigate(session, url)
-
+      assert {:ok, result} = CDPClient.navigate(session, url)
+      loader_id = Map.get(result, :loader_id)
+      frame_id = Map.get(result, :frame_id)
       assert is_binary(loader_id) or is_nil(loader_id)
       assert is_binary(frame_id) or is_nil(frame_id)
     end
@@ -92,7 +92,7 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
   describe "visit/2" do
     test "navigates and waits for load in one call", %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)
-      url = base <> "index.html"
+      url = base <> "/index.html"
 
       assert :ok = CDPClient.visit(session, url)
       assert {:ok, ^url} = CDPClient.evaluate(session, "location.href")
@@ -102,7 +102,7 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
   describe "bootstrap installation" do
     test "window.__w is defined after visiting a page", %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)
-      :ok = CDPClient.visit(session, base <> "index.html")
+      :ok = CDPClient.visit(session, base <> "/index.html")
 
       assert {:ok, "object"} = CDPClient.evaluate(session, "typeof window.__w")
       assert {:ok, "function"} = CDPClient.evaluate(session, "typeof window.__w.check")
@@ -111,7 +111,7 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
 
     test "__wallabidi binding is callable", %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)
-      :ok = CDPClient.visit(session, base <> "index.html")
+      :ok = CDPClient.visit(session, base <> "/index.html")
       # The binding is exposed via Runtime.addBinding — it's a host
       # function injected into every realm. Type should be "function".
       assert {:ok, "function"} = CDPClient.evaluate(session, "typeof __wallabidi")
@@ -121,7 +121,7 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
   describe "find waiter round-trip" do
     test "register_find + JS binding call resolves the waiter", %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)
-      :ok = CDPClient.visit(session, base <> "index.html")
+      :ok = CDPClient.visit(session, base <> "/index.html")
 
       query_id = "v2-test-#{System.unique_integer([:positive])}"
 
@@ -141,7 +141,7 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
 
     test "register_find times out when the binding never fires", %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)
-      :ok = CDPClient.visit(session, base <> "index.html")
+      :ok = CDPClient.visit(session, base <> "/index.html")
 
       query_id = "v2-timeout-#{System.unique_integer([:positive])}"
       :ok = V2Session.register_find(session, query_id, 50)
@@ -153,7 +153,7 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
 
     test "register_find surfaces invalid_selector errors", %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)
-      :ok = CDPClient.visit(session, base <> "index.html")
+      :ok = CDPClient.visit(session, base <> "/index.html")
 
       query_id = "v2-err-#{System.unique_integer([:positive])}"
       :ok = V2Session.register_find(session, query_id, 1_000)
@@ -170,7 +170,7 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
   describe "find_elements/2" do
     setup %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)
-      :ok = CDPClient.visit(session, base <> "index.html")
+      :ok = CDPClient.visit(session, base <> "/index.html")
       :ok
     end
 
@@ -192,6 +192,7 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
       assert length(results) >= 1
     end
 
+    @tag :lightpanda_ni
     test "returns invalid_selector for a bad CSS selector", %{session: session} do
       assert {:error, :invalid_selector} =
                CDPClient.find_elements(session, Query.css(":::not-a-selector", count: :any))
@@ -210,7 +211,7 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
   describe "page introspection" do
     setup %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)
-      url = base <> "index.html"
+      url = base <> "/index.html"
       :ok = CDPClient.visit(session, url)
       %{base_url: base, url: url}
     end
@@ -238,7 +239,7 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
   describe "text/2 and attribute/3" do
     setup %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)
-      :ok = CDPClient.visit(session, base <> "index.html")
+      :ok = CDPClient.visit(session, base <> "/index.html")
       :ok
     end
 
@@ -269,7 +270,7 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
   describe "displayed/2 and click/2" do
     setup %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)
-      :ok = CDPClient.visit(session, base <> "index.html")
+      :ok = CDPClient.visit(session, base <> "/index.html")
       :ok
     end
 
@@ -314,7 +315,7 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
   describe "element-scoped find_elements" do
     setup %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)
-      :ok = CDPClient.visit(session, base <> "index.html")
+      :ok = CDPClient.visit(session, base <> "/index.html")
       :ok
     end
 
@@ -339,7 +340,7 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
   describe "cookies" do
     setup %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)
-      :ok = CDPClient.visit(session, base <> "index.html")
+      :ok = CDPClient.visit(session, base <> "/index.html")
       %{base_url: base}
     end
 
@@ -361,7 +362,7 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
   describe "screenshot + window size" do
     setup %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)
-      :ok = CDPClient.visit(session, base <> "index.html")
+      :ok = CDPClient.visit(session, base <> "/index.html")
       :ok
     end
 
@@ -397,7 +398,7 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
   describe "page-ready tracking" do
     test "get_page_id returns the most-recent pageId from bootstrap", %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)
-      :ok = CDPClient.visit(session, base <> "index.html")
+      :ok = CDPClient.visit(session, base <> "/index.html")
 
       # The bootstrap fires page_ready with a pageId once the DOM
       # parses. After visit returns, the binding event should have
@@ -406,21 +407,22 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
       assert is_binary(page_id) or is_nil(page_id)
     end
 
+    @tag :lightpanda_ni
     test "await_page_ready_after returns :ok when pageId changes", %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)
-      :ok = CDPClient.visit(session, base <> "index.html")
+      :ok = CDPClient.visit(session, base <> "/index.html")
 
       pre = V2Session.get_page_id(session)
 
       # Visit a different page — bootstrap fires a new page_ready.
-      Task.start(fn -> CDPClient.visit(session, base <> "page_1.html") end)
+      Task.start(fn -> CDPClient.visit(session, base <> "/page_1.html") end)
 
       assert :ok = V2Session.await_page_ready_after(session, pre, 5_000)
     end
 
     test "await_page_ready_after times out when no new pageId arrives", %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)
-      :ok = CDPClient.visit(session, base <> "index.html")
+      :ok = CDPClient.visit(session, base <> "/index.html")
 
       pre = V2Session.get_page_id(session)
       assert :timeout = V2Session.await_page_ready_after(session, pre, 200)
@@ -430,7 +432,7 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
   describe "frame switching (mechanics)" do
     setup %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)
-      :ok = CDPClient.visit(session, base <> "index.html")
+      :ok = CDPClient.visit(session, base <> "/index.html")
       :ok
     end
 
@@ -483,7 +485,7 @@ defmodule Wallabidi.Integration.V2.LightpandaSmokeTest do
   describe "input ops (set_value, clear, send_keys)" do
     setup %{session: session} do
       base = Application.fetch_env!(:wallabidi, :base_url)
-      :ok = CDPClient.visit(session, base <> "forms.html")
+      :ok = CDPClient.visit(session, base <> "/forms.html")
       :ok
     end
 

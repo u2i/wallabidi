@@ -81,6 +81,7 @@ config :wallabidi, Wallabidi.Integration.LiveApp.Repo,
 
 config :wallabidi, Wallabidi.Integration.LiveApp.Endpoint,
   http: [ip: {0, 0, 0, 0}, port: 4321],
+  adapter: Bandit.PhoenixAdapter,
   server: true,
   secret_key_base: String.duplicate("a", 64),
   live_view: [signing_salt: "test_salt"],

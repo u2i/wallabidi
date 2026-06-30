@@ -60,11 +60,8 @@ defmodule Wallabidi.Integration.Chrome.TraceTimingTest do
   test "compare all drivers" do
     drivers = [
       :lightpanda,
-      :lightpanda_v2,
       :chrome_cdp,
-      :chrome_cdp_v2,
       :chrome,
-      :chrome_bidi_v2,
       :live_view
     ]
 

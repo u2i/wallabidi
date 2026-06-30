@@ -12,26 +12,25 @@ Logger.configure(level: :warning)
 #                          in-process LV-driver is scoped to one LV process
 #                          at a time, so it can't follow these.
 #   :native_form_submit — needs <button type=submit> traversal (LV-driver can't)
-#   :headless           — needs a JS-capable headless browser (Chrome / LP)
-#   :browser            — needs full real browser (Chrome only — currently)
-#                          this is a TODO marker: tests carry it because they
-#                          were originally written for Chrome. Each one should
-#                          be re-evaluated and downgraded to a sharper tag if
-#                          LP can also run it.
+#   :headless           — needs a real headless browser (Lightpanda or Chrome);
+#                          excludes the in-process LV driver
+#   :browser            — needs Chrome specifically (screenshots, CDP network
+#                          throttle, layout metrics, XPath, localStorage)
+#   :lightpanda_only    — tests a Lightpanda-specific behaviour or quirk;
+#                          only runs on the :lightpanda driver
+#   :chrome_only        — tests a Chrome-specific behaviour or quirk;
+#                          only runs on the :chrome / :chrome_cdp drivers
 #   :lightpanda_ni      — known LP bug or unimplemented feature (temporary;
 #                          should track to a fix, not a permanent capability gate)
-#   :cdp_only           — driver-internal CDP wire test
+#   :cdp_only           — driver-internal CDP wire test (unit-level, not LP/Chrome)
 #   :live_view_only     — exercises the in-process LV driver itself
 
 # --- Configure primary driver ---
 driver =
   case System.get_env("WALLABIDI_DRIVER") do
     "chrome" -> :chrome
-    "chrome_bidi_v2" -> :chrome_bidi_v2
     "live_view" -> :live_view
     "lightpanda" -> :lightpanda
-    "lightpanda_v2" -> :lightpanda_v2
-    "chrome_cdp_v2" -> :chrome_cdp_v2
     _ -> :chrome_cdp
   end
 
@@ -92,6 +91,8 @@ excludes =
           browser: true,
           headless: true,
           cdp_only: true,
+          lightpanda_only: true,
+          chrome_only: true,
           # In-process LV driver makes no real HTTP request, so it carries
           # no User-Agent — the sandbox-metadata-in-UA test is N/A here.
           sandbox_metadata: true
@@ -102,30 +103,29 @@ excludes =
     # cases/live_view/feature_test.exs is :live_view_only because it
     # exercises the in-process LV-driver's Feature dispatch — not a
     # generic LV scenario. Keep :live_view_only excluded on LP.
-    driver in [:lightpanda, :lightpanda_v2] ->
-      # :headless tests rely on Chromium features (real screenshots,
-      # Phoenix.LiveView.JS dispatch, XPath, real localStorage) that
-      # Lightpanda's lighter JS engine doesn't reach yet.
+    driver == :lightpanda ->
       excludes ++
-        [browser: true, headless: true, lightpanda_ni: true, live_view_only: true, cdp_only: true]
+        [
+          browser: true,
+          lightpanda_ni: true,
+          live_view_only: true,
+          cdp_only: true,
+          chrome_only: true
+        ]
 
     # Chrome BiDi has known stability issues on GHA Linux runners
     # (chromium-bidi Mapper subscribe stalls + cascading session crashes
     # under contention). Tests tagged :bidi_unstable are skipped on BiDi
     # only; they still run on Chrome CDP for coverage.
-    driver in [:chrome, :chrome_bidi_v2] ->
-      excludes ++ [live_view_only: true, cdp_only: true, bidi_unstable: true]
+    driver == :chrome ->
+      excludes ++
+        [live_view_only: true, cdp_only: true, bidi_unstable: true, lightpanda_only: true]
 
-    # All Chrome-driven runs go through V2 implementations now (the
-    # old :chrome / :chrome_cdp atoms route to V2 modules in
-    # lib/wallabidi.ex). :cdp_only tests reference V1-internal modules
-    # (Wallabidi.ChromeCDP.SharedConnection, Wallabidi.Remote.Protocol.eval,
-    # Wallabidi.Remote.CDP.Ops.*) and are excluded everywhere V1 isn't running.
-    driver in [:chrome_cdp_v2, :chrome_cdp] ->
-      excludes ++ [live_view_only: true, cdp_only: true]
+    driver == :chrome_cdp ->
+      excludes ++ [live_view_only: true, cdp_only: true, lightpanda_only: true]
 
     true ->
-      excludes ++ [live_view_only: true, cdp_only: true]
+      excludes ++ [live_view_only: true, cdp_only: true, lightpanda_only: true]
   end
 
 ex_unit_opts = [exclude: excludes]
@@ -141,10 +141,10 @@ ex_unit_opts = [exclude: excludes]
 # safe ceiling locally.
 ex_unit_opts =
   cond do
-    driver == :chrome_bidi_v2 and is_nil(System.get_env("WALLABIDI_MAX_CASES")) ->
+    driver == :chrome and is_nil(System.get_env("WALLABIDI_MAX_CASES")) ->
       Keyword.put(ex_unit_opts, :max_cases, 8)
 
-    driver in [:chrome_cdp, :chrome_cdp_v2, :chrome, :lightpanda, :lightpanda_v2] and
+    driver in [:chrome_cdp, :chrome, :lightpanda] and
         is_nil(System.get_env("WALLABIDI_MAX_CASES")) ->
       Keyword.put(ex_unit_opts, :max_cases, 16)
 
@@ -202,6 +202,7 @@ SandboxCase.Sandbox.setup()
 # --- Start LiveApp endpoint (LiveView integration tests) ---
 Application.put_env(:wallabidi, Wallabidi.Integration.LiveApp.Endpoint,
   http: [ip: {0, 0, 0, 0}, port: 4321],
+  adapter: Bandit.PhoenixAdapter,
   server: true,
   check_origin: false,
   secret_key_base: String.duplicate("x", 64),
@@ -226,4 +227,8 @@ System.at_exit(fn _ ->
   # processes when their stdin pipe closes (which happens as part of
   # normal shutdown and on BEAM kill -9).
   Application.stop(:wallabidi)
+  # The endpoint is started directly (not under the wallabidi OTP app),
+  # so Application.stop/1 doesn't close it. Stop it explicitly so the
+  # port is released before the next driver process starts.
+  Supervisor.stop(Wallabidi.Integration.LiveApp.Endpoint)
 end)

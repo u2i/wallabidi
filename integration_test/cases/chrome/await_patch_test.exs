@@ -167,6 +167,7 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
 
   describe "async LiveView updates" do
     @tag slow: 8_000
+    @tag :lightpanda_ni
     test "await_patch catches async result after start_async", %{session: session, live_url: url} do
       session
       |> visit("#{url}/async")
@@ -241,6 +242,7 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
     end
 
     @tag slow: 15_000
+    @tag :lightpanda_ni
     test "await_liveview_connected waits for NEW LiveView, not old one", %{
       session: session,
       live_url: url
@@ -330,7 +332,7 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
   end
 
   describe "fill_in + submit (#9)" do
-    @tag :browser
+    @tag :headless
     test "fill_in awaits the set_value patch, not the clear patch", %{
       session: session,
       live_url: url

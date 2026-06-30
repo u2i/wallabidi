@@ -6,7 +6,7 @@ defmodule Wallabidi.Integration.V2.DriverTest do
   """
   use ExUnit.Case, async: false
 
-  @moduletag :v2
+  @moduletag :lightpanda_only
 
   alias Wallabidi.Remote.Drivers.LightpandaCDP, as: V2Driver
 

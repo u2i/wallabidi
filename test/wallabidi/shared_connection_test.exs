@@ -32,7 +32,13 @@ defmodule Wallabidi.Remote.Chrome.SharedConnectionTest do
         v -> :persistent_term.put(@pid_key, v)
       end
 
-      if is_pid(agent) and Process.alive?(agent), do: Agent.stop(agent)
+      if is_pid(agent) do
+        try do
+          Agent.stop(agent)
+        catch
+          :exit, _ -> :ok
+        end
+      end
     end)
 
     %{fake_ws: fake_ws}
