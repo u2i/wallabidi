@@ -18,7 +18,7 @@ jobs:
       fail-fast: false
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - uses: erlef/setup-beam@v1
       with:
         otp-version: ${{matrix.elixir-otp.otp}}
@@ -84,7 +84,7 @@ jobs:
             needs_browser_install: true
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - uses: erlef/setup-beam@v1
       with:
         otp-version: ${{matrix.elixir-otp.otp}}
@@ -128,7 +128,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - uses: erlef/setup-beam@v1
       with:
         otp-version: 28.x
@@ -157,7 +157,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - uses: erlef/setup-beam@v1
       with:
         otp-version: 28.x
