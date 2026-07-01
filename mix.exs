@@ -76,7 +76,7 @@ defmodule Wallabidi.Mixfile do
       {:plug_cowboy, "~> 2.7"},
       # Test-only deps
       {:lightpanda, "~> 0.3.4-rc.0", only: :test},
-      {:sandbox_case, "~> 0.4.0", runtime: false},
+      {:sandbox_case, "~> 0.4.1", runtime: false},
       {:cachex, "~> 4.1", only: :test},
       {:fun_with_flags, "~> 1.11", only: :test, runtime: false},
       {:testcontainers, "~> 2.3", only: :test},
