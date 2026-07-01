@@ -4,15 +4,22 @@
 
 Concurrent browser testing for Elixir. Write your tests once — they run on the fastest driver that supports them.
 
-Wallabidi is a fork of [Wallaby](https://github.com/elixir-wallaby/wallaby) with three test drivers, automatic LiveView-aware waiting, and a public API close to Wallaby's for easy migration.
+What that means in practice:
 
-## Three drivers
+- **Real multi-threading with Chrome via CDP** (and aspirationally BiDi) — no chromedriver in the loop. CDP performs better today; BiDi is the future-proof path and tracks the W3C protocol's evolution.
+- **Multi-threading with Lightpanda** — a headless JS-capable browser that's fast enough to run nearly as quickly as the LiveView driver. Lightpanda is a practical default for full functional test suites.
+- **LiveView driver** for tests that don't need a browser at all — renders pages in-process via `Phoenix.ConnTest`.
+
+Wallabidi is a fork of [Wallaby](https://github.com/elixir-wallaby/wallaby) with these four drivers, automatic LiveView-aware waiting, and a public API close to Wallaby's for easy migration.
+
+## Drivers
 
 | Driver | Speed | What it does | When to use |
 |--------|-------|-------------|-------------|
-| **LiveView** | ~0ms/test | Renders pages in-process via Phoenix.ConnTest. No browser. | Default for local dev — instant feedback |
-| **Lightpanda** | ~50ms/test | Headless browser via CDP. No CSS rendering. | CI fast path, JS-dependent tests |
-| **Chrome** | ~200ms/test | Full browser via WebDriver BiDi. | Full fidelity, screenshots, visual testing |
+| **LiveView** | ~30ms/test | Renders pages in-process via Phoenix.ConnTest. No browser. | Default for local dev — fastest feedback |
+| **Lightpanda** | ~50ms/test | Headless JS-capable browser via CDP. No CSS rendering. | Fast path for full functional suites — nearly LiveView speed |
+| **Chrome (CDP)** | ~200ms/test | Full browser via Chrome DevTools Protocol. Real multi-threading via Chrome's per-target threads. | Full fidelity (CSS, screenshots, mouse). Best concurrent throughput today. |
+| **Chrome (BiDi)** | ~600ms/test | Full browser via WebDriver BiDi (chromium-bidi → Chrome). Cross-engine portable. | Future-proof choice as BiDi matures; aspirationally replaces CDP. |
 
 Tests declare their minimum requirement with tags:
 
@@ -35,7 +42,76 @@ feature "uploads a file", %{session: session} do
 end
 ```
 
-Each test runs on the **cheapest driver** that supports it. No env vars, no aliases — just `mix test`.
+Each test runs on the **cheapest driver** that supports it, in a single `mix test` run — and the sensible mapping is the default, so most projects configure nothing:
+
+| Test | Driver | Why |
+|------|--------|-----|
+| untagged | `:live_view` | in-process, fastest |
+| `@tag :headless` | `:lightpanda` (if the `lightpanda` dep is present, else the `:browser` driver) | cheapest real headless browser |
+| `@tag :browser` | `:chrome_cdp` | full browser fidelity |
+
+Each tier is overridable — set a key only to deviate from the ladder:
+
+```elixir
+# config/test.exs — all optional
+config :wallabidi,
+  otp_app: :your_app,
+  endpoint: YourAppWeb.Endpoint,
+  driver: :live_view,      # untagged tests
+  headless: :chrome_cdp,   # force @tag :headless onto Chrome instead of Lightpanda
+  browser: :chrome         # use BiDi for @tag :browser
+```
+
+Wallabidi starts a supervisor for the primary `:driver` plus each distinct `:headless` / `:browser` target that's available, so one run can fan tests across drivers. The primary driver must be available (it raises otherwise); tag-routed drivers are best-effort — if Chrome isn't installed, `@tag :browser` tests just can't run, but your untagged LiveView suite still boots. Setting `WALLABIDI_DRIVER=<driver>` pins the whole run to one driver (used by the per-driver CI matrices below), which disables tag routing.
+
+## Concurrency and performance
+
+Each driver scales differently with `--max-cases`. The values below come from running the [perf_bench](https://github.com/u2i/perf_bench) LV scenario suite on a 16-thread Mac laptop (M-series). perf_bench is a separate harness containing 136 LiveView-focused scenarios — happy paths only, no waiting-for-absence tests — so it's a better fit for cross-driver measurements than the wallabidi integration suite, which contains plenty of error-case waits.
+
+![per-test wall time vs max-cases](assets/perf-matrix.svg)
+
+Wall time in seconds for the [perf_bench](https://github.com/u2i/perf_bench) LiveView scenario suite (136 tests) at each `--max-cases`:
+
+| Driver         | mc1    | mc2   | mc4   | mc8     | mc16        |
+|----------------|--------|-------|-------|---------|-------------|
+| **LiveView**       | 15s    | 9s    | 6s    | **4s**  | 4s          |
+| **Lightpanda**     | 43s    | 22s   | 12s   | **8s**  | 8s          |
+| **CDP** (Chrome)   | 68s    | 52s   | **48s** | 51s   | 52s         |
+| **BiDi** (Chrome)  | 486s   | 100s  | 71s   | **68s** | 259s ⚠ (2 flakes) |
+| **Wallaby** (chromedriver) | 218s | 122s | 80s | 69s ⚠ (4 flakes) | 70s ⚠ (5 flakes) |
+
+⚠ flag = flaky failures at this concurrency. Chrome BiDi's mc=16 trips chromium-bidi's BiDi Mapper contention; Wallaby's mc=8+ trips chromedriver session-creation timeouts.
+
+**Recommended `--max-cases`:**
+
+For **LiveView, Lightpanda, and CDP, leave `--max-cases` at ExUnit's
+default** (`System.schedulers_online()`). They all run cleanly there —
+LiveView and Lightpanda keep scaling to it, and CDP simply plateaus past
+mc=4 (no further speedup, but no flakes either, so there's nothing to cap
+for correctness).
+
+**Only BiDi benefits from a cap.** chromium-bidi's BiDi Mapper is
+single-threaded JS in one Chrome tab; it scales to ~mc=8, and at the
+typical 16-core default it trips Mapper contention and goes flaky/slow
+(259s with flakes vs. 68s at mc=8). Cap it:
+
+```bash
+WALLABIDI_DRIVER=chrome mix test --max-cases 8
+```
+
+| Driver | `--max-cases` | Why |
+|--------|---------------|-----|
+| **LiveView** | default | No external process; scales with the BEAM. |
+| **Lightpanda** | default | Scales to ~mc=8 then plateaus at LP's `--cdp-max-connections`; higher is harmless. |
+| **CDP** | default | Plateaus past mc=4 — no win, but no flakes, so no need to cap. |
+| **BiDi** | `8` | Single-threaded Mapper; the default (~16) trips structural flakes. |
+
+**When to pick which driver in CI:**
+
+- *Default:* let wallabidi route each test to the cheapest driver that supports it. Most LiveView-app tests run on the LiveView driver and are the fastest path.
+- *JS-heavy app:* Lightpanda — fastest real headless option, within 2× of LiveView at scale.
+- *Need full browser fidelity (CSS, screenshots, mouse events):* CDP.
+- *Cross-browser portability or BiDi spec features:* BiDi, capped at `--max-cases 8`. Slower than CDP today because the BiDi protocol serializes through a single Mapper per Chrome; will improve as chromium-bidi or successor implementations add parallel mapping.
 
 ## Why fork?
 
@@ -45,260 +121,14 @@ We also wanted features that only make sense with BiDi: automatic LiveView-aware
 
 If you're starting a new project or are willing to do a find-and-replace, Wallabidi gives you a simpler dependency tree, automatic LiveView-aware waiting on every interaction, and access to modern browser APIs. If you need Selenium (the Java server) support, stay with Wallaby. Firefox support via GeckoDriver is architecturally possible (it also speaks BiDi) but not yet implemented.
 
-## What's different from Wallaby?
-
-**Protocol**: All browser communication uses WebDriver BiDi over WebSocket instead of HTTP polling. This means event-driven log capture, lower latency, and access to features impossible with request-response HTTP.
-
-**LiveView-aware by default**: Every interaction automatically waits for the right thing — no manual sleeps or retry loops needed:
-
-- `visit/2` waits for the LiveSocket to connect before returning.
-- `click/2` inspects the target element's bindings (`phx-click`, `data-phx-link`, plain `href`) and classifies the interaction as patch, navigate, or full-page. It then awaits the corresponding DOM patch, page load, or LiveView reconnection automatically.
-- `fill_in/3` on `phx-change` inputs drains all pending patches (one per keystroke) before returning.
-- `assert_has/2` uses an event-driven `await_selector` that hooks into LiveView's `onPatchEnd` callback — it waits for the next DOM patch before polling, avoiding both false negatives and busy-waiting.
-
-All of this is installed via injected JavaScript — no changes to your `app.js` or LiveSocket config are needed.
-
-**New features**:
-- `settle/2` — Wait for the page to become idle (no pending HTTP requests, no `phx-*-loading` classes). Useful after PubSub broadcasts, timers, or other non-interaction updates.
-- `await_patch/2` — Wait for the next LiveView DOM patch. Useful for server-pushed updates that aren't triggered by a browser interaction.
-- `on_console/2` — Register a callback for real-time browser console output.
-- `intercept_request/3` — Mock HTTP responses directly in the browser without Bypass or a test server.
-
-**Three drivers**: LiveView (in-process, no browser), Lightpanda (headless CDP), Chrome (full BiDi). Tests declare their minimum requirement with `@tag :headless` or `@tag :browser`.
-
-**Removed**:
-- Selenium driver — replaced with native BiDi + CDP
-- HTTPoison / Hackney dependencies — replaced with Mint
-- `create_session_fn` / `end_session_fn` options
-
-**Simplified**:
-- Single ChromeDriver process shared by all test sessions
-- Event-driven JS error detection (no HTTP polling per command)
-- W3C capabilities format (`goog:chromeOptions`)
-
-## Migrating from Wallaby
-
-1. Replace the dependency:
-
-```elixir
-# mix.exs
-{:wallabidi, "~> 0.2", runtime: false, only: :test}
-```
-
-2. Find and replace in your project:
-
-| Wallaby | Wallabidi |
-|---------|-----------|
-| `Wallaby.` | `Wallabidi.` |
-| `:wallaby` | `:wallabidi` |
-| `config :wallaby,` | `config :wallabidi,` |
-
-3. Remove if present:
-
-```elixir
-# No longer needed
-config :wallaby, driver: Wallaby.Chrome
-config :wallaby, hackney_options: [...]
-```
-
-4. That's it. The `Browser`, `Query`, `Element`, `Feature`, and `DSL` APIs are the same.
-
-## Setup
-
-Requires Elixir 1.19+, OTP 28+, and either Docker or a local ChromeDriver installation.
-
-### Installation
-
-```elixir
-def deps do
-  [{:wallabidi, "~> 0.2", runtime: false, only: :test}]
-end
-```
-
-```elixir
-# test/test_helper.exs
-{:ok, _} = Application.ensure_all_started(:wallabidi)
-```
-
-### How Chrome is managed
-
-Wallabidi needs ChromeDriver + Chrome to run tests. There are three modes, tried in this order:
-
-#### 1. Remote Chrome (Docker / CI)
-
-When Chrome runs as a service in your Docker Compose stack, just tell Wallabidi where it is:
-
-```bash
-# .env or CI config — just the host:port, wallabidi handles the rest
-WALLABIDI_CHROME_URL=chrome:9222
-```
-
-Wallabidi auto-discovers the WebSocket URL via `/json/version`. Full `ws://` URLs also work for backward compat.
-
-For chromedriver (BiDi driver):
-
-```bash
-WALLABIDI_CHROMEDRIVER_URL=http://chrome:9515/
-```
-
-Example `compose.yml`:
-
-```yaml
-services:
-  app:
-    # your Elixir app
-    depends_on: [chrome]
-
-  chrome:
-    image: erseco/alpine-chromedriver:latest
-    shm_size: 512m
-```
-
-No automatic container management — you control the lifecycle via Compose. Wallabidi polls the `/status` endpoint until the service is ready.
-
-#### 2. Local ChromeDriver
-
-If ChromeDriver and Chrome are installed locally, Wallabidi uses them directly. This is the fastest mode (no Docker overhead) and how CI typically works (GitHub Actions has Chrome pre-installed).
-
-```
-$ brew install chromedriver  # macOS
-$ mix test                   # Uses local chromedriver
-```
-
-Configure the binary paths if they're not in your PATH:
-
-```elixir
-config :wallabidi,
-  chromedriver: [
-    path: "/path/to/chromedriver",
-    binary: "/path/to/chrome"
-  ]
-```
-
-#### 3. Automatic Docker (fallback)
-
-If no `remote_url` is configured and no local ChromeDriver is found, Wallabidi will automatically start a Docker container with ChromeDriver and Chromium. No configuration needed — just have Docker running.
-
-```
-$ mix test  # Just works. Docker container starts and stops automatically.
-```
-
-The container (`erseco/alpine-chromedriver`) is multi-arch (ARM64 + AMD64) and is cleaned up when your test suite finishes. The image is ~750MB (Chromium is large — but this is half the size of the Selenium Grid image). URLs are automatically rewritten so Chrome in the container can reach your local test server.
-
-### CI (GitHub Actions)
-
-```yaml
-steps:
-- uses: actions/checkout@v6
-- uses: erlef/setup-beam@v1
-  with:
-    otp-version: 28.x
-    elixir-version: 1.19.x
-- uses: actions/setup-node@v4
-  with:
-    node-version: 20
-
-- run: mix deps.get
-- run: mix wallabidi.install   # downloads Chrome + chromedriver
-- run: mix test
-```
-
-`mix wallabidi.install` uses `npx @puppeteer/browsers install` to download
-matched Chrome + chromedriver binaries to `.browsers/`. Cache this directory
-for faster subsequent runs:
-
-```yaml
-- uses: actions/cache@v5
-  with:
-    path: .browsers
-    key: ${{ runner.os }}-browsers-${{ hashFiles('.browsers/PATHS') }}
-    restore-keys: ${{ runner.os }}-browsers-
-```
-
-#### Environment variable overrides
-
-For Docker-based CI or remote browsers:
-
-| Variable | Purpose | Example |
-|----------|---------|---------|
-| `WALLABIDI_CHROME_URL` | Connect to remote Chrome (CDP) | `chrome:9222` |
-| `WALLABIDI_CHROMEDRIVER_URL` | Connect to remote chromedriver (BiDi) | `http://chromedriver:9515/` |
-| `WALLABIDI_CHROME_PATH` | Local Chrome binary override | `/usr/bin/google-chrome` |
-| `WALLABIDI_CHROMEDRIVER_PATH` | Local chromedriver override | `/usr/bin/chromedriver` |
-
-If you have Chrome pre-installed on the runner (e.g. GitHub Actions' built-in
-Chrome), set `WALLABIDI_CHROME_PATH` and skip `mix wallabidi.install`:
-
-```yaml
-- run: mix test
-  env:
-    WALLABIDI_CHROME_PATH: /usr/bin/google-chrome-stable
-```
-
-### Phoenix
-
-```elixir
-# config/test.exs
-config :your_app, YourAppWeb.Endpoint, server: true
-
-# test/test_helper.exs
-Application.put_env(:wallabidi, :base_url, YourAppWeb.Endpoint.url)
-```
-
-### Test isolation (Ecto, Mimic, Mox, Cachex, FunWithFlags)
-
-Browser tests need sandbox access propagated to every server-side process the browser triggers (Plug requests, LiveView mounts, async tasks). Wallabidi integrates with [`sandbox_case`](https://github.com/pinetops/sandbox_case) and [`sandbox_shim`](https://github.com/pinetops/sandbox_shim) to handle this automatically.
-
-`sandbox_case` manages checkout/checkin of all sandbox adapters (Ecto, Cachex, FunWithFlags, Mimic, Mox) from a single config. `sandbox_shim` provides compile-time macros that wire the sandbox plugs and hooks into your endpoint and LiveViews — emitting nothing in production.
-
-```elixir
-# mix.exs
-{:sandbox_shim, "~> 0.1"},                                    # all envs (compile-time only)
-{:sandbox_case, "~> 0.3", only: :test},                       # test only
-{:wallabidi, "~> 0.2", only: :test, runtime: false},           # test only
-```
-
-```elixir
-# config/test.exs
-config :sandbox_case,
-  otp_app: :your_app,
-  sandbox: [
-    ecto: true,
-    cachex: [:my_cache],            # optional
-    fun_with_flags: true,           # optional
-    mimic: true,                    # auto-discovers Mimic.copy'd modules
-    mox: [MyApp.MockWeather]        # optional
-  ]
-```
-
-```elixir
-# lib/your_app_web/endpoint.ex
-import SandboxShim
-sandbox_plugs()
-
-sandbox_socket "/live", Phoenix.LiveView.Socket,
-  websocket: [connect_info: [session: @session_options]]
-```
-
-```elixir
-# lib/your_app_web.ex
-def live_view do
-  quote do
-    use Phoenix.LiveView
-    import SandboxShim
-    sandbox_on_mount()
-    # auth hooks after
-  end
-end
-```
-
-```elixir
-# test/test_helper.exs
-SandboxCase.Sandbox.setup()
-{:ok, _} = Application.ensure_all_started(:wallabidi)
-```
-
-With `use Wallabidi.Feature`, sandbox checkout/checkin is automatic — no manual `Ecto.Adapters.SQL.Sandbox.checkout` calls needed.
+## Documentation
+
+- **[Setup](guides/setup.md)** — installation, how Chrome is managed, CI (GitHub Actions), Phoenix config.
+- **[Test Isolation](guides/isolation.md)** — propagating Ecto/Mimic/Mox/Cachex/FunWithFlags sandboxes via `sandbox_case` + `sandbox_shim`.
+- **[API](guides/api.md)** — queries and actions, navigation, finding, forms, assertions, optimistic-UI testing, screenshots, dialogs, `settle`, `intercept_request`, `on_console`.
+- **[Migrating from Wallaby](guides/migrating.md)** — what's different, removed, and the find-and-replace steps.
+- **[Architecture](ARCHITECTURE.md)** — the `W.run` opcode interpreter, fused operations, per-driver process model, concurrency.
+- **[Testing](TESTING.md)** — running and organizing the test suite (contributors).
 
 ## Usage
 
@@ -335,240 +165,10 @@ feature "users can chat", %{sessions: [user1, user2]} do
 end
 ```
 
-## API
-
-### Queries and actions
-
-Wallabidi's API is built around two concepts: Queries and Actions.
-
-Queries allow us to declaratively describe the elements that we would like to interact with and Actions allow us to use those queries to interact with the DOM.
-
-Let's say that our HTML looks like this:
-
-```html
-<ul class="users">
-  <li class="user">
-    <span class="user-name">Ada</span>
-  </li>
-  <li class="user">
-    <span class="user-name">Grace</span>
-  </li>
-  <li class="user">
-    <span class="user-name">Alan</span>
-  </li>
-</ul>
-```
-
-If we wanted to interact with all of the users then we could write a query like so `css(".user", count: 3)`.
-
-If we only wanted to interact with a specific user then we could write a query like this `css(".user-name", count: 1, text: "Ada")`. Now we can use those queries with some actions:
-
-```elixir
-session
-|> find(css(".user", count: 3))
-|> List.first()
-|> assert_has(css(".user-name", count: 1, text: "Ada"))
-```
-
-There are several queries for common HTML elements defined in the `Wallabidi.Query` module: `css`, `text_field`, `button`, `link`, `option`, `radio_button`, and more. All actions accept a query. Actions will block until the query is either satisfied or the action times out. Blocking reduces race conditions when elements are added or removed dynamically.
-
-### Navigation
-
-We can navigate directly to pages with `visit`:
-
-```elixir
-visit(session, "/page.html")
-visit(session, user_path(Endpoint, :index, 17))
-```
-
-It's also possible to click links directly:
-
-```elixir
-click(session, link("Page 1"))
-```
-
-### Finding
-
-We can find a specific element or list of elements with `find`:
-
-```elixir
-@user_form   css(".user-form")
-@name_field  text_field("Name")
-@email_field text_field("Email")
-@save_button button("Save")
-
-find(page, @user_form, fn(form) ->
-  form
-  |> fill_in(@name_field, with: "Chris")
-  |> fill_in(@email_field, with: "c@keathley.io")
-  |> click(@save_button)
-end)
-```
-
-Passing a callback to `find` will return the parent which makes it easy to chain `find` with other actions:
-
-```elixir
-page
-|> find(css(".users"), & assert has?(&1, css(".user", count: 3)))
-|> click(link("Next Page"))
-```
-
-Without the callback `find` returns the element. This provides a way to scope all future actions within an element.
-
-```elixir
-page
-|> find(css(".user-form"))
-|> fill_in(text_field("Name"), with: "Chris")
-|> fill_in(text_field("Email"), with: "c@keathley.io")
-|> click(button("Save"))
-```
-
-### Interacting with forms
-
-There are a few ways to interact with form elements on a page:
-
-```elixir
-fill_in(session, text_field("First Name"), with: "Chris")
-clear(session, text_field("last_name"))
-click(session, option("Some option"))
-click(session, radio_button("My Fancy Radio Button"))
-click(session, button("Some Button"))
-```
-
-If you need to send specific keys to an element, you can do that with `send_keys`:
-
-```elixir
-send_keys(session, ["Example", "Text", :enter])
-```
-
-### Assertions
-
-Wallabidi provides custom assertions to make writing tests easier:
-
-```elixir
-assert_has(session, css(".signup-form"))
-refute_has(session, css(".alert"))
-has?(session, css(".user-edit-modal", visible: false))
-```
-
-`assert_has` and `refute_has` both take a parent element as their first argument. They return that parent, making it easy to chain them together with other actions.
-
-```elixir
-session
-|> assert_has(css(".signup-form"))
-|> fill_in(text_field("Email"), with: "c@keathley.io")
-|> click(button("Sign up"))
-|> refute_has(css(".error"))
-|> assert_has(css(".alert", text: "Welcome!"))
-```
-
-### Window size
-
-You can set the default window size by passing in the `window_size` option into `Wallabidi.start_session/1`.
-
-```elixir
-Wallabidi.start_session(window_size: [width: 1280, height: 720])
-```
-
-You can also resize the window and get the current window size during the test.
-
-```elixir
-resize_window(session, 100, 100)
-window_size(session)
-```
-
-### Screenshots
-
-It's possible to take screenshots:
-
-```elixir
-take_screenshot(session)
-```
-
-All screenshots are saved to a `screenshots` directory in the directory that the tests were run in. You can customize this with configuration (see below).
-
-To automatically take screenshots on failure when using the `Wallabidi.Feature.feature/3` macro:
-
-```elixir
-# config/test.exs
-config :wallabidi, screenshot_on_failure: true
-```
-
-### JavaScript logging and errors
-
-Wallabidi captures both JavaScript logs and errors. Any uncaught exceptions in JavaScript will be re-thrown in Elixir. This can be disabled by specifying `js_errors: false` in your Wallabidi config.
-
-JavaScript logs are written to `:stdio` by default. This can be changed to any IO device by setting the `:js_logger` option in your Wallabidi config. For instance if you want to write all JavaScript console logs to a file you could do something like this:
-
-```elixir
-{:ok, file} = File.open("browser_logs.log", [:write])
-Application.put_env(:wallabidi, :js_logger, file)
-```
-
-Logging can be disabled by setting `:js_logger` to `nil`.
-
-### Interacting with dialogs
-
-Wallabidi provides several ways to interact with JavaScript dialogs such as `window.alert`, `window.confirm` and `window.prompt`.
-
-- For `window.alert` use `accept_alert/2`
-- For `window.confirm` use `accept_confirm/2` or `dismiss_confirm/2`
-- For `window.prompt` use `accept_prompt/2-3` or `dismiss_prompt/2`
-
-All of these take a function as last parameter, which must include the necessary interactions to trigger the dialog. For example:
-
-```elixir
-alert_message = accept_alert session, fn(session) ->
-  click(session, link("Trigger alert"))
-end
-```
-
-To emulate user input for a prompt, `accept_prompt` takes an optional parameter:
-
-```elixir
-prompt_message = accept_prompt session, [with: "User input"], fn(session) ->
-  click(session, link("Trigger prompt"))
-end
-```
-
-### settle
-
-Wait for the page to become idle. Checks two signals: no pending HTTP requests for the idle period, and no LiveView `phx-*-loading` classes present.
-
-You don't need `settle` after `click`, `fill_in`, or `visit` — those already wait automatically. Use `settle` for updates triggered by something other than a direct interaction:
-
-```elixir
-# PubSub broadcast — no browser interaction triggered it
-Phoenix.PubSub.broadcast(MyApp.PubSub, "updates", :refresh)
-session
-|> settle()
-|> assert_has(Query.css(".updated"))
-```
-
-### intercept_request
-
-Mock HTTP responses in the browser:
-
-```elixir
-session
-|> intercept_request("/api/users", %{
-  status: 200,
-  headers: [%{name: "content-type", value: "application/json"}],
-  body: ~s({"users": []})
-})
-|> visit("/page")
-```
-
-### on_console
-
-Stream browser console output:
-
-```elixir
-session
-|> on_console(fn level, message ->
-  IO.puts("[#{level}] #{message}")
-end)
-```
+See the **[API guide](guides/api.md)** for the full reference: queries and actions,
+navigation, finding, forms, assertions, optimistic-UI testing, window size,
+screenshots, JavaScript logging, dialogs, `settle`, `intercept_request`, and
+`on_console`.
 
 ## Configuration
 
@@ -581,38 +181,42 @@ config :wallabidi,
   endpoint: YourAppWeb.Endpoint
 ```
 
-The default driver is `:chrome`. To use LiveView for fast local testing:
+Untagged tests default to the `:live_view` driver (fastest). Set `:driver` to route untagged tests elsewhere:
 
 ```elixir
 config :wallabidi,
   otp_app: :your_app,
   endpoint: YourAppWeb.Endpoint,
-  driver: :live_view
+  driver: :chrome_cdp
 ```
 
-All options with defaults:
+**Required** (no default — you must set these):
 
 ```elixir
 config :wallabidi,
-  otp_app: :your_app,              # required for Ecto sandbox
-  endpoint: YourAppWeb.Endpoint,   # required for LiveView driver
-  driver: :chrome,                 # :live_view | :lightpanda | :chrome
+  otp_app: :your_app,              # for the Ecto sandbox
+  endpoint: YourAppWeb.Endpoint    # for the LiveView driver / base_url
+```
+
+**Optional** — every key below is shown with its *default value*. You
+only need to add a line to **change** it; an empty config behaves exactly
+as written here:
+
+```elixir
+config :wallabidi,
+  driver: :live_view,              # untagged tests; :live_view | :lightpanda | :chrome_cdp | :chrome (BiDi)
+  headless: :lightpanda,           # @tag :headless tests (falls back to the :browser driver if lightpanda dep absent)
+  browser: :chrome_cdp,            # @tag :browser tests
   max_wait_time: 5_000,            # ms to wait for elements
   js_errors: true,                 # re-raise JS errors in Elixir
   js_logger: :stdio,               # IO device for console logs (nil to disable)
   screenshot_on_failure: false,
-  screenshot_dir: "screenshots",
-  chromedriver: [
-    headless: true,                # run Chrome headless
-    path: "chromedriver",          # chromedriver binary path
-    binary: "/path/to/chrome",     # Chrome binary path
-    remote_url: "http://chrome:9515/"  # for Docker/remote chromedriver (BiDi)
-  ]
+  screenshot_dir: "screenshots"
 ```
 
 ## Credits
 
-Wallabidi is built on the foundation of [Wallaby](https://github.com/elixir-wallaby/wallaby), created by [Mitchell Hanberg](https://github.com/mhanberg) and [contributors](https://github.com/elixir-wallaby/wallaby/graphs/contributors). The Browser, Query, Element, Feature, and DSL APIs are theirs. Wallabidi adds the BiDi transport layer, new DX features, and removes the Selenium/HTTP legacy code.
+Wallabidi is built on the foundation of [Wallaby](https://github.com/elixir-wallaby/wallaby), the work of its original author and [many contributors](https://github.com/elixir-wallaby/wallaby/graphs/contributors) over the years, and currently maintained by [Mitchell Hanberg](https://github.com/mhanberg). The Browser, Query, Element, Feature, and DSL APIs are theirs. Wallabidi adds the BiDi transport layer, new DX features, and removes the Selenium/HTTP legacy code.
 
 Licensed under MIT, same as Wallaby.
 
@@ -622,10 +226,10 @@ Licensed under MIT, same as Wallaby.
 mix test                    # unit tests
 mix test.live_view          # LiveView driver integration tests
 mix test.lightpanda         # Lightpanda CDP integration tests
-mix test.chrome             # Chrome BiDi integration tests
-mix test.chrome.lifecycle   # chromedriver startup tests (subprocess)
+mix test.chrome             # Chrome CDP integration tests
+mix test.chrome.bidi        # Chrome BiDi (chromium-bidi) integration tests
 mix test.all                # all of the above
 mix test.browsers --browsers chrome   # run ALL tests on a specific browser
 ```
 
-The LiveView and Lightpanda tests require no external dependencies — Lightpanda's binary is installed automatically via `mix lightpanda.install`. Chrome tests need Docker (auto-detected) or a local ChromeDriver.
+`mix wallabidi.install` downloads everything the drivers need (Chrome for Testing, Lightpanda, and the chromium-bidi Node deps) into `.browsers/`; use `mix wallabidi.install.chrome` or `mix wallabidi.install.lightpanda` for just one. The LiveView driver needs no browser at all. Alternatively point `WALLABIDI_CHROME_PATH` / `WALLABIDI_LIGHTPANDA_PATH` at existing binaries, or `WALLABIDI_CHROME_URL` at a remote Chrome.

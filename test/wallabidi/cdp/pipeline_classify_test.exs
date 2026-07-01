@@ -1,16 +1,17 @@
-defmodule Wallabidi.CDP.PipelineClassifyTest do
+defmodule Wallabidi.Remote.CDP.PipelineClassifyTest do
   use ExUnit.Case, async: true
 
-  # Tests the classify_fn JS produced by Pipeline.classify/2 by running it in
-  # node against stubbed DOM elements. We don't need a full jsdom — just enough
-  # element shape to exercise each classifier branch.
+  # Tests `W.classify` from priv/wallabidi.js — the production classifier
+  # called by every CDP/BiDi click pipeline. Runs in node against stubbed
+  # DOM elements so each branch is exercised in isolation.
   #
-  # classify_fn is private, so we extract the JS via Pipeline.to_js/1 after a
-  # classify op. The generated JS sets els.__classify which we assert on.
-
-  alias Wallabidi.CDP.Pipeline
+  # Earlier versions of this test extracted classify_fn from
+  # Wallabidi.Remote.CDP.Pipeline (now deleted). priv/wallabidi.js is the
+  # single source of truth.
 
   @moduletag :classifier
+
+  @bundle_path Path.expand("../../../priv/wallabidi.js", __DIR__)
 
   setup_all do
     case System.find_executable("node") do
@@ -19,19 +20,15 @@ defmodule Wallabidi.CDP.PipelineClassifyTest do
     end
   end
 
-  # Extract just the classify function body from the pipeline-compiled JS.
-  # We compile a pipeline that classifies, find the `function(el, type) {...}`
-  # substring, and expose it as a standalone callable to the test harness.
+  # Pull the `W.classify = function(el, type) { ... };` definition from
+  # priv/wallabidi.js. Returns the function expression as a standalone
+  # callable for the test harness.
   defp classify_js do
-    {js, _parent_id, _mode} =
-      Pipeline.new()
-      |> Pipeline.query_all(:css, "dummy")
-      |> Pipeline.classify(:click)
-      |> Pipeline.to_js()
+    src = File.read!(@bundle_path)
 
-    # The classify_fn appears inline as `(function(el, type) { ... }\n)(els[0], "click")`.
-    # Match greedily up to the closing `)(els[0]` call site so we capture the full body.
-    [_, fn_src] = Regex.run(~r/\((function\(el, type\) \{.*?\})\s*\)\(els\[0\]/s, js)
+    # `W.classify = function(el, type) { ... };` — match up to the
+    # closing `};` at column 0 (the function body's outer brace).
+    [_, fn_src] = Regex.run(~r/W\.classify = (function\(el, type\) \{.*?\n\});/s, src)
     fn_src
   end
 
@@ -73,7 +70,9 @@ defmodule Wallabidi.CDP.PipelineClassifyTest do
     process.stdout.write(result);
     """
 
-    path = Path.join(System.tmp_dir!(), "wallabidi_classify_#{System.unique_integer([:positive])}.js")
+    path =
+      Path.join(System.tmp_dir!(), "wallabidi_classify_#{System.unique_integer([:positive])}.js")
+
     File.write!(path, script)
 
     try do

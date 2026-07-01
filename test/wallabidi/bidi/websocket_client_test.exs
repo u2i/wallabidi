@@ -1,7 +1,7 @@
-defmodule Wallabidi.BiDi.WebSocketClientTest do
+defmodule Wallabidi.Remote.BiDi.WebSocketClientTest do
   use ExUnit.Case, async: true
 
-  alias Wallabidi.BiDi.WebSocketClient
+  alias Wallabidi.Remote.BiDi.WebSocketClient
 
   # These tests verify the GenServer's internal logic by sending it
   # messages directly, without a real WebSocket connection.
@@ -22,7 +22,7 @@ defmodule Wallabidi.BiDi.WebSocketClientTest do
       state = %WebSocketClient{}
       assert state.next_id == 1
       assert state.pending == %{}
-      assert state.subscribers == %{}
+      assert state.subscribers_table == nil
       assert state.queued_commands == []
       assert state.websocket == nil
       assert state.status == nil

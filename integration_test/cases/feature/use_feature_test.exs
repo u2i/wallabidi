@@ -27,7 +27,7 @@ defmodule Wallabidi.Integration.Browser.UseFeatureTest do
   end
 
   @expected_capabilities Map.put(
-                           Wallabidi.Chrome.default_capabilities(),
+                           Wallabidi.Remote.Drivers.ChromeBiDi.default_capabilities(),
                            :"wallabidi:test",
                            "I'm a capability"
                          )

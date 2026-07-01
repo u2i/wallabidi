@@ -1,0 +1,1108 @@
+Generated wallabidi app
+
+21:57:57.104 [info] Running Wallabidi.Integration.LiveApp.Endpoint with cowboy 2.14.2 at 0.0.0.0:4321 (http)
+>>> ready
+
+21:57:57.104 [info] Access Wallabidi.Integration.LiveApp.Endpoint at http://localhost:4321
+
+21:57:59.996 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "OVsdMT8tI24zFBIOZEQtHWRnFxUsAAF1Q5TswKqWrrkVV3AQI6mZMVqL", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:00.264 [info] CONNECTED TO Phoenix.LiveView.Socket in 18µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "AD0vdjkIZEwlHCBuVjxdJV43ESESZiVRhSf4qn6udzY6dK1isfkns0Uh", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:00.316 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "WSUQcQtSDU4FAAE8dCNVNHwCTzlMOyRL1KY3C4_wDfxdFT9xQS5v-mTr", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:00.371 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "CyMaLz0jJHMeCzEMRTsVE2I2OX0YFQdRcMSmuEvJ_mHTwLy_OgC2yCwh", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:00.427 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "MjgiCj8KJX0IUQArXBRVDUIACBYwHh91ZVkHwlwDI7ysnc9AoQrYQHoL", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:00.506 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "XwIuMi8VFgEuU0AQdRMzKUgiOAUZZEdB7lgpgsD8o59HGd_eesBJx27x", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:00.770 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "BCceHSsPf08rNU8yf0FeA0o6DyoOORRPlIW_ci-vjS6jM62Ogkueoodv", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:00.825 [info] CONNECTED TO Phoenix.LiveView.Socket in 21µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "Jlg5IyARCHYPFBoOd1olFhoCMhxVIUYAN6pahwZONrcVE-IZ7SHS4w69", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:00.873 [info] CONNECTED TO Phoenix.LiveView.Socket in 21µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "IiMjLiQCEVI1ChciWhIheloTDgZTIRl1JMjlldCktlnzheM6wBtI2wiL", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:00.923 [info] CONNECTED TO Phoenix.LiveView.Socket in 20µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "BhwoLCIFAmlsAhhuVSgkDxgXCho4I0NjnranjcPP-da6g_HC5FpUYu3Z", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:00.975 [info] CONNECTED TO Phoenix.LiveView.Socket in 15µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "X1YwAHoMGX0VES8CYiEZAFQAGSFRGhZ-78yB2jKDTwVZPVuLyQcn0LfG", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:01.027 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "DxYGDXwHB18EVEsiVScGGEk9NydMGihTgxOO4aUfE22zgPjTdlMh-LXj", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:01.078 [info] CONNECTED TO Phoenix.LiveView.Socket in 18µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "WVgrLAJfMW0rNhNraiM4BGU8FAMRZSVu16bnJ9cTjPj3XTTHHmnLp3UW", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:01.131 [info] CONNECTED TO Phoenix.LiveView.Socket in 30µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "HRwTDzwkY14GIko5QSdUFhUhShs4JCVfurZMtB1gGD3asP8Z8p0TYrUf", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:01.183 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "Eit6EH8XB1AiBzIaczo_FE4ITwE1GSFWzE3R7qUicaKBAMSXcY5NTOQo", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:01.234 [info] CONNECTED TO Phoenix.LiveView.Socket in 15µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "DAF_JgtRag4RDREbChkJBnowGztUMglwdo6dC787PkhC8neJWaat5dyI", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:01.289 [info] CONNECTED TO Phoenix.LiveView.Socket in 18µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "JwE-MwESKmYLNBMAfBYDBG5gAixYNUVyOowqItx_JRjXNaoHC1xc9c5K", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:01.341 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "XyAZdg0CKltzUxQ5UwY_IVsCEnobGiFu7NP4Edxb25maaqSmvSh5zLQW", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:01.395 [info] CONNECTED TO Phoenix.LiveView.Socket in 20µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "HgkxLXkVE3ECDx0ddxxddUgbFg5QPBNuvgxo1sAHCidEEk19eJlA1jcW", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:01.451 [info] CONNECTED TO Phoenix.LiveView.Socket in 18µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "CTs4LTkLYV0AEjctRzgzCBlpQxZMbhlDaUqoqm3dAtNuuO_D489Y-8iz", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:01.505 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "OSktcCJROlF2CkksBB9BBE8FCX0VHkZTQGd2j7hh7l0t6h-HbTs2tH6j", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:01.556 [info] CONNECTED TO Phoenix.LiveView.Socket in 19µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "Xz0-NiM5H2AHOTcIAEE7GFpjMwQvEwd67Swtk_MYF_NP26WTw2IKNEwC", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:01.605 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "Ij8uOjIPHAk0MjYRfQ1bNhp8KgwXNEJsJQgxziN0uTOIOz7z7-PCvb2U", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:01.661 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "HCIvdSoXIkwALiENZRwWeR0TPTg3ZDtNtLf7bqpuAHXUWkz50BGwV2Kt", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:01.711 [info] CONNECTED TO Phoenix.LiveView.Socket in 18µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "HiAOLioODX4pATQReh4rOGEXEQglBilTvNGlbh_GhgMIHiGtLFkGDPYj", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:01.764 [info] CONNECTED TO Phoenix.LiveView.Socket in 15µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "PgIsJDExP107VjgLdiI5E0UfInk2LD5XVlefyWmdz0ASDUU_hNX6WzNn", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:01.819 [info] CONNECTED TO Phoenix.LiveView.Socket in 22µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "XBskNS48IWgAJEtsVTIJCl0OHgk0PT0J4umwfZsQAB24gEeFp_dFUkM0", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:01.871 [info] CONNECTED TO Phoenix.LiveView.Socket in 18µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "Mi0qJgQtIm4AU04Wdh07BmYlAnYrAEFTZCcdLKpWA57NDjWJKtx9JV1j", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:01.923 [info] CONNECTED TO Phoenix.LiveView.Socket in 21µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "Ph08cwshEXEoID0ORTw0D2dmPB9YZzxaVsu1CGCHiFDVwKXCJ7FP91Lc", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:01.978 [info] CONNECTED TO Phoenix.LiveView.Socket in 18µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "Olk8DytXHmgtJ0puBxQ1Ol8UHgYQEAVwR7uMc1LQlA365cYvrEdIqFuI", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:02.026 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "BC8bMxA2YngyUVQpdQUgFlgoMjoEJyRJlARqXP0As7-qGrLZuyHueqTp", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:02.076 [info] CONNECTED TO Phoenix.LiveView.Socket in 15µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "PA0CFB9XM3EJMRwcXiQOBH8jMmJYNCQPTcKVW1aHHWeDlSbHRrH-9bT6", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:02.126 [info] CONNECTED TO Phoenix.LiveView.Socket in 19µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "B1saICooIG9yMy8WdxNcE1snPjtTASYIo5SbbNrV3UVNEd0_vvDt2WV1", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:02.180 [info] CONNECTED TO Phoenix.LiveView.Socket in 15µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "PxgaEnwiKAAUUQkOYBUeH2BiIzUGZBRvWvSP4Dz9U7pVRbrSM3Yzg2dV", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:02.231 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "CQZ4A3siK003FwkNVjgeHn8dShsgGRFPah1A3DytvqpUdOrRRL0TAOav", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:02.285 [info] CONNECTED TO Phoenix.LiveView.Socket in 15µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "MTQIdQFeEG8mXyBheh89fForFBASGxlzYZA7I8BVg9Y9HhQ0wzn_sMiJ", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:02.339 [info] CONNECTED TO Phoenix.LiveView.Socket in 15µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "Gxk7JwEqIwsNDwtqdjlaA0cWHgRYODQUswreILq2Lir2DN6OjGdK9nD-", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:02.389 [info] CONNECTED TO Phoenix.LiveView.Socket in 20µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "Ci8uFR8IHUgzXwE6YyAbIWgLEQhMMCJjbAgWWnOqr9xbQWwmEZkG-fRZ", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:02.439 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "XwR-AHsDBlEwKRwVHyIGCUkGLQIHFDJD7j7B3eThqOeM-UjEdWWMfBBz", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:02.487 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "Gg0vAXkNGwgtP0szAw41YW8_MBUyIUh-rcfC1kI1lY2k1yY-BnJZSw8G", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:02.536 [info] CONNECTED TO Phoenix.LiveView.Socket in 22µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "Al46DWVSI2M2BTxvRyNYFEYmDwEmIDVej0sO-4qZwcE7uT4XkwuNGvEg", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:02.590 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "WDgIFBJfYA4nJwxgSiIVHkRmDGILNUhT0VAVZ927fAu8xUyRi7v-jc8j", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:02.640 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "PCE-FjESE0w7MjMrVEVfA0A4GxArbypUTOwTytAuzTJsf23Omia_J9Zm", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:02.695 [info] CONNECTED TO Phoenix.LiveView.Socket in 18µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "L1cQChFSERQ2NChuWxw7Cmk1FhwIITRIG9YHY4C-wRQ6ikWFDdlSiwDq", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:02.753 [info] CONNECTED TO Phoenix.LiveView.Socket in 18µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "WAgzByELG20pIEprRBocIFc8AyMDLwcJ0fzEimIThF33vmplzmylbyw0", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:02.802 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "PCcLEzoPY3oYLFQPeDAkGUE_QxgIHEJaTIBQri1CYJ-WJGHUln9WiJ2c", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:02.865 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "UBsYe3wyIFwnLgs2YgEhDV4lACYCBgFt8uQ94TrefHrnPvMAstzicPqT", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:03.529 [info] CONNECTED TO Phoenix.LiveView.Socket in 18µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "Lj04HAxBYV8KHBIUQk8TPlZ9diRWaEEwMjwInx0fmRqQpyzyc27K72-B", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:03.587 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "BwQVFgEPHQAGKzMEdQ8cKEU_FikuKQdHdSZCc6L9aePAG9uoppWFOsk5", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:03.647 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "CS08EzZ2Fkw2DzwNSk8zDVQiBAItaA9DjzsFTOGuQA_HxyZJamEmL2c1", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:03.706 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "FwEDBCpzA18zdlUtagcGIGAZJxURPhsztVLQHJRfT86hX1ogUVfzpdwA", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:03.764 [info] CONNECTED TO Phoenix.LiveView.Socket in 34µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "U2UrBDF2BQgBKxpycUUNHQcaEB1QN1wR02dQSOT1fey7CsdZ2UQr1m0c", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:04.025 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "AAV5NDBfFQlXJypoZQIeAl0pOF4MMzgFcR6aRfD00iI-W4wEhfy1miTw", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:04.081 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "WgMcYAhjE3AiPFsGQ1EgLVw6dyYDLjM39TS5jZBIEr8CqgIjiu6Ibt_E", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:04.156 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "EycrPFtaFAk-HFUfekUlfkM1FFs-FisVppdi9cE0YR6ZHsL9vzU4_LGg", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:04.215 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "LRE3YSMLCEoVI04Id08TJkcKIgk2OAcxNFx4A2Ysrm-MEyzarEcfWbkC", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:04.280 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "Th8eGSRKNhQyd1oUC1k4cWYgKSUCGw8V-HQLFsg-U99Q9oQ6SohJcAcg", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:04.336 [info] CONNECTED TO Phoenix.LiveView.Socket in 18µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "JWQFZFJsNgBSKi8kf1AqH1ktAD8lbFg2F3J10Ug95dLaMfCXlbAPD64D", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:04.392 [info] CONNECTED TO Phoenix.LiveView.Socket in 15µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "PAU-EFFMAHURKjwMHwFaLmoAJjY4GSsQ_RqE3uQLvd_I-73i_OgYYCGb", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:04.447 [info] CONNECTED TO Phoenix.LiveView.Socket in 15µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "FXoVJxp7ZAAyBhcBZ11YK20hNSwwHQ0_v-ZrxB59UHtDUk1lXntCQGaM", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:04.502 [info] CONNECTED TO Phoenix.LiveView.Socket in 15µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "LxsoPi9WCG5KD1IoWH4OBWZ_LxYSaQEwLLgkMoYW-A1mjHgBS0nys3mB", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:04.556 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "AQ4CYC9RZkw2fCoNRG8qd1w-cgE4O1gZbYM5Mh7uQ2IHvYC0iq3nYa4k", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:04.615 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "Mgc6PFAUMAgzBgA_UwENA2UNDzg1KV4hQPui2-a1THcza7dDPBNWTs2S", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:04.674 [info] CONNECTED TO Phoenix.LiveView.Socket in 13µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "KhV3NBRRGggpGTEAQUckLl8CDiUoCA8iIB8avhK1NWREsqMijMOJIRcP", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:04.735 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "KGYIGz1eEl8wEQ0DaFIPFwd6IBdTPQ48K1GN_gCfW_nFZdfP25ax2gbN", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:04.792 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "UTwfGC9BOWorD1s9d1BcF3s8LjwlMyo_2kPMMxhSLA8xEf5PNsoSDiFM", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:04.850 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "EWB7ICZoZlw0Ky4Nf35eIQMNNlcuPC0gr74uDQ7eSeMHMH7f6Bw8OfAR", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:04.903 [info] CONNECTED TO Phoenix.LiveView.Socket in 18µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "DyQoMQ0MG3cTIgEvQ3hYD1IWbCEGHQAXlsgdo5JNtlbjqN1HgY-NgGle", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:04.963 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "UhE1MzYPC1JSfTMEQF1QdXgNMy4iCTYZ1FzfT6Zk53PArk92MBrACSZk", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:05.018 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "Oz8OLz1NFU8BIgEvbX0PCgd6MzBRDysrXhAz_tDvflbj_KfM25r_0UGY", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:05.077 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "KwQaAxNfHl1UFgATUwEwKAB_MwYJYhYbHSUVqfOd3XcVa7Yo50rih8zi", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:05.132 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "ThgQGTNIEAFTAikPa0QIDFcLJiItbzpL-O_LQqA84LJJYraKbDgML5V9", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:05.193 [info] CONNECTED TO Phoenix.LiveView.Socket in 15µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "Wx8ZElp-JABWGAkocXQCBGoVN0JTbw4I8HVG8Gu91VjmCBkC_Zv-25bz", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:05.249 [info] CONNECTED TO Phoenix.LiveView.Socket in 19µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "B2EWGlZ7MmoIdwQnBHQeM0E2Ny4IaiUkd6YO4BcSo9gb6BwttyvAi0IV", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:05.302 [info] CONNECTED TO Phoenix.LiveView.Socket in 20µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "Vz0kGVZKJkg3dyE0ZXodMlANA14EHA4-4jkL4swqP9BqWLtueBB1eFbL", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:05.370 [info] CONNECTED TO Phoenix.LiveView.Socket in 18µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "CRQiETUIfE9XDQUjfGcMAX93AiBTbzUqjCmDW1-v0CffNQeFJ8CO25YX", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:05.424 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "AjkXPQZmBVtKLQ8oSwEHMV49JzoAPjYcanXhd_Tb-clmy7nvkrfUadZn", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:05.480 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "BGINGBVxOQtVIRF0ZQIxdgwoAB84A1QBg5BMwHh22or1W4X19gApYY8s", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:05.533 [info] CONNECTED TO Phoenix.LiveView.Socket in 18µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "W24uJz12IV8OG1oBdHsKDVYVeSRVGQof89ar_OpfiU9DFMcJcZ8K4Cfm", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:05.587 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "DTwIGTd0aX4yN1UCWQUYKlspOF8JKi88nkGLUM8GUy6Gk3qmnfy0hpCN", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:05.643 [info] CONNECTED TO Phoenix.LiveView.Socket in 21µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "JwgbFxR_A3FfBlYqB1sgEU95F10LLwkZD_TBvFRH8H5o5mIVz6V2juek", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:05.698 [info] CONNECTED TO Phoenix.LiveView.Socket in 19µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "FgQpLRZ8BF4JIywBRl8ZPmIDBFw0IAInuSfxtEUgnmODtipyWLE3UznU", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:05.771 [info] CONNECTED TO Phoenix.LiveView.Socket in 21µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "ARMWAFBoH0oBB1EEWHI-Ll18MwAPI14obDYU2QNsfI2AjDWih3rony2Z", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:05.827 [info] CONNECTED TO Phoenix.LiveView.Socket in 19µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "KhNiLCBjIVoRKlMLWkUhEVMHMEIVYhgHID-yBZpcvd0NhsHVfHq-t8tu", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:05.887 [info] CONNECTED TO Phoenix.LiveView.Socket in 20µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "CjkXZE9vPlYsKA0pA2MII3F9MgwXAhklinX1-VooKfnl1UadD2scvXuW", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:05.943 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "CAUWbDZ6ZQkKL1R1a3AHcXk5BAc0NwM8kRY9TC40ma70YFn6LvEhUmoN", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:05.998 [info] CONNECTED TO Phoenix.LiveView.Socket in 18µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "W249IVUPA0gkDAwaQUMDckEfOCFZEBhC89rt76RqCBo_suj5tPyN8Jt0", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:06.058 [info] CONNECTED TO Phoenix.LiveView.Socket in 20µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "CDwmG1F2BnMdFgU9Cm46AQQieRoLPxg3kkiN3OWJzXfx8XSF1m8ujetE", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:06.113 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "LjAaLTRrZ24OOQUkeVtbEV04d1Y0ED1KMgUxVR6WiwfaKm2Vhw69UJQ8", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:06.167 [info] CONNECTED TO Phoenix.LiveView.Socket in 18µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "ASIKO1ZdNFMGPgIVS24HHQc5dAdWHjY-buEn4dejapaPyXnZ2v5h7DZL", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:06.219 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "MR85ES9DFFwQeRI9WX4oFFQpCQBMIh4DRHvDMzEew7qxkHASafHo-xrq", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:06.276 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "UTgADzhmM3QRIloVCwYbInE1NV8oKjk52oOZZ_bMvl9P90reDzt0IpUK", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:06.335 [info] CONNECTED TO Phoenix.LiveView.Socket in 19µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "L3o5EAB9I2EIPgsCSkQRC0wKAiIGMDYUL-vEbDrXophGxrxLyECMgjZf", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:06.393 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "EyIYFhRTNmE9ehMEA2EIIFIWAyMPICkrpuWCvjgXZ4pA1WaggYBLnzEY", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:07.093 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "LgMICgFVPEAuFFArBn0INn8VCz4rIisDMTG_clmyIZ3n4KaqJZJQJxGq", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:07.153 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "BTp6MyMANmovBgF8YGxZFWR9BToma1gIfm5fA9gSHHb9RZ0RQ2DUG14z", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:07.204 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "UjUsPVZaIAovIzkVVwY6AkY_NFhVPl9L1bch4cq3HmZPe0SEspu74d39", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:07.257 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "NmUtOCpofFU2NyQSZXc6cGYEdjcHIFgHU2bmHQ-lQyGWWAS7SK7Xfz4u", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:07.303 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "IiM1ZwxaB1w2LTYkaFceAVoIDl5YHSkXAtz2ncVeQcUaZawFoGO19GEe", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:07.358 [info] CONNECTED TO Phoenix.LiveView.Socket in 36µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "PDkkJlNdPk4uGSQrcVwEcnN6IzkNIzk3_nks1dowIWGnCjm5F5bVlyUE", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:07.417 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "PGEjARJBAXUqCRBoU0UAM0wYGzkxBUEg_6lTpxPLMGs-asityWZVP_-R", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:07.468 [info] CONNECTED TO Phoenix.LiveView.Socket in 18µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "Mz8XOyhSBAs2egIQBk85IUc4CC5ROQIlPhXnJkU2Q4aU4yPfrwIA0cnW", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:07.521 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "OSMDAzIAFn0rETY2XVAAFGcpLQYVPDMCZtLVP9GDL_UsofiSRflitf_p", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:07.575 [info] CONNECTED TO Phoenix.LiveView.Socket in 18µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "IDo1ESF7Al5WCTsscQUzLAx8bBYCbFUUCmzDCBSg1GXiC3Zk93-yc69f", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:07.634 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "CyEoLQxxJGMmG1cfZFEzA1AtMV4GPh0AhvgxnHuZAU4ZVgZDebp1gdqr", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:07.688 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "TgIAOAReEGkdHTw8AUJcIXs6cR4VMxse-UOmfgAPzS_y3t5fNu0qtiwl", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:07.745 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "AiciIDFXNgsvJA12BGRZIGEVECwPHDsYapmuSng2Hjn36R0gTZQCnFWj", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:07.796 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "TiV3NyN8K3crdyAVBUAjKXQAJVpZMS0_-r8bAEzNL9CP7vJnAOd58kAM", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:07.856 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "VWIDbA1dYElTAxorBFMMcE8fLyobPykV65L9od1p4Myn6ee7zPnEzeEg", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:07.906 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "DiAteBtPHHgzDA4oUXgZAAUYAjgYAzscmwb-yvMATBmmcNpG0WCWyYWn", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:07.957 [info] CONNECTED TO Phoenix.LiveView.Socket in 18µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "EwEOOTJjE2oxeAksRQ8GAXoCKwM1LiMwpVAlPZBSV6jiw9oFOMjlTtOB", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:08.006 [info] CONNECTED TO Phoenix.LiveView.Socket in 15µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "AS0rZTByHmlXLwwadlobPnIrMSE2GCMcbzd0RKOP0ao_DlryGdpNWBOn", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:08.059 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "WxUiPREOZg0BFAUDUw4-DUYIeS0gagUL8Bmhs774fZfFa8WJsG8BA0iy", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:08.119 [info] CONNECTED TO Phoenix.LiveView.Socket in 18µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "ABEsJ1tYZlpVGQoVZloKNUQFDSw0LyAZcFcr9a7c2WiPTlcrqJLCUuLk", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:08.170 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "GTUaHAZJEk4QBDYyXFA8am8bdF43bicizbUIdpCwwJUwnfU-ZT51V4KP", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:08.221 [info] CONNECTED TO Phoenix.LiveView.Socket in 19µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "OxB4GxpBCF0yBFYEQnEFHmpiHj1RMlQ_XG7NxxYdUJ5ApGlY_-_R0h8M", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:08.275 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "LgMrGy19MnUyIxYacV0xBWALIgcmbwkBMTdNODcLUmu_CkXBUDchG5es", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:08.327 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "UjE5DQpyJVgKBi43VVgmEAIbMAMiKSIX1fvXhKtamHMrgnOW7TqlCsNe", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:08.377 [info] CONNECTED TO Phoenix.LiveView.Socket in 19µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "Oxs4ZQ54HQkfHi0CWFosamodeBkCLCo7XLw0lAL0xPNGjlE-_R9vcvFI", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:08.424 [info] CONNECTED TO Phoenix.LiveView.Socket in 20µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "VgF9GiZeZ10SKgoJVlgoBgI6dQBRPDYi5V2ODg6dudiLdnAA7u4o0fZP", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:08.476 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "JGcgNBVvZW0pNBouWXgAN2EjIh0kPlwKG0oawV4TNzykkNipTlcrEd0x", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:08.525 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "VDYIJBJmIgo1JwUoWF4EGGwVCQMVPx057aGqp_s3Rifmjhm_YZHlteqK", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:08.576 [info] CONNECTED TO Phoenix.LiveView.Socket in 19µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "UBYcAwBMOE4RBBMjSkwDdGYrKhxMGBwa3ASVbuiwvJpfxzj3Sdks-Bph", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:08.628 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "CTUKMxIAEmwfHTcpSHgmHW0DdAATdysijbEfp9CUxSTlzNOZXL5or-GP", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:08.681 [info] CONNECTED TO Phoenix.LiveView.Socket in 15µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "AjoFASRdPnYMOwYtAkE6d3J3DFhZESUIamJTFdoOkueh0wS0G8M78KIz", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:08.731 [info] CONNECTED TO Phoenix.LiveView.Socket in 18µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "NT41FAtKOFcrLwcIcXsOMVw5JBkVYl9DVizAisinLadMCMgvivevt831", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:08.778 [info] CONNECTED TO Phoenix.LiveView.Socket in 15µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "G28EDSB9OVwEOTkXQHNENnkZFSsVKz8fx8KXBDhecwZRrE-qLVTDtqSm", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:08.826 [info] CONNECTED TO Phoenix.LiveView.Socket in 15µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "FhwNIyVpYmgwBDAjd34GCkwoMw0SPwYzuKBvGP3QWJSfEHoMygrbsejA", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:08.877 [info] CONNECTED TO Phoenix.LiveView.Socket in 18µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "Ih41FAt7IksyJCR3RloHL1gDKQctYx0lAIzAiBsrUjG2tlnhmLhhL9qW", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:08.925 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "KhErZxBXIHU2CiJ9S0VcC3kLEw4sEDkdIFd2rnqLQDA8ys5LLDRaMJUo", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:08.978 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "NwgbEFVpHnNRAQ0HU28sAXh6DyYCOQg5T_TE7POJ6OnBaYEFM5NIccdK", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:09.028 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "Bz15PhcLAk9fHRoHfgZacHR8MVcgFC5Cdj6ku2Sv8SyBL037A3p8ANB0", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:09.079 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "JHoJNjtWFVhWJygDBQEFNQQ-BioCAglfG-FcYoDa1iKF77lr1qGEcXe-", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:09.131 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "UR8jeBEBNF1SEQB8fVERMlA_FhogEhRH2Hl-s8ed5_c9OgxuepWuAHx5", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:09.187 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "ATMtMU9JOVcoGhd3f1xQHwwuCloANjYVbdbd-phnOTt2Mj9X9aK5alZg", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:09.237 [info] CONNECTED TO Phoenix.LiveView.Socket in 18µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "Dz0iDBd3Bm8sDSgUd38RNm8rLRkrCFUjljmYuNWVKCKQEIxqZdlvJR9Q", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:09.290 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "U28nFwd3AA9KeTtyBVhYAAIiKStQNCNL08hBeNQ6-7X77n1G7mhD1nO9", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:09.340 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "VwN6YCdtGWNeFBcmdWEwDEV4KQ0WLCoC4T55ETHZ9ZtcGWYKp7hbwvFp", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:09.390 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "PDYVGBVOZFEdBTAneUMhN1sodj8HIxY1_aZMww5hzKSbKuHpng7PfyzG", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:09.440 [info] CONNECTED TO Phoenix.LiveView.Socket in 18µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "JjobbRZpKQwKBA0KZ3AZNF95eVcNalUrEmT8tPx5mJnOUFpsj688l09Y", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:09.497 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "Ww14DBNfMGsmIQsfW0NfcQJ7NF0uBS058Z7YqfaRAohZiu6674u2O_AK", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:09.748 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "AGIQbFRMBXEJADcgSgItJFANdRUNFRlfc5_96uTHnNTex4DceB4zlOu-", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:09.800 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "EToXOy9eG0grGzsAeVgqMFR-GCIYDBgxrmXnMgJqLUXEKnCwa1YMyVtC", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:09.850 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "EQ0hFxpNDn4mdlpyeHghcAY2djU-bAVBrZnBxt_GA897JNH73y7Z_6i3", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:09.897 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "EjAVMy1_GEEOJigcC0MZD2QnEBoPbz8HqgZfOFIxihKY9upHQhQun5Su", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:09.950 [info] CONNECTED TO Phoenix.LiveView.Socket in 29µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "DT0fJFNMBms3Bzk0cxs6LWdiMD4iCC4WnjPq1uWRPIZqA-SjR-qQCRBd", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:09.998 [info] CONNECTED TO Phoenix.LiveView.Socket in 18µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "NSc3MBtMIHZTOS1xBmYALWMEDRkVMhoIVpxeyuqO4wN44PijVKLvthvz", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:10.665 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "XAMGFTYBLC0PO20PICYBICU3Cl8KLTtamyOfwmcWZS7fgLIJfvg6Peyw", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:10.720 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "aDYGSzJdfwMkLS1YACEvMjsIJDtuD3BVYLO8s10yqEw1GKgXxIIR4G2x", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:10.773 [info] CONNECTED TO Phoenix.LiveView.Socket in 19µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "B0MuAyYLIx4yDwgLf1sfHit4Ny4rI3RV69gpggldggRb81Wth9ZGqk6x", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:10.825 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "dUxxKywUKg0iNy8qHi8nKy13JipsHyYAD68Xmxeww_uCYEoAn6KC6Wd-", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:10.878 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "RTw4BylcKTwCIQUKLj0OIhwFIhptJBBMtFqth0fFWI_ciWFH_DOs7lRa", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:10.940 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "Uj8ZRAA8ARYwEQsFBQwiEnAgFQANBiFjcEP7APNleyQlBfjx3axiWNcN", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:10.997 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "XjI_QCs2OSIiGyw8HxkSPCEHXFkYfHEeoHv3jZvXwsvUXsZVbF10B433", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:11.050 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "CDwQICYAKhYtHjwjFCMCWjUAWVgdKipq9FYSglelxvfJSIJ0vA41GbhG", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:11.107 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "Yg89KXcfJDwsOQgYLgUCHSEDGicRIHJXSutZ6skFyQRqioJwbBwNKh0z", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:11.166 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "aSMfQDArAD9nUDZQAB4xWzQtLgYPH3tkXYV3qGOE28l9Gty1wlCoUW9I", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:11.223 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "U0ofHh44AiojXggoKDgNMDF0Kj8gAg5vb0Vm_TMPv6RAoREZr5GVzJLB", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:11.293 [info] CONNECTED TO Phoenix.LiveView.Socket in 15µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "ZB0WGwcHFkgmBA0jDB8eDxd1NytsBCRqUg_hFkY2slWJKuVeT4ZB6LfG", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:11.348 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "YzY9GzQtfxUhB2g5EhIKORRwGFARERNkRLthuA0oto2PUxBSW1u9KYQI", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:11.406 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "exIvQAokDi44WzdaBVIRXAA7XCI3eAlyJhf3KHATm3m3B8Y6Cz1Km0K_", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:11.461 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "XSgGSwsgLBQKGG5RFDg5PQwxGlAWLSxBlRO8JLcn_p48SRqWOpw9Lenl", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:11.515 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "YiN7LBc_eEw8IzEdLz0qLhMxWS9jGQceSY2_VS76iKkthWbDPp4F9QE3", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:11.570 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "eBkbODM6IxUyHBIiCVMfIXUqJA0zMiYVIcRKrVlogtHKN9WK6kIdizd8", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:11.624 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "azR-KQMbFy04JBteAgR9DCx1Llt3AxgUZN7ZBwXWmLA7En5fo4C2-KZ9", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:11.679 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "X059Anc8FhQ7CxIxCwAvOjlsOyZvOTtUn44q6PYnncHXLjgPz-VO5qyy", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:11.735 [info] CONNECTED TO Phoenix.LiveView.Socket in 20µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "cA8-RSIcPDsiJQ08ISAJWHMWHD4sHHdlAuw6cpsAwMWUfJA20WqWvT5H", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:11.791 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "awg5RQYUFzh4GDwTCh8RRwIyIicuDnFMZrp6GxXB-pfzMuY-AsONtF3a", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:11.844 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "VR4MFSkWfywDRQIzciU_UjIqKVEFJjB5ddEfhz0VV-XZ5Ow8qkD8_nrT", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:11.897 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "fxgcIyMFCU8dOSNQIx4FJREGWwILfhEZNbUPbiF5HQy9dtMORG6kQ6S4", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:11.951 [info] CONNECTED TO Phoenix.LiveView.Socket in 18µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "dBUMSjM4HDI3DmgKKSI-KTAPNDYUHTYfEoE9rTSHbf2cnHvCsNY_NUt2", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:12.004 [info] CONNECTED TO Phoenix.LiveView.Socket in 20µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "XCsQHRFePz8yXCM4KCYJJjE7IAwIACxsmQYnP2pEg4yQoLALrzMeRHnA", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:12.059 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "Vg8aNy0LDA4HAW4xCiQLJC93BQUrfxdOguSDlgCtRi4XMNCNl6hlq7Uc", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:12.113 [info] CONNECTED TO Phoenix.LiveView.Socket in 15µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "Rxw6NBcKIh4yOTw8BBgiIQIqKFk3Ly1ivfsGVfmdgQfUCrjKAkE0mgoO", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:12.172 [info] CONNECTED TO Phoenix.LiveView.Socket in 15µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "ATgBOzENIBI6MCwuBAd8KTM1WC5jfyF30BHHpaohoXvGCm4Cpt5G97cZ", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:12.226 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "ewguCjNaPy4yMhw7Eig_XQ90VRsqLiNCJrgyr6pTgZFRUBw7L58rpfao", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:12.281 [info] CONNECTED TO Phoenix.LiveView.Socket in 15µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "eUMgXjUbLQ5lWRE5FiAKMzl1CzobISofH9i-twbt01KPQJBYz4fSAih2", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:12.337 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "bg4gJQguPhxsMBgNfycyXSB1Wy4DC3Fk_tiVIBqf9XBd8Mz7c46GYC3I", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:12.390 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "fR9wFHkBNk8UXzxYChg_AjkPIlwVfTJlLe9g8my5A7f1MrwhzNO5O5pH", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:12.445 [info] CONNECTED TO Phoenix.LiveView.Socket in 16µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "RikmBQIeCTI2HRQhEDojKSglCTwOBSxiwSovCrFHcuNHWPkCkddUTMnO", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:12.504 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "SxkDXnI2DUwaOREZMhshEHQkCgMVDSdlzcJ-3ZB6OQKpuqiz7egjOEeH", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:12.559 [info] CONNECTED TO Phoenix.LiveView.Socket in 17µs
+  Transport: :websocket
+  Serializer: Phoenix.Socket.V2.JSONSerializer
+  Parameters: %{"_csrf_token" => "fgN8ECs_fi1hIS0mACsmRy0QKis4EhdFOy5cjS1W4IwOGAn-nQGBbZUh", "_live_referer" => "undefined", "_mount_attempts" => "0", "_mounts" => "0", "vsn" => "2.0.0"}
+LP_REGRESSION_CONN_INFO %{session: nil, user_agent: "Lightpanda/1.0"}
+
+21:58:14.256 [notice] SIGTERM received - shutting down
+
+#PID<0.283.0> msg={:tcp_closed, #Port<0.7>} reason=%Mint.TransportError{reason: :closed}
+** (EXIT from #PID<0.94.0>) {:transport_error, %Mint.TransportError{reason: :closed}}
+
+
+21:58:12.621 [error] GenServer #PID<0.283.0> terminating
+** (stop) {:transport_error, %Mint.TransportError{reason: :closed}}
+Last message: {:tcp_closed, #Port<0.7>}

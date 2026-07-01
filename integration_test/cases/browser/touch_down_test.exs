@@ -1,6 +1,9 @@
 defmodule Wallabidi.Integration.Browser.TouchDownTest do
   use Wallabidi.Integration.SessionCase, async: true
   @moduletag :browser
+  # Touch event simulation has its own dispatch latency; the visible?
+  # waits for the log line to appear after the touch.
+  @moduletag slow: 10_000
 
   setup %{session: session} do
     page = visit(session, "touch.html")

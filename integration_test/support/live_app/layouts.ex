@@ -7,16 +7,38 @@ defmodule Wallabidi.Integration.LiveApp.Layouts do
     <html>
     <head>
       <meta charset="utf-8"/>
-      <script src="https://cdn.jsdelivr.net/npm/phoenix@1.8.5/priv/static/phoenix.min.js"></script>
-      <script src="https://cdn.jsdelivr.net/npm/phoenix_live_view@1.1.27/priv/static/phoenix_live_view.min.js"></script>
+      <script src="/assets/phoenix/phoenix.min.js"></script>
+      <script src="/assets/phoenix_live_view/phoenix_live_view.min.js"></script>
       <meta name="csrf-token" content={Plug.CSRFProtection.get_csrf_token()}/>
       <script>
         let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content");
-        let liveSocket = new window.LiveView.LiveSocket("/live", window.Phoenix.Socket, {
-          params: {_csrf_token: csrfToken}
-        });
-        liveSocket.connect();
-        window.liveSocket = liveSocket;
+        // window.TestHooks is populated by individual test pages BEFORE this
+        // <script> runs (they live in the body, which is inside @inner_content
+        // and runs after the head). To support that, we look up TestHooks
+        // lazily at LiveSocket construction time — but since the layout runs
+        // before the body content, hooks declared in page <script> tags need
+        // to use the global registry idiom: window.TestHooks.X = {...} —
+        // and the LV layout below reads window.TestHooks at connect time.
+        //
+        // We defer LiveSocket connection until DOMContentLoaded so any
+        // page-level <script> tags that populate window.TestHooks have
+        // already run by then.
+        window.TestHooks = window.TestHooks || {};
+
+        function bootLiveSocket() {
+          let liveSocket = new window.LiveView.LiveSocket("/live", window.Phoenix.Socket, {
+            params: {_csrf_token: csrfToken},
+            hooks: window.TestHooks
+          });
+          liveSocket.connect();
+          window.liveSocket = liveSocket;
+        }
+
+        if (document.readyState === "loading") {
+          document.addEventListener("DOMContentLoaded", bootLiveSocket);
+        } else {
+          bootLiveSocket();
+        }
       </script>
     </head>
     <body>

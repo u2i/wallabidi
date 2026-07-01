@@ -95,6 +95,21 @@ defmodule Wallabidi.QueryTest do
       query = Query.css("#test", minimum: 5, maximum: 3)
       assert Query.validate(query) == {:error, :min_max}
     end
+
+    test "rejects a text filter combined with visible: false (hidden-only)" do
+      query = Query.css("#test", text: "hi", visible: false)
+      assert Query.validate(query) == {:error, :cannot_set_text_with_invisible_elements}
+    end
+
+    test "allows a text filter with visible: :any (still includes visible elements)" do
+      query = Query.css("#test", text: "hi", visible: :any)
+      assert {:ok, _} = Query.validate(query)
+    end
+
+    test "allows a text filter with the default (visible) query" do
+      query = Query.css("#test", text: "hi")
+      assert {:ok, _} = Query.validate(query)
+    end
   end
 
   describe "visible/2" do

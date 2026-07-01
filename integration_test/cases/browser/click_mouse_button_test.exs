@@ -1,6 +1,9 @@
 defmodule Wallabidi.Integration.Browser.ClickMouseButtonTest do
   use Wallabidi.Integration.SessionCase, async: true
   @moduletag :browser
+  # Single `refute visible?(...)` per test waits the full max_wait_time
+  # for the negation to stabilise . Wallabidi contract.
+  @moduletag slow: 10_000
 
   setup %{session: session} do
     page = visit(session, "click.html")

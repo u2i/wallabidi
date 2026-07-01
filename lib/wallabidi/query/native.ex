@@ -175,11 +175,10 @@ defmodule Wallabidi.Query.Native do
 
   defp find_by_text(doc, selector) do
     # Query body descendants only (exclude <title>, <script>, etc.)
-    nodes =
-      case LazyHTML.query(doc, "body *") do
-        results when results != [] -> results
-        _ -> LazyHTML.query(doc, "*")
-      end
+    # LazyHTML.query returns a LazyHTML struct (not a list), so we must
+    # use Enum.empty?/1 instead of pattern-matching on [].
+    body_nodes = LazyHTML.query(doc, "body *")
+    nodes = if Enum.empty?(body_nodes), do: LazyHTML.query(doc, "*"), else: body_nodes
 
     nodes
     |> Enum.reject(fn node ->

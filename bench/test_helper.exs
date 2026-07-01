@@ -5,6 +5,7 @@ Logger.configure(level: :warning)
 driver =
   case System.get_env("WALLABIDI_DRIVER") do
     "chrome" -> :chrome
+    "lightpanda" -> :lightpanda
     "live_view" -> :live_view
     _ -> :chrome_cdp
   end
@@ -12,19 +13,31 @@ driver =
 Application.put_env(:wallabidi, :driver, driver)
 {:ok, _} = Application.ensure_all_started(:wallabidi)
 
-# Best-effort start secondary browser backend
-secondary =
+# For benchmarks we want EVERY available driver stack running, so
+# the "compare all drivers" test can ask Wallabidi.start_session/1
+# for each one without bringing up its supervisor on the fly. Each
+# secondary boots only if it's a different stack from the primary —
+# starting the primary's stack twice errors with :already_started
+# on the underlying ChromeServer/Lightpanda port.
+primary_mod =
   case driver do
-    :chrome_cdp -> {Wallabidi.Chrome, Wallabidi.Chrome.Supervisor}
-    :chrome -> {Wallabidi.ChromeCDP, Wallabidi.ChromeCDP.Supervisor}
+    :chrome -> Wallabidi.Chrome
+    :chrome_cdp -> Wallabidi.ChromeCDP
+    :lightpanda -> Wallabidi.Remote.Drivers.LightpandaCDP
     _ -> nil
   end
 
-if secondary do
-  {mod, name} = secondary
+secondaries =
+  [
+    {Wallabidi.Chrome, Wallabidi.Chrome.Supervisor},
+    {Wallabidi.ChromeCDP, Wallabidi.ChromeCDP.Supervisor},
+    {Wallabidi.Remote.Drivers.LightpandaCDP, Wallabidi.Remote.Drivers.LightpandaCDP.Supervisor}
+  ]
+  |> Enum.reject(fn {mod, _name} -> mod == primary_mod end)
 
+for {mod, name} <- secondaries do
   try do
-    mod.validate()
+    if function_exported?(mod, :validate, 0), do: mod.validate()
     mod.start_link(name: name)
   rescue
     _ -> :ok
@@ -46,15 +59,33 @@ Application.put_env(:wallabidi, Wallabidi.Integration.LiveApp.Endpoint,
 {:ok, _} = Wallabidi.Integration.LiveApp.Endpoint.start_link()
 Application.put_env(:wallabidi, :endpoint, Wallabidi.Integration.LiveApp.Endpoint)
 
-{:ok, server} = Wallabidi.Integration.TestServer.start()
-Application.put_env(:wallabidi, :base_url, server.base_url)
+Application.put_env(:wallabidi, :base_url, "http://localhost:4321")
 
-live_host =
-  if driver not in [:chrome_cdp, :live_view] &&
-       Application.get_env(:wallabidi, :chromedriver, []) |> Keyword.get(:remote_url),
-     do: "host.docker.internal",
-     else: "localhost"
+Application.put_env(:wallabidi, :live_app_url, "http://localhost:4321")
 
-Application.put_env(:wallabidi, :live_app_url, "http://#{live_host}:4321")
+# --- Start Testcontainers GenServer ---
+Testcontainers.start_link()
+
+# --- Start PostgreSQL container ---
+{:ok, pg_container} =
+  Testcontainers.start_container(
+    Testcontainers.PostgresContainer.new()
+    |> Testcontainers.PostgresContainer.with_image("postgres:18-alpine")
+    |> Testcontainers.PostgresContainer.with_user("wallabidi")
+    |> Testcontainers.PostgresContainer.with_password("wallabidi")
+    |> Testcontainers.PostgresContainer.with_database("wallabidi_test")
+  )
+
+Application.put_env(:wallabidi, Wallabidi.Integration.LiveApp.Repo,
+  Testcontainers.PostgresContainer.connection_parameters(pg_container) ++
+    [pool: Ecto.Adapters.SQL.Sandbox, pool_size: 10]
+)
+
+{:ok, _} = Wallabidi.Integration.LiveApp.Repo.start_link()
+Ecto.Migrator.up(Wallabidi.Integration.LiveApp.Repo, 1, Wallabidi.Integration.LiveApp.Migration)
 
 ExUnit.start()
+
+System.at_exit(fn _ ->
+  Application.stop(:wallabidi)
+end)

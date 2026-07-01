@@ -447,7 +447,12 @@ defmodule Wallabidi.Query do
       query.conditions[:minimum] > query.conditions[:maximum] ->
         {:error, :min_max}
 
-      Query.visible?(query) != true && Query.inner_text(query) ->
+      # A `text` filter can't be combined with `visible: false` (matching
+      # only hidden elements): webdriver reads *visible* text, so there's
+      # nothing to match against on a hidden element. `visible: :any`
+      # still includes visible elements, so the `text` filter is fine
+      # there — only the strict `false` case is rejected.
+      Query.visible?(query) == false && Query.inner_text(query) ->
         {:error, :cannot_set_text_with_invisible_elements}
 
       at_number(query) != :all && (at_number(query) < 0 || not is_integer(at_number(query))) ->

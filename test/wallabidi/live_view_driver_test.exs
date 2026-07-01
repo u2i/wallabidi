@@ -2,7 +2,7 @@ defmodule Wallabidi.LiveViewDriverTest do
   use ExUnit.Case, async: true
   use Wallabidi.DSL
 
-  @endpoint Wallabidi.TestApp.Endpoint
+  @endpoint Wallabidi.Integration.LiveApp.Endpoint
 
   setup do
     {:ok, session} =

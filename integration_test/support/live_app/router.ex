@@ -12,8 +12,20 @@ defmodule Wallabidi.Integration.LiveApp.Router do
   scope "/" do
     pipe_through(:browser)
 
-    live_session :default do
+    # === Sandbox-backed LiveViews (from TestApp) ===
+    live_session :sandbox do
+      live("/users", Wallabidi.Integration.LiveApp.UsersLive)
+      live("/dashboard", Wallabidi.Integration.LiveApp.DashboardLive)
+      live("/cached", Wallabidi.Integration.LiveApp.CachedLive)
+      live("/greeting", Wallabidi.Integration.LiveApp.GreetingLive)
+      live("/weather", Wallabidi.Integration.LiveApp.WeatherLive)
+      live("/price", Wallabidi.Integration.LiveApp.PriceLive)
       live("/counter", Wallabidi.Integration.LiveApp.CounterLive)
+    end
+
+    # === Integration test LiveViews ===
+    live_session :default do
+      live("/stream-timer", Wallabidi.Integration.LiveApp.StreamTimerLive)
       live("/async", Wallabidi.Integration.LiveApp.AsyncLive)
       live("/text-change", Wallabidi.Integration.LiveApp.TextChangeLive)
       live("/nav-source", Wallabidi.Integration.LiveApp.NavSourceLive)
@@ -29,6 +41,9 @@ defmodule Wallabidi.Integration.LiveApp.Router do
       live("/slow-event-dest", Wallabidi.Integration.LiveApp.SlowEventDestLive)
       live("/slow-evt-slow-dest", Wallabidi.Integration.LiveApp.SlowEventToSlowMountLive)
       live("/slow-evt-slow-dest-target", Wallabidi.Integration.LiveApp.SlowMountDestLive)
+      live("/optimistic-counter", Wallabidi.Integration.LiveApp.OptimisticCounterLive)
+      live("/capture-listener", Wallabidi.Integration.LiveApp.CaptureListenerLive)
+      live("/marker-hook", Wallabidi.Integration.LiveApp.MarkerHookLive)
     end
 
     # Separate live_session — navigating here from :default triggers a full page load
@@ -38,7 +53,15 @@ defmodule Wallabidi.Integration.LiveApp.Router do
 
     get("/plain-form", Wallabidi.Integration.LiveApp.PlainFormController, :show)
     post("/plain-form", Wallabidi.Integration.LiveApp.PlainFormController, :submit)
-    post("/trigger-action-target", Wallabidi.Integration.LiveApp.PlainFormController, :trigger_action_target)
+
+    post(
+      "/trigger-action-target",
+      Wallabidi.Integration.LiveApp.PlainFormController,
+      :trigger_action_target
+    )
+
     get("/join-pending", Wallabidi.Integration.LiveApp.PlainFormController, :join_pending)
+    get("/event-capture", Wallabidi.Integration.LiveApp.PlainFormController, :event_capture)
+    get("/echo-user-agent", Wallabidi.Integration.LiveApp.PlainFormController, :echo_user_agent)
   end
 end

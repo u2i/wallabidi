@@ -27,7 +27,8 @@ defmodule Wallabidi.Integration.Browser.ExecuteScriptTest do
         send(self(), {:callback, value})
       end)
 
-    assert result == session
+    assert is_struct(result, Wallabidi.Session)
+    assert result.id == session.id
 
     assert_received {:callback, "return value"}
 

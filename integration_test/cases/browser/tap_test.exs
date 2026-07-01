@@ -1,6 +1,9 @@
 defmodule Wallabidi.Integration.Browser.TapTest do
   use Wallabidi.Integration.SessionCase, async: true
   @moduletag :browser
+  # Touch events take time to dispatch; the test legitimately waits
+  # for "Start" / "End" log lines to appear.
+  @moduletag slow: 10_000
 
   setup %{session: session} do
     page = visit(session, "touch.html")

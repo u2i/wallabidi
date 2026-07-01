@@ -1,0 +1,615 @@
+defmodule Wallabidi.Remote.Transport.Session do
+  @moduledoc false
+
+  # Per-session coordinator. Owns:
+  #
+  #   * the session struct (`%Wallabidi.Session{}` with caps/url/etc.)
+  #   * a pending-CDP-calls map (wire id → caller `from`) so RPCs
+  #     issued via `cdp_send/3` can return synchronously
+  #   * page-load buffering, find waiters, page-ready waiters,
+  #     page-state machine — all the per-session state
+  #
+  # Key property: events from the WebSocket and synchronous calls
+  # from the test process arrive in ONE mailbox. FIFO ordering means
+  # the test process can never observe state earlier than what was
+  # implied by events the WebSocket already delivered. No barrier.
+
+  use GenServer
+  require Logger
+
+  alias Wallabidi.Remote.Transport.Common
+  alias Wallabidi.Remote.WebSocket
+  alias Wallabidi.Remote.Wire
+
+  defstruct [
+    :session,
+    :ws_pid,
+    :owner_ref,
+    :teardown_fun,
+    # wire_id → GenServer.from for in-flight cdp_send calls
+    pending_calls: %{},
+    # Page-load buffering: events that have already fired, keyed by
+    # `{loader_id, milestone}` (e.g. {"abc123", "load"}). Callers
+    # arriving AFTER the event get an immediate reply. Callers arriving
+    # BEFORE join `load_waiters` and get woken when the matching event
+    # lands.
+    loads: %{},
+    load_waiters: [],
+    # Push-based find waiters. The find flow:
+    #   1. Caller calls register_find(query_id, timeout) — stashes
+    #      a {:pending, timeout_ref, nil} entry.
+    #   2. Caller fires JS that injects a query into window.__w.queries
+    #      and arranges for __wallabidi(...) to be called when matched.
+    #   3. The Runtime.bindingCalled event arrives here as a v2_event;
+    #      we transition to {:resolved, result}.
+    #   4. Caller calls await_find_result(query_id) — either gets the
+    #      already-resolved result, or registers `from` and we reply
+    #      when the binding fires.
+    find_waiters: %{},
+    # Page-ready tracking. The bootstrap fires
+    # __wallabidi(JSON.stringify({type: "page_ready", pageId: ...}))
+    # whenever a new document parses or LiveView applies a patch (the
+    # patch hook bumps pageId). Captures the most-recent pageId so the
+    # click flow can capture pre_page_id BEFORE issuing the click and
+    # await_page_ready_after BLOCKs until a different pageId arrives.
+    last_page_id: nil,
+    page_ready_waiter: nil,
+    # Set to true when the bootstrap reports a `nav_pending` (LV
+    # `live_redirect`/`redirect` in a phx_reply). Signals to a waiting
+    # `await_page_ready_after` that a transition is in flight and the
+    # timeout should be extended — the destination's bootstrap will
+    # eventually fire page_ready, just possibly later than the caller's
+    # default budget allows. Cleared once consumed.
+    nav_pending: false,
+    # Frame stack. Empty list = root frame (`document`); nested entries
+    # represent each `focus_frame` push. Each entry is the frame's
+    # `executionContextId` (CDP-assigned int) so subsequent JS evals
+    # can target it via Runtime.evaluate's `contextId` parameter.
+    frame_stack: [],
+    # Map of `frameId` → `executionContextId`, populated as
+    # Runtime.executionContextCreated events arrive. We need this
+    # because Page.frameNavigated gives us a `frameId` but
+    # Runtime.evaluate wants an `executionContextId`.
+    frame_contexts: %{}
+  ]
+
+  @type t :: %__MODULE__{}
+
+  # ----- Public API -----
+
+  @doc """
+  Starts a Session GenServer linked to the WebSocket given by `ws_pid`.
+
+  Opts:
+    * `:ws_pid` (required)
+    * `:init_fun` — 0-arity function returning `{:ok, %Wallabidi.Session{}}`
+      run inside the GenServer; whatever it returns is held as the
+      session struct (with `:pid` backfilled to this process).
+    * `:teardown_fun` — 1-arity, receives the session in `terminate/2`.
+    * `:owner` — process to monitor (defaults to the caller); when it
+      dies we self-stop and run teardown_fun.
+  """
+  @spec start_link(keyword) :: {:ok, Wallabidi.Session.t()} | {:error, term}
+  def start_link(opts) do
+    ws_pid = Keyword.fetch!(opts, :ws_pid)
+    init_fun = Keyword.fetch!(opts, :init_fun)
+    teardown_fun = Keyword.fetch!(opts, :teardown_fun)
+    owner = Keyword.get(opts, :owner, self())
+
+    case GenServer.start(__MODULE__, {ws_pid, init_fun, teardown_fun, owner}) do
+      {:ok, pid} ->
+        session = GenServer.call(pid, :get_session)
+        {:ok, %{session | pid: pid}}
+
+      {:error, {:init_failed, reason}} ->
+        {:error, reason}
+
+      other ->
+        other
+    end
+  end
+
+  @doc """
+  Send a CDP/BiDi RPC and block until the response arrives.
+
+  Internally: dispatches to the WebSocket via `cast_send/5`,
+  registers the caller's `from` keyed by the wire id, and returns
+  `:noreply`. When the matching `:v2_response` lands in the Session's
+  mailbox, we look up `from` and reply.
+
+  This means concurrent calls to the SAME session queue (each
+  `handle_call` runs sequentially), but since each one returns
+  `:noreply` quickly, the queue drains fast — only the actual
+  network round-trip is on the critical path. Calls to DIFFERENT
+  sessions don't contend with each other at all.
+
+  `opts` is forwarded to WebSocket.cast_send/5; see its docs for
+  `:flat_session_id` / `:session_id`.
+  """
+  @spec cdp_send(Wallabidi.Session.t(), String.t(), map, keyword) ::
+          {:ok, term} | {:error, term}
+  def cdp_send(%Wallabidi.Session{pid: pid}, method, params, opts \\ [])
+      when is_pid(pid) do
+    GenServer.call(pid, {:cdp_send, method, params, opts}, default_timeout())
+  catch
+    :exit, {:noproc, _} -> {:error, :session_closed}
+    :exit, {:normal, _} -> {:error, :session_closed}
+  end
+
+  @doc """
+  Fire-and-forget CDP send. Returns `:ok` synchronously after handing
+  the command to the WebSocket. The response is delivered to the
+  Session GenServer but ignored (no caller is waiting for it).
+
+  Use for enables (`Page.enable`, `Runtime.enable`, etc.) where the
+  response carries nothing the caller would act on. CDP serializes
+  per-session, so any subsequent `cdp_send/4` from the same caller
+  still observes the effects.
+  """
+  @spec cdp_cast(Wallabidi.Session.t(), String.t(), map, keyword) :: :ok
+  def cdp_cast(%Wallabidi.Session{pid: pid}, method, params, opts \\ [])
+      when is_pid(pid) do
+    GenServer.cast(pid, {:cdp_cast, method, params, opts})
+  end
+
+  @doc """
+  Subscribes the Session to a wire-level event method.
+
+  Combines:
+    1. Telling the WebSocket to route events with this method to us
+       (so they arrive in our mailbox as `{:v2_event, method, event}`).
+    2. Tagging the routing entry with the session's `browsing_context`
+       (CDP `sessionId` / BiDi context id) so events for OTHER sessions
+       on the same WebSocket don't fan in here.
+
+  `routing_key` defaults to the session's browsing_context. Pass
+  `:global` to receive events regardless of session (e.g. browser-level
+  Target.attachedToTarget).
+  """
+  @spec subscribe(Wallabidi.Session.t(), String.t(), :global | nil) :: :ok
+  def subscribe(%Wallabidi.Session{} = session, event_method, routing_key \\ nil)
+      when is_binary(event_method) do
+    GenServer.call(session.pid, {:subscribe, event_method, routing_key})
+  end
+
+  @doc """
+  Block until a `Page.lifecycleEvent` fires for `loader_id` with
+  milestone `name` (typically `"load"` or `"DOMContentLoaded"`).
+
+  If the matching event has already arrived and been buffered, returns
+  immediately. Otherwise registers a waiter and replies when the event
+  lands or the timeout elapses.
+  """
+  @spec await_page_load(Wallabidi.Session.t(), String.t(), String.t(), timeout) ::
+          :ok | :timeout
+  def await_page_load(%Wallabidi.Session{pid: pid}, loader_id, name, timeout_ms \\ 10_000)
+      when is_pid(pid) and is_binary(loader_id) and is_binary(name) do
+    GenServer.call(pid, {:await_page_load, loader_id, name, timeout_ms}, timeout_ms + 2_000)
+  catch
+    :exit, _ -> :timeout
+  end
+
+  @doc """
+  Block until ANY `Page.lifecycleEvent` of milestone `name` fires.
+  Used by the navigation-classification path where the loader_id
+  isn't known up-front (e.g. plain HTML form submits, server-driven
+  redirects).
+
+  Consumes any already-buffered load events as a side effect.
+  """
+  @spec await_next_page_load(Wallabidi.Session.t(), String.t(), timeout) :: :ok | :timeout
+  def await_next_page_load(%Wallabidi.Session{pid: pid}, name \\ "load", timeout_ms \\ 10_000)
+      when is_pid(pid) and is_binary(name) do
+    GenServer.call(pid, {:await_next_page_load, name, timeout_ms}, timeout_ms + 2_000)
+  catch
+    :exit, _ -> :timeout
+  end
+
+  @doc """
+  Synchronisation barrier — blocks until the session actor has
+  processed every message that was already in its mailbox at the
+  moment of this call. The single-mailbox model means callers rarely
+  need this (FIFO ordering already guarantees observability), but
+  callers that bridge external state (e.g. CDPClient at boot) keep
+  it for explicit barrier semantics.
+  """
+  @spec sync_barrier(Wallabidi.Session.t()) :: :ok
+  def sync_barrier(%Wallabidi.Session{pid: pid}) when is_pid(pid) do
+    GenServer.call(pid, :sync_barrier)
+  catch
+    :exit, _ -> :ok
+  end
+
+  def sync_barrier(%Wallabidi.Session{}), do: :ok
+
+  @doc """
+  Register a find waiter (non-blocking). Must be called BEFORE the JS
+  that triggers the binding, to avoid the race where the binding event
+  arrives before the waiter is registered.
+
+  After this returns, fire whatever JS injects the query and calls
+  `__wallabidi(...)` — when the matching `Runtime.bindingCalled` event
+  arrives the waiter transitions to `{:resolved, payload}`.
+  """
+  @spec register_find(Wallabidi.Session.t(), String.t(), timeout) :: :ok
+  def register_find(%Wallabidi.Session{pid: pid}, query_id, timeout_ms)
+      when is_pid(pid) and is_binary(query_id) do
+    GenServer.call(pid, {:register_find, query_id, timeout_ms})
+  catch
+    :exit, _ -> :ok
+  end
+
+  @doc """
+  Block until the find waiter registered by `register_find/3` resolves.
+
+  Returns the binding payload (the parsed JSON the JS passed to
+  `__wallabidi(...)`) on success, or `{:timeout, 0}` on timeout.
+  """
+  @spec await_find_result(Wallabidi.Session.t(), String.t(), timeout) ::
+          {:ok, term} | {:timeout, 0} | {:error, term}
+  def await_find_result(%Wallabidi.Session{pid: pid}, query_id, timeout_ms)
+      when is_pid(pid) and is_binary(query_id) do
+    GenServer.call(pid, {:await_find_result, query_id}, timeout_ms + 2_000)
+  catch
+    :exit, _ -> {:timeout, 0}
+  end
+
+  @doc """
+  Block until a `page_ready` notification arrives with a pageId
+  different from `pre_page_id`. The bootstrap fires this notification
+  when a new document is ready (DOMContentLoaded + LV connected, or
+  non-LV detected) AND on every LV patch.
+
+  Returns `:ok` when a different pageId has been observed, or
+  `:timeout` after `timeout_ms`.
+
+  Special case: if `pre_page_id` is `nil`, we register a waiter for
+  ANY first notification (no comparison) — without this guard a
+  pre_page_id captured before the very first notification would
+  spuriously match against any non-nil last_page_id.
+  """
+  @spec await_page_ready_after(Wallabidi.Session.t(), String.t() | nil, timeout) ::
+          :ok | :timeout
+  def await_page_ready_after(%Wallabidi.Session{pid: pid}, pre_page_id, timeout_ms \\ 5_000)
+      when is_pid(pid) do
+    GenServer.call(pid, {:await_page_ready_after, pre_page_id, timeout_ms}, timeout_ms + 2_000)
+  catch
+    :exit, _ -> :timeout
+  end
+
+  @doc """
+  Returns the currently-focused frame's `executionContextId` (or
+  `nil` for the root frame).
+
+  Used internally by CDPClient to target Runtime.evaluate /
+  callFunctionOn at the right frame after `focus_frame/2`.
+  """
+  @spec current_context_id(Wallabidi.Session.t()) :: integer | nil
+  def current_context_id(%Wallabidi.Session{pid: pid}) when is_pid(pid) do
+    GenServer.call(pid, :current_context_id)
+  catch
+    :exit, _ -> nil
+  end
+
+  @doc """
+  Returns the most recent pageId reported by the bootstrap, or `nil`
+  if no page_ready event has arrived yet.
+  """
+  @spec get_page_id(Wallabidi.Session.t()) :: String.t() | nil
+  def get_page_id(%Wallabidi.Session{pid: pid}) when is_pid(pid) do
+    GenServer.call(pid, :get_page_id)
+  catch
+    :exit, _ -> nil
+  end
+
+  @doc """
+  Pushes a frame onto the focus stack. Subsequent JS evaluations run
+  inside that frame's realm.
+
+  `context_id` is the frame's `executionContextId` (an integer
+  assigned by Chrome's `Runtime.executionContextCreated` event).
+  CDPClient resolves the right context_id from a frame element
+  before calling this.
+  """
+  @spec push_frame(Wallabidi.Session.t(), integer) :: :ok
+  def push_frame(%Wallabidi.Session{pid: pid}, context_id)
+      when is_pid(pid) and is_integer(context_id) do
+    GenServer.call(pid, {:push_frame, context_id})
+  catch
+    :exit, _ -> :ok
+  end
+
+  @doc "Pops the top frame off the focus stack (no-op at root)."
+  @spec pop_frame(Wallabidi.Session.t()) :: :ok
+  def pop_frame(%Wallabidi.Session{pid: pid}) when is_pid(pid) do
+    GenServer.call(pid, :pop_frame)
+  catch
+    :exit, _ -> :ok
+  end
+
+  @doc """
+  Records the `frameId → executionContextId` mapping for a frame.
+  CDPClient calls this when handling `Runtime.executionContextCreated`
+  events so future `focus_frame` calls can resolve a frame element to
+  its execution context.
+  """
+  @spec record_frame_context(Wallabidi.Session.t(), String.t(), integer) :: :ok
+  def record_frame_context(%Wallabidi.Session{pid: pid}, frame_id, context_id)
+      when is_pid(pid) and is_binary(frame_id) and is_integer(context_id) do
+    GenServer.call(pid, {:record_frame_context, frame_id, context_id})
+  catch
+    :exit, _ -> :ok
+  end
+
+  @doc """
+  Looks up the `executionContextId` for a given frameId. Returns
+  `nil` if not yet recorded.
+  """
+  @spec lookup_frame_context(Wallabidi.Session.t(), String.t()) :: integer | nil
+  def lookup_frame_context(%Wallabidi.Session{pid: pid}, frame_id)
+      when is_pid(pid) and is_binary(frame_id) do
+    GenServer.call(pid, {:lookup_frame_context, frame_id})
+  catch
+    :exit, _ -> nil
+  end
+
+  @doc """
+  Stops the Session GenServer. `terminate/2` runs the teardown_fun.
+  """
+  def stop(%Wallabidi.Session{pid: pid}) when is_pid(pid) do
+    GenServer.stop(pid, :normal, 10_000)
+  catch
+    :exit, _ -> :ok
+  end
+
+  def stop(_), do: :ok
+
+  defp default_timeout, do: 15_000
+
+  # ----- GenServer callbacks -----
+
+  @impl true
+  def init({ws_pid, init_fun, teardown_fun, owner}) do
+    Process.flag(:trap_exit, true)
+    ref = Process.monitor(owner)
+
+    case init_fun.() do
+      {:ok, %Wallabidi.Session{} = session} ->
+        # Tag with this GenServer's pid so callers can find/stop it.
+        # Register with SessionStore so Wallabidi.Feature can discover
+        # active sessions when taking failure screenshots / sandbox
+        # cleanup.
+        session = %{session | pid: self()}
+
+        try do
+          Wallabidi.SessionStore.register(session, owner)
+        catch
+          :exit, _ -> :ok
+        end
+
+        state = %__MODULE__{
+          session: session,
+          ws_pid: ws_pid,
+          owner_ref: ref,
+          teardown_fun: teardown_fun
+        }
+
+        {:ok, state}
+
+      {:error, reason} ->
+        {:stop, {:init_failed, reason}}
+    end
+  end
+
+  @impl true
+  def handle_call(:get_session, _from, state) do
+    {:reply, state.session, state}
+  end
+
+  def handle_call({:update_browsing_context, session_id, target_id}, _from, state) do
+    new_session = %{
+      state.session
+      | browsing_context: session_id,
+        capabilities: Map.put(state.session.capabilities, :target_id, target_id)
+    }
+
+    {:reply, :ok, %{state | session: new_session}}
+  end
+
+  def handle_call(:reset_frame_stack, _from, state) do
+    {:reply, :ok, %{state | frame_stack: []}}
+  end
+
+  def handle_call({:cdp_send, method, params, opts}, from, state) do
+    # If the caller's opts carry a session_id (CDP flat-session
+    # routing), override it with our LIVE browsing_context. The
+    # caller's struct may be stale after a focus_window/2 swap; the
+    # GenServer state is the source of truth.
+    opts =
+      case Keyword.fetch(opts, :session_id) do
+        {:ok, _} when is_binary(state.session.browsing_context) ->
+          Keyword.put(opts, :session_id, state.session.browsing_context)
+
+        _ ->
+          opts
+      end
+
+    try do
+      wire_id = WebSocket.cast_send(state.ws_pid, self(), method, params, opts)
+      pending = Map.put(state.pending_calls, wire_id, from)
+      {:noreply, %{state | pending_calls: pending}}
+    catch
+      :exit, _ -> {:reply, {:error, :session_closed}, state}
+    end
+  end
+
+  def handle_call({:subscribe, event_method, routing_key}, _from, state) do
+    key = routing_key || state.session.browsing_context || :global
+
+    try do
+      :ok = WebSocket.subscribe(state.ws_pid, event_method, key, self())
+      {:reply, :ok, state}
+    catch
+      :exit, _ -> {:reply, {:error, :session_closed}, state}
+    end
+  end
+
+  def handle_call({:await_page_load, loader_id, name, timeout_ms}, from, state) do
+    if get_in(state.loads, [loader_id, name]) do
+      {:reply, :ok, state}
+    else
+      timer_ref = Process.send_after(self(), {:load_timeout, from}, timeout_ms)
+      waiter = {from, loader_id, name, timer_ref}
+      {:noreply, %{state | load_waiters: [waiter | state.load_waiters]}}
+    end
+  end
+
+  def handle_call({:await_next_page_load, name, timeout_ms}, from, state) do
+    # `:any` wildcard loader_id — wake on the first matching milestone
+    # regardless of which navigation produced it. Consume any buffered
+    # loads first.
+    already_loaded =
+      Enum.any?(state.loads, fn {_loader_id, milestones} ->
+        Map.get(milestones, name, false)
+      end)
+
+    if already_loaded do
+      {:reply, :ok, %{state | loads: %{}}}
+    else
+      timer_ref = Process.send_after(self(), {:load_timeout, from}, timeout_ms)
+      waiter = {from, :any, name, timer_ref}
+      {:noreply, %{state | loads: %{}, load_waiters: [waiter | state.load_waiters]}}
+    end
+  end
+
+  def handle_call(:sync_barrier, _from, state) do
+    # Reaching this clause means every prior message in the mailbox
+    # has been processed. Reply is purely the synchronization signal.
+    {:reply, :ok, state}
+  end
+
+  def handle_call({:register_find, query_id, timeout_ms}, _from, state) do
+    {:reply, :ok, Common.register_find(state, query_id, timeout_ms)}
+  end
+
+  def handle_call({:await_find_result, query_id}, from, state) do
+    Common.await_find_result(state, query_id, from)
+  end
+
+  def handle_call({:await_page_ready_after, pre_page_id, timeout_ms}, from, state) do
+    Common.await_page_ready_after(state, pre_page_id, timeout_ms, from)
+  end
+
+  def handle_call(:current_context_id, _from, state) do
+    {:reply, Common.current_context_id(state), state}
+  end
+
+  def handle_call(:get_page_id, _from, state) do
+    {:reply, state.last_page_id, state}
+  end
+
+  def handle_call({:push_frame, context_id}, _from, state) do
+    {:reply, :ok, Common.push_frame(state, context_id)}
+  end
+
+  def handle_call(:pop_frame, _from, state) do
+    {:reply, :ok, Common.pop_frame(state)}
+  end
+
+  def handle_call({:record_frame_context, frame_id, context_id}, _from, state) do
+    {:reply, :ok, Common.record_frame_context(state, frame_id, context_id)}
+  end
+
+  def handle_call({:lookup_frame_context, frame_id}, _from, state) do
+    {:reply, Common.lookup_frame_context(state, frame_id), state}
+  end
+
+  @impl true
+  def handle_cast({:cdp_cast, method, params, opts}, state) do
+    # Override session_id with live browsing_context (same as
+    # :cdp_send). Hand the command to WebSocket without registering
+    # a pending entry — the response will land in our mailbox via
+    # `:v2_response` and `handle_info` will see no matching entry and
+    # drop it, which is what we want.
+    opts =
+      case Keyword.fetch(opts, :session_id) do
+        {:ok, _} when is_binary(state.session.browsing_context) ->
+          Keyword.put(opts, :session_id, state.session.browsing_context)
+
+        _ ->
+          opts
+      end
+
+    try do
+      _ = WebSocket.cast_send(state.ws_pid, self(), method, params, opts)
+    catch
+      :exit, _ -> :ok
+    end
+
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_info({:v2_response, wire_id, result}, state) do
+    case Map.pop(state.pending_calls, wire_id) do
+      {nil, _} ->
+        # Either fire-and-forget that we shouldn't have stashed, or a
+        # response that arrived after the caller gave up. Ignore.
+        {:noreply, state}
+
+      {from, pending} ->
+        GenServer.reply(from, result)
+        {:noreply, %{state | pending_calls: pending}}
+    end
+  end
+
+  def handle_info({:v2_event, method, event}, state) do
+    {:noreply, Wire.CDP.handle_event(state, method, event)}
+  end
+
+  def handle_info({:load_timeout, from}, state) do
+    case Enum.split_with(state.load_waiters, fn {f, _, _, _} -> f == from end) do
+      {[], _} ->
+        {:noreply, state}
+
+      {[{^from, _l, _n, _ref} | _], rest} ->
+        GenServer.reply(from, :timeout)
+        {:noreply, %{state | load_waiters: rest}}
+    end
+  end
+
+  def handle_info({:page_ready_timeout, from}, state) do
+    {:noreply, Common.handle_page_ready_timeout(state, from)}
+  end
+
+  def handle_info({:find_timeout, query_id}, state) do
+    {:noreply, Common.handle_find_timeout(state, query_id)}
+  end
+
+  def handle_info({:DOWN, ref, :process, _pid, _reason}, %{owner_ref: ref} = state) do
+    {:stop, :normal, state}
+  end
+
+  def handle_info(_msg, state), do: {:noreply, state}
+
+  @impl true
+  def terminate(_reason, %{teardown_fun: fun, session: session}) when is_function(fun, 1) do
+    try do
+      Wallabidi.SessionStore.unregister(session)
+    catch
+      :exit, _ -> :ok
+    end
+
+    try do
+      fun.(session)
+    rescue
+      _ -> :ok
+    catch
+      _, _ -> :ok
+    end
+
+    :ok
+  end
+
+  def terminate(_reason, _state), do: :ok
+end

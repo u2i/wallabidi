@@ -25,6 +25,7 @@ defmodule Wallabidi.Integration.LiveView.SlowDestMountTest do
 
   @base Application.compile_env(:wallabidi, :live_app_url, "http://localhost:4321")
 
+  @tag slow: 12_000
   test "patch-classified click with slow handle_event + slow dest mount waits for page_ready",
        %{session: session} do
     session = visit(session, @base <> "/slow-evt-slow-dest")

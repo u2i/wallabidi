@@ -18,6 +18,7 @@ defmodule Wallabidi.Integration.LiveView.NavigateTimeoutTest do
 
   @base Application.compile_env(:wallabidi, :live_app_url, "http://localhost:4321")
 
+  @tag slow: 8_000
   test "click on <.link navigate> whose destination is slower than the deadline raises a nav-timeout error",
        %{session: session} do
     # /slow-nav-dest sleeps 6s in connected mount — well past the 5s

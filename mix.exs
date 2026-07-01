@@ -2,7 +2,7 @@ defmodule Wallabidi.Mixfile do
   use Mix.Project
 
   @source_url "https://github.com/u2i/wallabidi"
-  @version "0.2.13"
+  @version "0.4.1"
   @maintainers ["Tom Clarke"]
 
   def project do
@@ -24,15 +24,16 @@ defmodule Wallabidi.Mixfile do
         "test.all": [
           "test",
           "test.live_view",
+          "test.lightpanda",
           "test.chrome",
-          "test.chrome.bidi",
-          "test.chrome.lifecycle"
+          "test.chrome.bidi"
         ],
         "test.live_view": fn args -> test_driver("live_view", "LiveView", args) end,
+        "test.lightpanda": fn args -> test_driver("lightpanda", "Lightpanda", args) end,
         "test.chrome": fn args -> test_driver("chrome_cdp", "Chrome (CDP)", args) end,
         "test.chrome.bidi": fn args -> test_driver("chrome", "Chrome (BiDi)", args) end,
         "test.bench": fn args -> test_driver("bench", "Benchmarks", args) end,
-        "test.chrome.lifecycle": &test_chrome_lifecycle/1
+        "test.legacy": fn args -> test_legacy(args) end
       ],
       test_paths: test_paths(System.get_env("WALLABIDI_DRIVER")),
       dialyzer: dialyzer()
@@ -44,10 +45,11 @@ defmodule Wallabidi.Mixfile do
       preferred_envs: [
         "test.all": :test,
         "test.live_view": :test,
+        "test.lightpanda": :test,
         "test.chrome": :test,
         "test.chrome.bidi": :test,
         "test.bench": :test,
-        "test.chrome.lifecycle": :test
+        "test.legacy": :test
       ]
     ]
   end
@@ -75,11 +77,12 @@ defmodule Wallabidi.Mixfile do
       {:sandbox_shim, "~> 0.1"},
       {:plug_cowboy, "~> 2.7"},
       # Test-only deps
-      {:lightpanda, "0.2.8-3", only: :test},
-      {:sandbox_case, "~> 0.3.8", only: :test},
+      {:lightpanda, "~> 0.3.4-rc.0", only: :test},
+      {:sandbox_case, "~> 0.4.1", runtime: false},
       {:cachex, "~> 4.1", only: :test},
       {:fun_with_flags, "~> 1.11", only: :test, runtime: false},
-      {:ecto_sqlite3, "~> 0.22", only: :test},
+      {:testcontainers, "~> 2.3", only: :test},
+      {:postgrex, "~> 0.19", only: :test},
       {:bandit, "~> 1.0", only: :test},
       {:mimic, "~> 1.7", only: :test},
       {:mox, "~> 1.2", only: :test}
@@ -88,7 +91,25 @@ defmodule Wallabidi.Mixfile do
 
   defp package do
     [
-      files: ["lib", "mix.exs", "README.md", "LICENSE.md", "priv"],
+      # Don't ship priv/bidi-server/node_modules — consumers run `npm install`
+      # via `mix wallabidi.install` after pulling the package. Including
+      # node_modules pushes the tarball past Hex's 8 MB limit.
+      files: [
+        "lib",
+        "mix.exs",
+        "README.md",
+        "LICENSE.md",
+        "priv/cdp",
+        "assets/perf-matrix.svg",
+        "priv/run_command.sh",
+        # Bootstrap reads these at compile time via @external_resource
+        # — they must be in the tarball so the consumer's compile sees them.
+        "priv/wallabidi.js",
+        "priv/wallabidi.min.js",
+        "priv/bidi-server/package.json",
+        "priv/bidi-server/package-lock.json",
+        "priv/bidi-server/run.mjs"
+      ],
       maintainers: @maintainers,
       licenses: ["MIT"],
       links: %{
@@ -102,11 +123,24 @@ defmodule Wallabidi.Mixfile do
     [
       extras: [
         "README.md": [title: "Introduction"],
+        "guides/setup.md": [title: "Setup"],
+        "guides/isolation.md": [title: "Test Isolation"],
+        "guides/api.md": [title: "API"],
+        "guides/migrating.md": [title: "Migrating from Wallaby"],
+        "ARCHITECTURE.md": [title: "Architecture"],
         "TESTING.md": [title: "Testing"]
+      ],
+      groups_for_extras: [
+        Guides: ["guides/setup.md", "guides/isolation.md", "guides/api.md", "guides/migrating.md"],
+        Internals: ["ARCHITECTURE.md", "TESTING.md"]
       ],
       source_ref: "v#{@version}",
       source_url: @source_url,
-      main: "readme"
+      main: "readme",
+      # Copy assets/ (the perf chart referenced by the README) into the
+      # generated docs at doc/assets/, so `assets/perf-matrix.svg` resolves
+      # on hexdocs as well as on GitHub.
+      assets: %{"assets" => "assets"}
     ]
   end
 
@@ -122,9 +156,29 @@ defmodule Wallabidi.Mixfile do
   defp test_paths("lightpanda"), do: ["integration_test/cases"]
   defp test_paths("chrome"), do: ["integration_test/cases"]
   defp test_paths("chrome_cdp"), do: ["integration_test/cases"]
-  defp test_paths("chrome_lifecycle"), do: ["integration_test/lifecycle/chrome"]
   defp test_paths("bench"), do: ["bench"]
-  defp test_paths(_), do: ["test"]
+
+  defp test_paths(_),
+    do:
+      if(System.get_env("WALLABIDI_LEGACY") == "1",
+        do: ["integration_test/legacy"],
+        else: ["test"]
+      )
+
+  defp test_legacy(args) do
+    args = if IO.ANSI.enabled?(), do: ["--color" | args], else: ["--no-color" | args]
+    IO.puts("==> Legacy (otp_app path): mix test --no-start")
+
+    {_, res} =
+      System.cmd("mix", ["test", "--no-start" | args],
+        into: IO.binstream(:stdio, :line),
+        env: [{"WALLABIDI_LEGACY", "1"}]
+      )
+
+    if res > 0 do
+      System.at_exit(fn _ -> exit({:shutdown, 1}) end)
+    end
+  end
 
   defp test_driver(driver, label, args) do
     args = if IO.ANSI.enabled?(), do: ["--color" | args], else: ["--no-color" | args]
@@ -134,25 +188,6 @@ defmodule Wallabidi.Mixfile do
       System.cmd("mix", ["test", "--no-start" | args],
         into: IO.binstream(:stdio, :line),
         env: [{"WALLABIDI_DRIVER", driver}]
-      )
-
-    if res > 0 do
-      System.at_exit(fn _ -> exit({:shutdown, 1}) end)
-    end
-  end
-
-  defp test_chrome_lifecycle(args) do
-    args = if IO.ANSI.enabled?(), do: ["--color" | args], else: ["--no-color" | args]
-
-    IO.puts("==> Running lifecycle tests for chrome (subprocess)")
-
-    {_, res} =
-      System.cmd("mix", ["test" | args],
-        into: IO.binstream(:stdio, :line),
-        env: [
-          {"WALLABIDI_DRIVER", "chrome_lifecycle"},
-          {"WALLABIDI_NO_DOCKER", "1"}
-        ]
       )
 
     if res > 0 do

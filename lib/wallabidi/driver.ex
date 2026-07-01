@@ -22,35 +22,33 @@ defmodule Wallabidi.Driver do
   @callback end_session(Session.t()) :: :ok | {:error, reason}
 
   @doc """
-  Invoked by `SessionLifecycle.teardown/1` to release server-side
-  session state before the transport is closed.
+  Wait for the next LiveView DOM patch on the session.
 
-  Drivers implement this to tell their server (chromedriver, Chrome,
-  Lightpanda, etc.) to drop the session. The transport close itself
-  is handled by `SessionLifecycle.teardown/1` and must not be done here.
+  Remote drivers (CDP, BiDi, Lightpanda) implement this by arming a
+  JS-side promise on `liveSocket.main.domCallbacks.onPatchEnd` and
+  racing it against the configured timeout. The in-process
+  `Wallabidi.LiveView.Driver` renders synchronously, so for that
+  driver this is a no-op.
 
-  Drivers that don't need server-side cleanup (e.g. where disconnecting
-  the transport IS the cleanup) can return `:ok` without doing anything.
+  See `Wallabidi.Browser.await_patch/2` for the public-facing
+  contract.
   """
-  @callback release_server_session(Session.t()) :: any
-
-  @optional_callbacks release_server_session: 1
+  @callback await_patch(Session.t(), keyword()) :: :ok
 
   @doc """
   Invoked to accept one alert triggered within `open_dialog_fn` and return the alert message.
   """
-  @callback accept_alert(Session.t(), open_dialog_fn) :: {:ok, [String.t()]} | {:error, reason}
+  @callback accept_alert(Session.t(), open_dialog_fn) :: String.t()
 
   @doc """
   Invoked to accept one confirm triggered within `open_dialog_fn` and return the confirm message.
   """
-  @callback accept_confirm(Session.t(), open_dialog_fn) :: {:ok, [String.t()]} | {:error, reason}
+  @callback accept_confirm(Session.t(), open_dialog_fn) :: String.t()
 
   @doc """
   Invoked to accept one prompt triggered within `open_dialog_fn` and return the prompt message.
   """
-  @callback accept_prompt(Session.t(), String.t() | nil, open_dialog_fn) ::
-              {:ok, [String.t()]} | {:error, reason}
+  @callback accept_prompt(Session.t(), String.t() | nil, open_dialog_fn) :: String.t()
 
   @doc """
   Invoked to close the currently focused window.
@@ -75,12 +73,12 @@ defmodule Wallabidi.Driver do
   @doc """
   Invoked to dismiss one confirm triggered within `open_dialog_fn` and return the confirm message.
   """
-  @callback dismiss_confirm(Session.t(), open_dialog_fn) :: {:ok, [String.t()]} | {:error, reason}
+  @callback dismiss_confirm(Session.t(), open_dialog_fn) :: String.t()
 
   @doc """
   Invoked to dismiss one prompt triggered within `open_dialog_fn` and return the prompt message.
   """
-  @callback dismiss_prompt(Session.t(), open_dialog_fn) :: {:ok, [String.t()]} | {:error, reason}
+  @callback dismiss_prompt(Session.t(), open_dialog_fn) :: String.t()
 
   @doc """
   Invoked to change the driver focus to window specified by handle.
