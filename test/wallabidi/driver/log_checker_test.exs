@@ -73,7 +73,7 @@ defmodule Wallabidi.Driver.LogCheckerTest do
       assert_received {:js_error, "http://localhost/app.js 1:0 ReferenceError: x is not defined"}
     end
 
-    test "filters out chromedriver mapper noise" do
+    test "filters out chromium-bidi mapper noise" do
       session = make_session()
 
       send(

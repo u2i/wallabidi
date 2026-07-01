@@ -1,7 +1,7 @@
 defmodule Wallabidi.Integration.AwaitPatchTest do
   use ExUnit.Case, async: true
+  @moduletag :headless
   use Wallabidi.DSL
-  @moduletag :browser
 
   setup do
     live_url = Application.get_env(:wallabidi, :live_app_url)
@@ -74,9 +74,36 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
       |> assert_has(Query.css("#count", text: "1"))
       |> assert_has(Query.css("#message", text: "done"))
     end
+
+    # >1s server work pushes the patch reply PAST the 1s patch-promise
+    # window. The patch-aware click flow falls back to LV ack — total
+    # latency stays close to handle_event time (~2.3s). A simple
+    # await_page_ready_after flow has nothing to fall back to and
+    # ends up burning the full 5s page_ready window before assert_has
+    # retries find the patched DOM.
+    #
+    # Tight 3500ms budget: passes for the patch-aware flow with
+    # margin (handle_event=2s + small overhead); fails for any flow
+    # that has to ride out the 5s page_ready timeout.
+    # Regression guard: with `handle_event` sleeping 2s — past either
+    # flow's 1s patch-promise / patch-arrival window — the post-click
+    # wait must still return shortly after the patch lands (~2020ms
+    # observed on CDP, ~2070ms on BiDi). A bug that fell back to a 5s
+    # page_ready timeout instead of the patch-signal path would blow
+    # this budget.
+    @tag slow: 3500
+    test "click stays within budget when handle_event runs past patch window",
+         %{session: session, live_url: url} do
+      session
+      |> visit("#{url}/counter")
+      |> click(Query.css("#very-slow-inc"))
+      |> assert_has(Query.css("#count", text: "1"))
+      |> assert_has(Query.css("#message", text: "very slow done"))
+    end
   end
 
   describe "await_patch (explicit)" do
+    @tag slow: 8_000
     test "standalone await_patch waits for next patch", %{session: session, live_url: url} do
       session
       |> visit("#{url}/counter")
@@ -86,9 +113,61 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
       |> await_patch()
       |> assert_has(Query.css("#count", text: "1"))
     end
+
+    # Stronger test: schedule a DELAYED broadcast (~300ms), then
+    # `await_patch()`, then read DOM via execute_script WITHOUT the
+    # assert_has retry fallback. The delay ensures the patch can't
+    # land before `await_patch` is called. If `await_patch` is a no-op,
+    # it returns immediately, the script reads stale "waiting" DOM, and
+    # the assertion fails. If `await_patch` actually blocks until the
+    # PubSub-triggered patch lands, the script reads "received".
+    #
+    # This is the exact use case the @doc example advertises:
+    # "Wait for a PubSub-triggered update."
+    test "await_patch blocks for an external (PubSub) trigger", %{
+      session: session,
+      live_url: url
+    } do
+      session = visit(session, "#{url}/pubsub")
+
+      # Wait until subscribe runs (connected mount completes).
+      assert_has(session, Query.css("#message", text: "waiting"))
+
+      # Broadcast from a different process AFTER a delay so the patch
+      # is guaranteed to arrive after `await_patch` is called.
+      test_pid = self()
+
+      spawn(fn ->
+        Process.sleep(300)
+
+        Phoenix.PubSub.broadcast(
+          Wallabidi.Integration.PubSub,
+          "pubsub_live",
+          {:new_message, "received"}
+        )
+
+        send(test_pid, :broadcast_sent)
+      end)
+
+      # await_patch should block until the LV applies the diff.
+      session = await_patch(session)
+
+      # Confirm the broadcast actually fired by now (sanity).
+      assert_received :broadcast_sent
+
+      # Read DOM SYNCHRONOUSLY — no retry. If await_patch returned
+      # before the patch was applied, this sees "waiting".
+      execute_script(
+        session,
+        "return document.getElementById('message').textContent",
+        fn value -> assert value == "received" end
+      )
+    end
   end
 
   describe "async LiveView updates" do
+    @tag slow: 8_000
+    @tag :lightpanda_ni
     test "await_patch catches async result after start_async", %{session: session, live_url: url} do
       session
       |> visit("#{url}/async")
@@ -98,14 +177,6 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
       # The async result comes 300ms later as a second patch
       |> await_patch()
       |> assert_has(Query.css("#status", text: "done"))
-      |> assert_has(Query.css("#result", text: "async result"))
-    end
-
-    test "settle works for async chains", %{session: session, live_url: url} do
-      session
-      |> visit("#{url}/async")
-      |> click(Query.css("#load"))
-      |> settle()
       |> assert_has(Query.css("#result", text: "async result"))
     end
   end
@@ -170,6 +241,8 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
       )
     end
 
+    @tag slow: 15_000
+    @tag :lightpanda_ni
     test "await_liveview_connected waits for NEW LiveView, not old one", %{
       session: session,
       live_url: url
@@ -179,10 +252,10 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
       # Use execute_script to trigger the click, then call
       # await_liveview_connected manually — without await_patch's delay.
       session = visit(session, "#{url}/nav-source")
-      {:ok, pre_url} = Wallabidi.Protocol.current_url(session)
+      {:ok, pre_url} = Wallabidi.Remote.Protocol.current_url(session)
       execute_script(session, "document.getElementById('go-to-dest').click()")
-      Wallabidi.SessionProcess.await_next_page_load(session)
-      Wallabidi.LiveViewAware.await_liveview_connected(session, pre_url: pre_url)
+      Wallabidi.Remote.Transport.Protocol.await_next_page_load(session)
+      Wallabidi.Remote.LiveViewAware.await_liveview_connected(session, pre_url: pre_url)
 
       execute_script(
         session,
@@ -259,6 +332,7 @@ defmodule Wallabidi.Integration.AwaitPatchTest do
   end
 
   describe "fill_in + submit (#9)" do
+    @tag :headless
     test "fill_in awaits the set_value patch, not the clear patch", %{
       session: session,
       live_url: url

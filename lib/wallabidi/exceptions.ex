@@ -94,7 +94,25 @@ end
 defmodule Wallabidi.NavigationTimeoutError do
   defexception [:message]
 
-  def exception(%{from: from, to: to, timeout_ms: timeout}) do
+  def exception(%{from: from, to: to, timeout_ms: timeout} = ctx) do
+    state_section =
+      case ctx[:page_state] do
+        nil ->
+          ""
+
+        state ->
+          history = ctx[:page_state_history] || []
+          history_lines = Enum.map_join(history, "\n      ", &format_history_entry/1)
+
+          """
+
+
+          Page-ready state at timeout: #{inspect(state)}
+          Recent transitions:
+              #{history_lines}
+          """
+      end
+
     msg = """
     Navigation from #{inspect(from)} to #{inspect(to)} did not complete within #{timeout}ms.
 
@@ -105,10 +123,15 @@ defmodule Wallabidi.NavigationTimeoutError do
       * The destination route's connected mount is slower than the deadline.
       * LiveView's click handler never intercepted the synthetic click — try
         verifying that the click actually dispatched on the anchor element.
-      * The click was classified wrong (see Wallabidi.CDP.Pipeline.classify/2).
+      * The click was classified wrong (see `W.classify` in priv/wallabidi.js).
+    #{state_section}
     """
 
     %__MODULE__{message: msg}
+  end
+
+  defp format_history_entry(%{state: state, doc_id: doc, reason: reason, at_ms: ms}) do
+    "+#{ms}ms  #{state}  doc=#{String.slice(doc || "?", 0, 12)}  reason=#{reason}"
   end
 end
 

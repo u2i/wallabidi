@@ -1,5 +1,6 @@
 defmodule Wallabidi.Integration.LiveApp.Endpoint do
   use Phoenix.Endpoint, otp_app: :wallabidi
+  import SandboxShim
 
   @session_options [
     store: :cookie,
@@ -7,24 +8,19 @@ defmodule Wallabidi.Integration.LiveApp.Endpoint do
     signing_salt: "integration_test_salt"
   ]
 
-  socket("/live", Phoenix.LiveView.Socket,
-    websocket: [connect_info: [:user_agent, session: @session_options]]
+  # === Sandbox integration (from TestApp) ===
+  sandbox_plugs()
+
+  sandbox_socket("/live", Phoenix.LiveView.Socket,
+    websocket: [connect_info: [session: @session_options]]
   )
 
-  # Suppress favicon 404 noise
-  plug(:favicon)
+  # === Phoenix assets (from TestApp) ===
+  plug(Plug.Static, at: "/assets/phoenix", from: {:phoenix, "priv/static"})
+  plug(Plug.Static, at: "/assets/phoenix_live_view", from: {:phoenix_live_view, "priv/static"})
 
-  defp favicon(%{path_info: ["favicon.ico"]} = conn, _opts) do
-    conn |> Plug.Conn.send_resp(204, "") |> Plug.Conn.halt()
-  end
-
-  defp favicon(conn, _opts), do: conn
-
-  # Serve integration test static pages (forms.html, page_1.html, etc.)
-  # so the LiveView driver can access them via dispatch without HTTP
+  # === Static pages (from Integration) ===
   plug(Plug.Static, at: "/", from: "integration_test/support/pages")
-
-  # Serve index.html for / (Plug.Static doesn't do directory indexes)
   plug(:maybe_index_html)
 
   defp maybe_index_html(%{path_info: [], method: "GET"} = conn, _opts) do
@@ -42,9 +38,20 @@ defmodule Wallabidi.Integration.LiveApp.Endpoint do
 
   defp maybe_index_html(conn, _opts), do: conn
 
+  # Suppress favicon 404 noise
+  plug(:favicon)
+
+  defp favicon(%{path_info: ["favicon.ico"]} = conn, _opts) do
+    conn |> Plug.Conn.send_resp(204, "") |> Plug.Conn.halt()
+  end
+
+  defp favicon(conn, _opts), do: conn
+
+  # === Parsers (from TestApp) ===
   plug(Plug.Parsers,
-    parsers: [:urlencoded],
-    pass: ["*/*"]
+    parsers: [:urlencoded, :multipart, :json],
+    pass: ["*/*"],
+    json_decoder: Jason
   )
 
   plug(Plug.Session, @session_options)

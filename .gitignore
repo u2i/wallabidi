@@ -4,6 +4,7 @@
 erl_crash.dump
 *.ez
 /.tool-versions-e
+/integration_test/support/test.db*
 
 /screenshots
 /doc
@@ -11,6 +12,6 @@ erl_crash.dump
 /docs
 .claude/
 /chrome/
-/chromedriver/
 .browsers/
 /priv/bidi-server/node_modules/
+.zig-cache/

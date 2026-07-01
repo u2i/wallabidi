@@ -1,7 +1,6 @@
 defmodule Wallabidi.Integration.CapabilitiesTest do
   use ExUnit.Case, async: true
   use Wallabidi.DSL
-  @moduletag :browser
 
   alias Wallabidi.Integration.SessionCase
 
@@ -27,7 +26,7 @@ defmodule Wallabidi.Integration.CapabilitiesTest do
     end
 
     test "reads capabilities from opts" do
-      capabilities = Wallabidi.Chrome.default_capabilities()
+      capabilities = Wallabidi.Remote.Drivers.ChromeBiDi.default_capabilities()
 
       {:ok, session} = SessionCase.start_test_session(capabilities: capabilities)
 

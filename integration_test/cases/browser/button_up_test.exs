@@ -1,6 +1,11 @@
 defmodule Wallabidi.Integration.Browser.ButtonUpTest do
   use Wallabidi.Integration.SessionCase, async: true
   @moduletag :browser
+  # Each test does two `refute visible?(...)` checks for absent text.
+  # Each correctly burns the full max_wait_time (~3.5s) waiting for the
+  # negation to stabilise — that.s Wallabidi contract for refute_has /
+  # refute visible?. Budget reflects 2×wait + interaction.
+  @moduletag slow: 15_000
   import Wallabidi.Browser
 
   setup %{session: session} do

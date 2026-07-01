@@ -1,21 +1,25 @@
 defmodule Wallabidi.BrowserPaths do
   @moduledoc """
-  Finds Chrome and chromedriver — either local binaries to launch or
-  remote URLs to connect to.
+  Finds browser binaries — either a local binary to launch or a remote
+  URL to connect to.
 
-  ## Resolution order
+  ## Chrome resolution order
 
-  ### Chrome (CDP driver)
   1. `WALLABIDI_CHROME_URL` — connect to remote Chrome (`chrome:9222` or full `ws://` URL)
   2. `WALLABIDI_CHROME_PATH` — local Chrome binary to launch
   3. `.browsers/PATHS` file (written by `mix wallabidi.install`)
   4. System PATH
 
-  ### Chromedriver (BiDi driver)
-  1. `WALLABIDI_CHROMEDRIVER_URL` — connect to remote chromedriver (`http://...`)
-  2. `WALLABIDI_CHROMEDRIVER_PATH` — local chromedriver binary to launch
-  3. `.browsers/PATHS` file
-  4. System PATH
+  ## Lightpanda resolution order
+
+  1. `WALLABIDI_LIGHTPANDA_PATH` — local Lightpanda binary to launch
+  2. `.browsers/PATHS` file (written by `mix wallabidi.install`)
+
+  Lightpanda has no remote-URL mode here: the `lightpanda` package
+  manages the binary and spawns it locally. When neither source
+  resolves, the `lightpanda` package falls back to its own
+  `Lightpanda.bin_path/0` (the version-stamped `.browsers/lightpanda/`
+  dir, or `_build/`).
 
   ## Setup
 
@@ -24,10 +28,15 @@ defmodule Wallabidi.BrowserPaths do
   Or for Docker/CI:
 
       WALLABIDI_CHROME_URL=chrome:9222 mix test.chrome
-      WALLABIDI_CHROMEDRIVER_URL=http://chromedriver:9515/ mix test.chrome.bidi
+      WALLABIDI_LIGHTPANDA_PATH=/opt/lightpanda/lightpanda mix test.lightpanda
   """
 
   @paths_file ".browsers/PATHS"
+
+  # Executable names we accept as a system-provided Chrome/Chromium, in
+  # preference order. Chrome for Testing doesn't ship arm64 Linux builds,
+  # so on that platform a distro Chromium is the supported browser.
+  @system_chrome_names ["google-chrome", "chromium", "chromium-browser"]
 
   @doc """
   Returns `{:url, url}` for remote, `{:path, path}` for local, or `:error`.
@@ -36,22 +45,43 @@ defmodule Wallabidi.BrowserPaths do
     with :skip <- from_url("WALLABIDI_CHROME_URL"),
          :skip <- from_path("WALLABIDI_CHROME_PATH"),
          :skip <- from_paths_file("CHROME"),
-         :skip <- from_system(["google-chrome", "chromium", "chromium-browser"]) do
+         :skip <- from_system(@system_chrome_names) do
       :error
     end
   end
 
   @doc """
-  Returns `{:url, url}` for remote, `{:path, path}` for local, or `:error`.
+  Returns the path to a Chrome/Chromium binary already on the system
+  `PATH` (`google-chrome`, `chromium`, or `chromium-browser`), or `nil`.
+
+  Used by the installer to skip the Chrome for Testing download when a
+  usable browser is already present.
   """
-  def chromedriver do
-    with :skip <- from_url("WALLABIDI_CHROMEDRIVER_URL"),
-         :skip <- from_path("WALLABIDI_CHROMEDRIVER_PATH"),
-         :skip <- from_paths_file("CHROMEDRIVER"),
-         :skip <- from_system(["chromedriver"]) do
-      :error
+  def system_chrome do
+    case from_system(@system_chrome_names) do
+      {:path, path} -> path
+      :skip -> nil
     end
   end
+
+  @doc """
+  True on platforms Chrome for Testing has no build for — currently
+  arm64/aarch64 Linux. On these, `mix wallabidi.install` can't download
+  Chrome and a system Chromium must be used instead.
+  """
+  def chrome_for_testing_unsupported? do
+    chrome_for_testing_unsupported?(
+      :os.type(),
+      to_string(:erlang.system_info(:system_architecture))
+    )
+  end
+
+  @doc false
+  def chrome_for_testing_unsupported?(os_type, arch) do
+    match?({:unix, :linux}, os_type) and arm?(arch)
+  end
+
+  defp arm?(arch), do: String.contains?(arch, "aarch64") or String.contains?(arch, "arm")
 
   @doc "Returns the local Chrome binary path or raises."
   def chrome_path! do
@@ -67,31 +97,9 @@ defmodule Wallabidi.BrowserPaths do
     end
   end
 
-  @doc "Returns the local chromedriver binary path or raises."
-  def chromedriver_path! do
-    case chromedriver() do
-      {:path, path} ->
-        path
-
-      {:url, _} ->
-        raise "WALLABIDI_CHROMEDRIVER_URL is set — use chromedriver_url/0 instead"
-
-      :error ->
-        raise "Chromedriver not found. Run `mix wallabidi.install` or set WALLABIDI_CHROMEDRIVER_PATH."
-    end
-  end
-
   @doc "Returns the remote Chrome URL or nil."
   def chrome_url do
     case chrome() do
-      {:url, url} -> url
-      _ -> nil
-    end
-  end
-
-  @doc "Returns the remote chromedriver URL or nil."
-  def chromedriver_url do
-    case chromedriver() do
       {:url, url} -> url
       _ -> nil
     end
@@ -105,11 +113,52 @@ defmodule Wallabidi.BrowserPaths do
     end
   end
 
-  @doc "Returns `{:ok, path}` for local chromedriver, or `:error`. Ignores URLs."
-  def chromedriver_path do
-    case chromedriver() do
+  @doc """
+  Returns `{:path, path}` for a resolved Lightpanda binary, or `:error`.
+
+  Unlike `chrome/0` there is no remote-URL mode — the `lightpanda`
+  package launches the binary locally.
+  """
+  def lightpanda do
+    with :skip <- from_path("WALLABIDI_LIGHTPANDA_PATH"),
+         :skip <- from_paths_file("LIGHTPANDA") do
+      :error
+    end
+  end
+
+  @doc "Returns `{:ok, path}` for a resolved Lightpanda binary, or `:error`."
+  def lightpanda_path do
+    case lightpanda() do
       {:path, path} -> {:ok, path}
       _ -> :error
+    end
+  end
+
+  @doc """
+  Returns the directory Lightpanda should install into, version-stamped
+  to mirror Chrome for Testing's `.browsers/chrome/<target>-<version>/`
+  layout — e.g. `.browsers/lightpanda/aarch64-macos-fork-2026-05-30`.
+
+  Used both by `mix wallabidi.install` (to place the binary) and by the
+  test config (to point `config :lightpanda, :install_dir` at the same
+  spot so the runtime resolves it). Returns `nil` if the `lightpanda`
+  package is unavailable or too old to expose `target/0` + `release/0`.
+  """
+  @lightpanda_install_root Path.join(".browsers", "lightpanda")
+  # `lightpanda` is an `only: :test` dep, so the module isn't on the path
+  # when compiling in :dev/:prod (e.g. `mix docs`). Resolve it as a
+  # runtime atom and call via apply/3 so the compiler doesn't try (and
+  # warn) about an undefined module.
+  @lightpanda Lightpanda
+  def lightpanda_install_dir do
+    if Code.ensure_loaded?(@lightpanda) and
+         function_exported?(@lightpanda, :target, 0) and
+         function_exported?(@lightpanda, :release, 0) do
+      # credo:disable-for-next-line Credo.Check.Refactor.Apply
+      target = apply(@lightpanda, :target, [])
+      # credo:disable-for-next-line Credo.Check.Refactor.Apply
+      release = apply(@lightpanda, :release, [])
+      Path.join(@lightpanda_install_root, "#{target}-#{release}")
     end
   end
 

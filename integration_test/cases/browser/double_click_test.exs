@@ -1,6 +1,9 @@
 defmodule Wallabidi.Integration.Browser.DoubleClickTest do
   use Wallabidi.Integration.SessionCase, async: true
   @moduletag :browser
+  # `refute visible?(...)` waits the full max_wait_time per Wallabidi
+  # contract; double_click action itself adds a beat.
+  @moduletag slow: 10_000
 
   setup %{session: session} do
     page = visit(session, "click.html")

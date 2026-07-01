@@ -7,7 +7,4 @@ config :wallabidi,
   screenshot_on_failure: false,
   js_errors: true
 
-config :lightpanda,
-  version: "0.2.9"
-
 import_config "#{config_env()}.exs"

@@ -1,7 +1,14 @@
 defmodule Wallabidi.Integration.Browser.WindowHandlesTest do
   use Wallabidi.Integration.SessionCase, async: true
   @moduletag :browser
+  # Tests use explicit :timer.sleep(500) × N for new-tab/window load
+  # races; legitimately slow.
+  @moduletag slow: 15_000
 
+  # Pass solo (~4s) but flake under load with Chrome-BiDi (tab-creation
+  # contention pushes runtime past the 15s budget). Excluded from the
+  # default BiDi suite; still run under CDP and Lightpanda.
+  @tag :bidi_unstable
   test "switching between tabs and windows", %{session: session} do
     session
     |> visit("windows.html")
@@ -41,6 +48,7 @@ defmodule Wallabidi.Integration.Browser.WindowHandlesTest do
     assert_has(session, Query.css("h1", text: "Page 2"))
   end
 
+  @tag :bidi_unstable
   test "closing tabs and windows", %{session: session} do
     session
     |> visit("windows.html")

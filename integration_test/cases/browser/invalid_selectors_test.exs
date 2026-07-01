@@ -3,7 +3,7 @@ defmodule Wallabidi.Integration.Browser.InvalidSelectorsTest do
 
   import Wallabidi.Query, only: [css: 1]
 
-  @moduletag :browser
+  @moduletag :headless
 
   describe "with an invalid selector state" do
     test "find returns an exception", %{session: session} do

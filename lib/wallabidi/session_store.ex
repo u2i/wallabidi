@@ -2,16 +2,15 @@ defmodule Wallabidi.SessionStore do
   @moduledoc false
 
   # Lightweight registry mapping test-process pids to their active
-  # Wallabidi sessions. Populated by SessionProcess on startup and
-  # cleaned up in SessionProcess.terminate/2.
+  # Wallabidi sessions. The Transport actors register themselves on
+  # init and unregister on terminate.
   #
   # Used by `Wallabidi.Feature.Utils.end_all_sessions/1` during sandbox
   # checkin to find and close all sessions owned by a test before the
   # sandbox is released.
   #
-  # Unlike the old SessionStore, this one does NOT monitor or drive
-  # cleanup — SessionProcess handles its own lifecycle via Process.monitor
-  # on the owner. This module is purely a lookup table.
+  # Pure lookup table — does not monitor or drive cleanup. The actors
+  # handle their own lifecycle via Process.monitor on the owner.
 
   use GenServer
   use EventEmitter, :emitter
@@ -22,15 +21,15 @@ defmodule Wallabidi.SessionStore do
   end
 
   @doc """
-  Registers a session as owned by a specific process. Called by
-  SessionProcess.init/1.
+  Registers a session as owned by a specific process. Called from
+  the Transport actor's init/1.
   """
   def register(store \\ __MODULE__, session, owner_pid) do
     GenServer.call(store, {:register, session, owner_pid})
   end
 
   @doc """
-  Unregisters a session. Called by SessionProcess.terminate/2.
+  Unregisters a session. Called from the Transport actor's terminate/2.
   """
   def unregister(store \\ __MODULE__, session) do
     GenServer.call(store, {:unregister, session})
@@ -47,11 +46,6 @@ defmodule Wallabidi.SessionStore do
 
     :ets.select(name, [{{{:_, :"$1"}, :"$2"}, [{:==, :"$1", owner_pid}], [:"$2"]}])
   end
-
-  # Kept for backward compat with existing call sites; now a no-op
-  # since SessionProcess handles lifecycle itself.
-  def monitor(_store \\ __MODULE__, _session), do: :ok
-  def demonitor(_store \\ __MODULE__, _session), do: :ok
 
   def init(args) do
     name = Keyword.get(args, :ets_name, :session_store)

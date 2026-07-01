@@ -15,8 +15,6 @@ defmodule Wallabidi.Integration.LiveView.SlowEventAckTest do
 
   use Wallabidi.Integration.SessionCase, async: false
 
-  @moduletag :browser
-
   @base Application.compile_env(:wallabidi, :live_app_url, "http://localhost:4321")
 
   test "click returns only after the server has acked the slow event",

@@ -50,10 +50,19 @@ defmodule Wallabidi.Feature do
             unquote(__MODULE__).Utils.register_session_cleanup(sandbox, test_pid)
           end
 
+          await_context = context
+
           on_exit(fn ->
             # Sandbox checkin runs cleanup callbacks first, then
             # await_orphans, rollback, kill, check logs
             unquote(__MODULE__).Utils.checkin_sandbox(sandbox)
+
+            # Fail the test if any event-driven await fell back to its
+            # timeout during the body (a masked regression — see
+            # Wallabidi.Test.AwaitMonitor). Runs in a separate process, so
+            # we pass the captured test_pid; context carries the name + any
+            # @tag :expected_await_timeout opt-out.
+            Wallabidi.Test.AwaitMonitor.check!(test_pid, await_context)
           end)
 
           result
@@ -165,26 +174,23 @@ defmodule Wallabidi.Feature do
 
     def resolve_test_driver(context) do
       cond do
-        # WALLABIDI_BROWSER forces all tests to a specific browser
-        browser = System.get_env("WALLABIDI_BROWSER") ->
-          String.to_existing_atom(browser)
+        # WALLABIDI_DRIVER / WALLABIDI_BROWSER pin the whole run to one
+        # driver — every test routes there regardless of its capability
+        # tag. This is what the per-driver CI lanes use to run "everything
+        # this browser can run" (combined with --only/--exclude tag
+        # filters). The env var VALUE selects the driver.
+        pinned = Wallabidi.pinned_driver() ->
+          pinned
 
-        # When running inside a specific driver's test suite (e.g. WALLABIDI_DRIVER=chrome),
-        # don't route to a different driver based on tags
-        System.get_env("WALLABIDI_DRIVER") in ["chrome", "chrome_cdp", "lightpanda"] ->
-          Wallabidi.resolve_driver()
-
-        # @tag :browser — needs full browser (Chrome)
+        # @tag :browser — needs a full browser
         context[:browser] ->
-          Application.get_env(:wallabidi, :browser, :chrome_cdp)
+          Wallabidi.driver_for(:browser)
 
         # @tag :headless — needs a headless browser
-        # Defaults to chrome_cdp since Lightpanda is experimental and
-        # doesn't yet support WebSocket-based features like LiveView.
         context[:headless] ->
-          Application.get_env(:wallabidi, :headless, :chrome_cdp)
+          Wallabidi.driver_for(:headless)
 
-        # Default — use the fastest available driver
+        # Default — untagged, cheapest driver
         true ->
           Wallabidi.resolve_driver()
       end
@@ -265,13 +271,9 @@ defmodule Wallabidi.Feature do
         |> Enum.filter(&repo_started?/1)
       end
 
-      defp repo_started?(repo) do
-        case Ecto.Repo.Registry.lookup(repo) do
-          {_, _, _} -> true
-          _ -> false
-        end
-      rescue
-        _ -> false
+      @doc false
+      def repo_started?(repo) do
+        not is_nil(Process.whereis(repo))
       end
 
       defp checkout_ecto_repos(repo, async) do

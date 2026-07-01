@@ -240,7 +240,7 @@ defmodule Wallabidi.Integration.Browser.Actions.ClickButtonTest do
     assert find(page, css("#name_field")) |> has_value?("")
   end
 
-  @tag :browser
+  @tag :headless
   test "clicking input type[image] via name submits form", %{page: page} do
     current_url =
       page
@@ -251,7 +251,7 @@ defmodule Wallabidi.Integration.Browser.Actions.ClickButtonTest do
     assert current_url =~ "http://localhost:#{URI.parse(current_url).port}/index.html"
   end
 
-  @tag :browser
+  @tag :headless
   test "clicking input type[image] via id submits form", %{page: page} do
     current_url =
       page
