@@ -29,12 +29,12 @@ jobs:
       with:
         node-version: 20
 
-    - uses: actions/cache@v5
+    - uses: actions/cache@v6
       with:
         path: deps
         key: ${{ runner.os }}-mix-${{ matrix.elixir-otp.otp }}-${{ hashFiles('mix.lock') }}
 
-    - uses: actions/cache@v5
+    - uses: actions/cache@v6
       with:
         path: .browsers
         key: ${{ runner.os }}-browsers-${{ hashFiles('lib/wallabidi/browser_paths.ex') }}
@@ -96,19 +96,19 @@ jobs:
       with:
         node-version: 20
 
-    - uses: actions/cache@v5
+    - uses: actions/cache@v6
       with:
         path: deps
         key: ${{ runner.os }}-mix-${{ matrix.elixir-otp.otp }}-${{ hashFiles('mix.lock') }}
 
     - if: matrix.driver.needs_browser_install
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
         path: .browsers
         key: ${{ runner.os }}-browsers-${{ hashFiles('lib/wallabidi/browser_paths.ex') }}
 
     - if: matrix.driver.task == 'test.chrome.bidi'
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
         path: priv/bidi-server/node_modules
         key: ${{ runner.os }}-bidi-server-${{ hashFiles('priv/bidi-server/package.json') }}
@@ -138,12 +138,12 @@ jobs:
       with:
         node-version: 20
 
-    - uses: actions/cache@v5
+    - uses: actions/cache@v6
       with:
         path: deps
         key: ${{ runner.os }}-mix-28.x-${{ hashFiles('mix.lock') }}
 
-    - uses: actions/cache@v5
+    - uses: actions/cache@v6
       with:
         path: .browsers
         key: ${{ runner.os }}-browsers-${{ hashFiles('lib/wallabidi/browser_paths.ex') }}
@@ -163,12 +163,12 @@ jobs:
         otp-version: 28.x
         elixir-version: 1.19.x
 
-    - uses: actions/cache@v5
+    - uses: actions/cache@v6
       with:
         path: deps
         key: ${{ runner.os }}-mix-${{ hashFiles('mix.lock') }}
 
-    - uses: actions/cache@v5
+    - uses: actions/cache@v6
       with:
         path: _build
         key: ${{ runner.os }}-dialyzer-28-1.19-${{ hashFiles('mix.lock') }}
