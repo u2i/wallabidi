@@ -271,13 +271,9 @@ defmodule Wallabidi.Feature do
         |> Enum.filter(&repo_started?/1)
       end
 
-      defp repo_started?(repo) do
-        case Ecto.Repo.Registry.lookup(repo) do
-          {_, _, _} -> true
-          _ -> false
-        end
-      rescue
-        _ -> false
+      @doc false
+      def repo_started?(repo) do
+        not is_nil(Process.whereis(repo))
       end
 
       defp checkout_ecto_repos(repo, async) do

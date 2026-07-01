@@ -32,7 +32,8 @@ defmodule Wallabidi.Mixfile do
         "test.lightpanda": fn args -> test_driver("lightpanda", "Lightpanda", args) end,
         "test.chrome": fn args -> test_driver("chrome_cdp", "Chrome (CDP)", args) end,
         "test.chrome.bidi": fn args -> test_driver("chrome", "Chrome (BiDi)", args) end,
-        "test.bench": fn args -> test_driver("bench", "Benchmarks", args) end
+        "test.bench": fn args -> test_driver("bench", "Benchmarks", args) end,
+        "test.legacy": fn args -> test_legacy(args) end
       ],
       test_paths: test_paths(System.get_env("WALLABIDI_DRIVER")),
       dialyzer: dialyzer()
@@ -47,7 +48,8 @@ defmodule Wallabidi.Mixfile do
         "test.lightpanda": :test,
         "test.chrome": :test,
         "test.chrome.bidi": :test,
-        "test.bench": :test
+        "test.bench": :test,
+        "test.legacy": :test
       ]
     ]
   end
@@ -155,7 +157,28 @@ defmodule Wallabidi.Mixfile do
   defp test_paths("chrome"), do: ["integration_test/cases"]
   defp test_paths("chrome_cdp"), do: ["integration_test/cases"]
   defp test_paths("bench"), do: ["bench"]
-  defp test_paths(_), do: ["test"]
+
+  defp test_paths(_),
+    do:
+      if(System.get_env("WALLABIDI_LEGACY") == "1",
+        do: ["integration_test/legacy"],
+        else: ["test"]
+      )
+
+  defp test_legacy(args) do
+    args = if IO.ANSI.enabled?(), do: ["--color" | args], else: ["--no-color" | args]
+    IO.puts("==> Legacy (otp_app path): mix test --no-start")
+
+    {_, res} =
+      System.cmd("mix", ["test", "--no-start" | args],
+        into: IO.binstream(:stdio, :line),
+        env: [{"WALLABIDI_LEGACY", "1"}]
+      )
+
+    if res > 0 do
+      System.at_exit(fn _ -> exit({:shutdown, 1}) end)
+    end
+  end
 
   defp test_driver(driver, label, args) do
     args = if IO.ANSI.enabled?(), do: ["--color" | args], else: ["--no-color" | args]
