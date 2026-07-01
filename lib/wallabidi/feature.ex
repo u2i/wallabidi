@@ -271,7 +271,8 @@ defmodule Wallabidi.Feature do
         |> Enum.filter(&repo_started?/1)
       end
 
-      defp repo_started?(repo) do
+      @doc false
+      def repo_started?(repo) do
         not is_nil(Process.whereis(repo))
       end
 
