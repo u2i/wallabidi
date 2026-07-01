@@ -1,5 +1,31 @@
 # Changelog
 
+## Wallabidi 0.4.2 (2026-06-30)
+
+Patch release: race-free `await_patch`, a long-standing sandbox-checkout
+bug fix, and broader CI coverage. No public API changes.
+
+### Added
+
+- **Legacy otp_app integration test suite** — `mix test.legacy` exercises
+  the `maybe_checkout_repos` fallback path (used when sandbox_case is absent)
+  end-to-end, including sandbox propagation to the browser. (#51)
+
+### Fixed
+
+- **`execute_script` + `await_patch` race condition** — `execute_script` now
+  snapshots the current page ID before running the script. A subsequent
+  `await_patch` uses that snapshot to wait for the correct page-ready event,
+  eliminating the race where the page transitioned between the script
+  completing and `await_patch` arming. (#47)
+- **`repo_started?` always returned false** — the legacy otp_app sandbox path
+  used `Ecto.Repo.Registry.lookup/1` with a `{_, _, _}` pattern match;
+  `Registry.lookup` returns a map, so every repo was silently treated as not
+  started and sandbox checkout was skipped. Fixed with `Process.whereis/1`.
+  Thanks to Wígny for the fix. (#51)
+- **sandbox_case bumped to 0.4.1** — picks up the async: false ownership
+  manager fix. (#50)
+
 ## Wallabidi 0.4.1 (2026-06-02)
 
 Patch release: test-suite reliability, a lock-free transport hot path, and
