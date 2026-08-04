@@ -15,7 +15,7 @@ jobs:
     strategy:
       matrix:
         otp: [27.x]
-        elixir: [1.17.x]
+        elixir: [1.18.x]
     steps:
       - uses: googleapis/release-please-action@v5
         id: release
