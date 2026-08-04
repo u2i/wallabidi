@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.4.3](https://github.com/u2i/wallabidi/compare/v0.4.2...v0.4.3) (2026-08-04)
+
+
+### Changed
+
+* **deps:** bump lightpanda to 0.3.6, official upstream binaries ([b9c9193](https://github.com/u2i/wallabidi/commit/b9c91934eecb243bc62f2ec2ae5167eabb8a9c33))
+
+
+### Dependencies
+
+* **deps:** bump actions/setup-node from 4 to 7 ([#55](https://github.com/u2i/wallabidi/issues/55)) ([28bf049](https://github.com/u2i/wallabidi/commit/28bf0490e21d158509c40f4fcc7043d16c403899))
+
+
+### CI
+
+* make release-please actually work ([a0521df](https://github.com/u2i/wallabidi/commit/a0521df8c60134f9f34ab2f1716492109f969460))
+
 ## 0.4.2 (2026-06-30)
 
 Patch release: race-free `await_patch`, a long-standing sandbox-checkout
