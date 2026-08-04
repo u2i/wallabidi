@@ -15,7 +15,8 @@ defmodule Wallabidi.Mixfile do
       start_permanent: Mix.env() == :prod,
       package: package(),
       description:
-        "Concurrent browser testing for Elixir, powered by WebDriver BiDi. A fork of Wallaby.",
+        "Concurrent browser testing and scraping for Elixir, powered by WebDriver BiDi. " <>
+          "A fork of Wallaby.",
       deps: deps(),
       docs: docs(),
 
