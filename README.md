@@ -2,14 +2,18 @@
 
 [![License](https://img.shields.io/hexpm/l/wallabidi.svg)](https://github.com/u2i/wallabidi/blob/main/LICENSE)
 
-Concurrent browser automation for Elixir. Write your tests once — they run on the fastest driver that supports them.
+Concurrent browser automation for Elixir — drive real browsers to test your app, or to read pages that only exist after JavaScript runs.
 
-What that means in practice:
+One API over four drivers, so you write the interaction once and choose what executes it:
 
 - **Real multi-threading with Chrome via CDP** (and aspirationally BiDi) — no chromedriver in the loop. CDP performs better today; BiDi is the future-proof path and tracks the W3C protocol's evolution.
-- **Multi-threading with Lightpanda** — a headless JS-capable browser that's fast enough to run nearly as quickly as the LiveView driver. Lightpanda is a practical default for full functional test suites.
-- **LiveView driver** for tests that don't need a browser at all — renders pages in-process via `Phoenix.ConnTest`.
-- **Scraping and automation outside ExUnit** — the browser drivers are plain processes, so you can drive them from a script, Mix task, or GenServer to read JavaScript-rendered pages. See the [Scraping guide](guides/scraping.md).
+- **Multi-threading with Lightpanda** — a headless JS-capable browser fast enough to run nearly as quickly as the LiveView driver, at ~70ms a session.
+- **LiveView driver** — renders pages in-process via `Phoenix.ConnTest`, no browser at all.
+- **Automatic waiting** for content that arrives late — a framework rendering, an XHR resolving — so neither tests nor scrapers need polling loops.
+
+**Testing:** tag each test with the capability it needs and a plain `mix test` routes it to the cheapest driver that can run it. See [Setup](guides/setup.md).
+
+**Scraping and automation:** sessions are plain processes, so you can drive one from a script, Mix task, or GenServer — with HTTP status, response headers, and real JS execution. See the [Scraping guide](guides/scraping.md).
 
 Wallabidi is a fork of [Wallaby](https://github.com/elixir-wallaby/wallaby) with these four drivers, automatic LiveView-aware waiting, and a public API close to Wallaby's for easy migration.
 
@@ -17,10 +21,14 @@ Wallabidi is a fork of [Wallaby](https://github.com/elixir-wallaby/wallaby) with
 
 | Driver | Speed | What it does | When to use |
 |--------|-------|-------------|-------------|
-| **LiveView** | ~30ms/test | Renders pages in-process via Phoenix.ConnTest. No browser. | Default for local dev — fastest feedback |
-| **Lightpanda** | ~50ms/test | Headless JS-capable browser via CDP. No CSS rendering. | Fast path for full functional suites — nearly LiveView speed |
-| **Chrome (CDP)** | ~200ms/test | Full browser via Chrome DevTools Protocol. Real multi-threading via Chrome's per-target threads. | Full fidelity (CSS, screenshots, mouse). Best concurrent throughput today. |
+| **LiveView** | ~30ms/test | Renders pages in-process via Phoenix.ConnTest. No browser. | Default for local dev — fastest feedback. Testing only. |
+| **Lightpanda** | ~50ms/test | Headless JS-capable browser via CDP. No CSS rendering. | Fast path for full functional suites — nearly LiveView speed. Also the volume choice for scraping. |
+| **Chrome (CDP)** | ~200ms/test | Full browser via Chrome DevTools Protocol. Real multi-threading via Chrome's per-target threads. | Full fidelity (CSS, screenshots, mouse). Best concurrent throughput today, and the fidelity choice for scraping. |
 | **Chrome (BiDi)** | ~600ms/test | Full browser via WebDriver BiDi (chromium-bidi → Chrome). Cross-engine portable. | Future-proof choice as BiDi matures; aspirationally replaces CDP. |
+
+Per-test figures are from the test suite; for scraping trade-offs (session
+start cost, User-Agent, `file://`, screenshots) see the
+[Scraping guide](guides/scraping.md#choosing-a-driver).
 
 Tests declare their minimum requirement with tags:
 
