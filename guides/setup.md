@@ -62,11 +62,11 @@ When Chrome runs as a service in a Docker Compose stack, point Wallabidi at it w
 
 ### Lightpanda
 
-The Lightpanda binary is provided by the [`lightpanda`](https://hex.pm/packages/lightpanda) dependency (the release tag is baked into that dep — bump it to upgrade). To use the Lightpanda driver, **add the dep to your own project** — it is not pulled in transitively:
+The Lightpanda binary is provided by the [`lightpanda`](https://hex.pm/packages/lightpanda) dependency (the release tag is baked into that dep — bump it to upgrade). Binaries come from the official [`lightpanda-io/browser`](https://github.com/lightpanda-io/browser) releases; `~> 0.3.6` is the minimum supported version, as earlier releases downloaded from a fork. To use the Lightpanda driver, **add the dep to your own project** — it is not pulled in transitively:
 
 ```elixir
 # mix.exs
-{:lightpanda, "~> 0.3", only: :test}
+{:lightpanda, "~> 0.3.6", only: :test}
 ```
 
 `mix wallabidi.install` (and `mix wallabidi.install.lightpanda`) then downloads the binary into `.browsers/lightpanda/` alongside Chrome. Without the dep the Lightpanda install task is a no-op (it prints `Skipping Lightpanda (the lightpanda dep is not available)`) and the Lightpanda driver can't start. Override the binary path with `WALLABIDI_LIGHTPANDA_PATH` for Docker/CI images that already ship Lightpanda:

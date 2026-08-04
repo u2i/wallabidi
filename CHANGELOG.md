@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Lightpanda now uses official upstream binaries** — bumped the test-only
+  `lightpanda` dep to `~> 0.3.6`, which downloads from the official
+  [`lightpanda-io/browser`](https://github.com/lightpanda-io/browser) releases
+  instead of the `u2i/lightpanda-browser` fork builds used by `0.3.4-rc.0`.
+  `~> 0.3.6` is now the minimum supported version; consumers who declare the
+  dep themselves should bump their own constraint to match. The full Lightpanda
+  integration suite passes unchanged against the upstream 0.3.6 binary.
+
 ## Wallabidi 0.4.2 (2026-06-30)
 
 Patch release: race-free `await_patch`, a long-standing sandbox-checkout
