@@ -95,6 +95,40 @@ defmodule Wallabidi do
   @doc """
   Starts a browser session.
 
+  ## Options
+
+    * `:driver` — which driver runs this session (`:live_view`,
+      `:lightpanda`, `:chrome_cdp`, `:chrome`). Defaults to the configured
+      driver.
+    * `:user_agent` — replace this session's User-Agent. Chrome only; see
+      below.
+    * `:window_size` — `[width: w, height: h]`.
+    * `:metadata` — BEAM sandbox metadata, appended to the User-Agent so
+      DB-backed tests can find the sandbox owner. Composes with a custom
+      User-Agent, which becomes the base.
+
+  ## Setting the User-Agent
+
+  For most cases set it once, in config — this works on **every** driver:
+
+  ```
+  config :wallabidi, user_agent: "MyScraper/1.0 (+https://example.com/bot)"
+  ```
+
+  Pass `:user_agent` to `start_session/1` only when sessions need
+  *different* User-Agents at the same time (mobile vs desktop, say):
+
+  ```
+  {:ok, mobile} = Wallabidi.start_session(driver: :chrome_cdp, user_agent: "…iPhone…")
+  {:ok, desktop} = Wallabidi.start_session(driver: :chrome_cdp)
+  ```
+
+  That option is Chrome-only. Lightpanda sets its User-Agent per process
+  rather than per session, so it can honour the config but not the option —
+  passing it there logs a warning. Lightpanda also accepts
+  `config :wallabidi, lightpanda_user_agent_suffix: "MyScraper/1.0"`, which
+  appends to `Lightpanda/X.Y` instead of replacing it.
+
   ## Multiple sessions
 
   Each session runs in its own browser so that each test runs in isolation.

@@ -10,7 +10,7 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
 
   use Wallabidi.Remote.Driver.Generic
 
-  alias Wallabidi.{Metadata, Session}
+  alias Wallabidi.{Metadata, Session, UserAgent}
   alias Wallabidi.Remote.BiDi.Client, as: BiDiClient
   alias Wallabidi.Remote.BiDi.WebSocketClient
   alias Wallabidi.Remote.Browser
@@ -109,8 +109,11 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
       caller = Keyword.get(opts, :owner, self())
       _ = WebSocketClient.subscribe(session.bidi_pid, "log.entryAdded", caller, :global)
 
-      if metadata = Keyword.get(opts, :metadata) do
-        ua = Metadata.append(@base_user_agent, metadata)
+      if UserAgent.override?(opts) do
+        ua =
+          opts
+          |> UserAgent.resolve(@base_user_agent)
+          |> Metadata.append(Keyword.get(opts, :metadata))
 
         _ =
           Protocol.cdp_send(
