@@ -1,18 +1,6 @@
 # Changelog
 
-## Unreleased
-
-### Changed
-
-- **Lightpanda now uses official upstream binaries** — bumped the test-only
-  `lightpanda` dep to `~> 0.3.6`, which downloads from the official
-  [`lightpanda-io/browser`](https://github.com/lightpanda-io/browser) releases
-  instead of the `u2i/lightpanda-browser` fork builds used by `0.3.4-rc.0`.
-  `~> 0.3.6` is now the minimum supported version; consumers who declare the
-  dep themselves should bump their own constraint to match. The full Lightpanda
-  integration suite passes unchanged against the upstream 0.3.6 binary.
-
-## Wallabidi 0.4.2 (2026-06-30)
+## 0.4.2 (2026-06-30)
 
 Patch release: race-free `await_patch`, a long-standing sandbox-checkout
 bug fix, and broader CI coverage. No public API changes.
@@ -38,7 +26,7 @@ bug fix, and broader CI coverage. No public API changes.
 - **sandbox_case bumped to 0.4.1** — picks up the async: false ownership
   manager fix. (#50)
 
-## Wallabidi 0.4.1 (2026-06-02)
+## 0.4.1 (2026-06-02)
 
 Patch release: test-suite reliability, a lock-free transport hot path, and
 wider CI coverage. No public API changes.
@@ -84,7 +72,7 @@ wider CI coverage. No public API changes.
   `{:wallabidi, "~> 0.4"}` (the 0.4 stable line) instead of the now-stale
   `~> 0.4.0-rc`.
 
-## Wallabidi 0.4.0 (2026-06-01)
+## 0.4.0 (2026-06-01)
 
 First stable 0.4.0 release. Highlights since the 0.3 line (see the rc
 entries below for detail):
@@ -112,7 +100,7 @@ entries below for detail):
 
 - Depend on `sandbox_case ~> 0.4.0` (final).
 
-## Wallabidi 0.4.0-rc.11 (2026-06-01)
+## 0.4.0-rc.11 (2026-06-01)
 
 ### Changed
 
@@ -153,7 +141,7 @@ entries below for detail):
   interaction (the auto-wait must ride past several unsolicited patches).
   Runs on all drivers, including the in-process LiveView driver.
 
-## Wallabidi 0.4.0-rc.10 (2026-05-31)
+## 0.4.0-rc.10 (2026-05-31)
 
 ### Added
 
@@ -191,7 +179,7 @@ entries below for detail):
   and not `push_navigate`/`redirect` (navigations) or client-only
   `Phoenix.LiveView.JS` commands.
 
-## Wallabidi 0.4.0-rc.9 (2026-05-31)
+## 0.4.0-rc.9 (2026-05-31)
 
 ### Docs
 
@@ -208,7 +196,7 @@ entries below for detail):
   single-threaded Mapper goes flaky at the typical 16-core default. The
   docs no longer prescribe caps the data doesn't justify.
 
-## Wallabidi 0.4.0-rc.8 (2026-05-30)
+## 0.4.0-rc.8 (2026-05-30)
 
 ### Added
 
@@ -273,7 +261,7 @@ entries below for detail):
 > documented `mimic: true` form — earlier versions crash on it. The
 > explicit `mimic: [modules: […]]` form works on any 0.3.x.
 
-## Wallabidi 0.4.0-rc.7 (2026-05-30)
+## 0.4.0-rc.7 (2026-05-30)
 
 ### Fixed
 
@@ -287,7 +275,7 @@ entries below for detail):
   for the line that actually resolves to an existing path under
   `.browsers/`, rather than trusting line position.
 
-## Wallabidi 0.4.0-rc.6 (2026-05-30)
+## 0.4.0-rc.6 (2026-05-30)
 
 ### Changed
 
@@ -327,7 +315,7 @@ entries below for detail):
 
 - `lightpanda` `~> 0.3.0` → `~> 0.3.1`.
 
-## Wallabidi 0.4.0-rc.5 (2026-05-28)
+## 0.4.0-rc.5 (2026-05-28)
 
 Documentation-only release candidate. No code or API changes.
 
@@ -345,7 +333,7 @@ Documentation-only release candidate. No code or API changes.
   - `guides/migrating.md` — what's different from Wallaby and the
     find-and-replace migration steps.
 
-## Wallabidi 0.4.0-rc.4 (2026-05-26)
+## 0.4.0-rc.4 (2026-05-26)
 
 * **Fix `mix wallabidi.install` from consumer projects.** Two bugs:
 
@@ -361,7 +349,7 @@ Documentation-only release candidate. No code or API changes.
     `MatchError` instead of a clear error. Now surfaces the exit
     status with a useful message.
 
-## Wallabidi 0.4.0-rc.3 (2026-05-25)
+## 0.4.0-rc.3 (2026-05-25)
 
 ### Features
 
@@ -400,7 +388,7 @@ Documentation-only release candidate. No code or API changes.
   In-process LV driver: `with_latency` and `:defer` are no-ops —
   there's no round-trip to delay or defer.
 
-## Wallabidi 0.4.0-rc.2 (2026-05-24)
+## 0.4.0-rc.2 (2026-05-24)
 
 * **Fix WebSocket upgrade failure against Chromium 148+ over a
   non-`localhost` hostname.** Chromium 148 tightened DevTools' host
@@ -418,7 +406,7 @@ Documentation-only release candidate. No code or API changes.
   `KeyError :buffer not found in nil`. The original error text from
   the server is now surfaced in the logs.
 
-## Wallabidi 0.4.0-rc.1 (2026-05-24)
+## 0.4.0-rc.1 (2026-05-24)
 
 * `priv/wallabidi.js` + `priv/wallabidi.min.js` are now included in
   the Hex tarball. They were accidentally excluded in 0.4.0-rc.0
@@ -427,7 +415,7 @@ Documentation-only release candidate. No code or API changes.
   them at consumer compile time via `@external_resource`, so without
   them the package fails to compile.
 
-## Wallabidi 0.4.0-rc.0 (2026-05-24)
+## 0.4.0-rc.0 (2026-05-24)
 
 The Driver decomposition + CDP/BiDi convergence release.
 
@@ -479,7 +467,7 @@ The Driver decomposition + CDP/BiDi convergence release.
 - Three BiDi tests tagged `:bidi_unstable` (pre-existing flakes under
   contention; pass solo). Default `mix test.chrome.bidi` is green.
 
-## Wallabidi 0.3.0 (2026-05-10)
+## 0.3.0 (2026-05-10)
 
 A large refactor + perf release. 123 commits since 0.2.14. The headline
 changes: V2 driver clients are now the default (V1 modules deleted),
@@ -558,7 +546,7 @@ a single round-trip.
   `mix test.chrome_cdp_v2` / `mix test.chrome_bidi_v2` all run from
   `integration_test/cases`.
 
-## Wallabidi 0.2.14 (2026-05-03)
+## 0.2.14 (2026-05-03)
 
 ### Fixed
 
@@ -590,7 +578,7 @@ a single round-trip.
   `NavigationTimeoutError` dumps the recent transitions on timeout for
   diagnostic visibility.
 
-## Wallabidi 0.2.7 (2026-04-15)
+## 0.2.7 (2026-04-15)
 
 ### Fixed
 
@@ -598,14 +586,14 @@ a single round-trip.
   The SharedConnection Agent's mailbox can contain unrelated messages
   from earlier test sessions. Now skips non-Mint messages and retries.
 
-## Wallabidi 0.2.6 (2026-04-14)
+## 0.2.6 (2026-04-14)
 
 ### Fixed
 
 - **Host header fix for Chrome DevTools discovery** — send `Host: localhost`
   instead of the Docker hostname. Chrome rejects non-localhost Host headers.
 
-## Wallabidi 0.2.5 (2026-04-14)
+## 0.2.5 (2026-04-14)
 
 ### Added
 
@@ -614,7 +602,7 @@ a single round-trip.
   and rewrites the host automatically. No more manual `ws://` URL discovery.
   Full `ws://` URLs still work for backward compat.
 
-## Wallabidi 0.2.4 (2026-04-13)
+## 0.2.4 (2026-04-13)
 
 ### Fixed
 
@@ -625,7 +613,7 @@ a single round-trip.
   on elements anywhere in the page regardless of scroll position.
 - **`@doc false` on `parse_log` delegates** — suppresses ExDoc warnings.
 
-## Wallabidi 0.2.3 (2026-04-13)
+## 0.2.3 (2026-04-13)
 
 ### Fixed
 
@@ -633,7 +621,7 @@ a single round-trip.
   element into view before clicking, matching WebDriver/Selenium
   behavior. Fixes flakes where off-screen elements received no-op clicks.
 
-## Wallabidi 0.2.2 (2026-04-13)
+## 0.2.2 (2026-04-13)
 
 ### Fixed
 
@@ -642,7 +630,7 @@ a single round-trip.
   find + single click eval. Eliminates shared WebSocket saturation in
   multi-session tests.
 
-## Wallabidi 0.2.1 (2026-04-13)
+## 0.2.1 (2026-04-13)
 
 ### Added
 
@@ -668,7 +656,7 @@ a single round-trip.
 - CI linting runs in dev env (matching upstream Wallaby pattern)
 - Config simplified — removed platform-specific glob patterns in test.exs
 
-## Wallabidi 0.2.0 (2026-04-11)
+## 0.2.0 (2026-04-11)
 
 Significant refactor and performance work since 0.1.43. The default browser
 protocol is now CDP (`:chrome_cdp`); BiDi (`:chrome`) remains available as
