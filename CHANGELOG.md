@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.4](https://github.com/u2i/wallabidi/compare/v0.4.3...v0.4.4) (2026-08-04)
+
+
+### Fixed
+
+* **ci:** release workflow pinned Elixir 1.17, below the 1.18 floor ([12c2bda](https://github.com/u2i/wallabidi/commit/12c2bdada1f8dd789714f0e74254bc932e65afbe))
+* visit/2 silently left the previous page loaded on nav failure ([d475201](https://github.com/u2i/wallabidi/commit/d4752019ed34840516ff5e47fae1298918afac3b))
+
 ## [0.4.3](https://github.com/u2i/wallabidi/compare/v0.4.2...v0.4.3) (2026-08-04)
 
 
