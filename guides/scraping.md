@@ -1,9 +1,14 @@
 # Scraping
 
-Wallabidi is a testing library, but its browser drivers work fine outside
-ExUnit. If you need a real JavaScript-executing browser to read a page —
-content rendered client-side, behind a login, or assembled by a framework —
-you can drive one from a plain script, a Mix task, or a GenServer.
+Wallabidi drives real browsers, and nothing about that is specific to
+testing. If you need a JavaScript-executing browser to read a page — content
+rendered client-side, behind a login, or assembled by a framework — you can
+drive one from a plain script, a Mix task, or a GenServer.
+
+Reading a page and asserting on a page are the same operation. The querying,
+auto-waiting and navigation described here are what the test suite uses too;
+only the surrounding code differs (`use Wallabidi.DSL` and
+`Wallabidi.start_session/1` instead of `use Wallabidi.Feature`).
 
 Everything in this guide works on any of the browser drivers — the API is
 the same, and `status/1`, `response_headers/1` and `NavigationError` behave
@@ -144,16 +149,24 @@ execute_script(session, "return document.querySelectorAll('.item').length;", fn 
 end)
 ```
 
-## Auto-wait: the one thing that will surprise you
+## Auto-wait
 
-Wallabidi is built for tests, where a missing element means the page hasn't
-finished updating — so most read functions **retry until `:max_wait_time`
-(3s by default)** before giving up. In a scraper, a missing element is
-usually just a page that doesn't have that element, and paying that on every
-miss is ruinous.
+Most read functions **retry until `:max_wait_time` (3s by default)** before
+giving up. This is the feature that makes a browser worth the cost: content
+that arrives after the initial HTML — a framework rendering, an XHR
+resolving, a `setTimeout` firing — is waited for automatically, with no
+polling loop of your own.
 
-Measured against a page with no `.nope` element (with `max_wait_time` set to
-3500ms, hence the ~3.5s figures):
+```elixir
+visit(session, url)
+
+# Blocks until the element appears, or 3s elapses. No sleep needed.
+text(session, Query.css(".price"))
+```
+
+The cost is symmetrical: when an element is genuinely absent, you pay the
+full wait before finding out. Measured against a page with no `.nope`
+element (`max_wait_time` set to 3500ms here, hence the ~3.5s figures):
 
 | Call | Cost on a miss |
 |---|---|
@@ -161,7 +174,14 @@ Measured against a page with no `.nope` element (with `max_wait_time` set to
 | `has_css?(session, ".nope")` | **3502ms**, then `false` |
 | `all(session, Query.css(".nope"))` | **51ms**, returns `[]` |
 
-So for anything optional, prefer `all/2` and match on the result:
+So the choice is about what a missing element *means* to you:
+
+**Expected to be there** — use `text/2`, `find/2`, `has_css?/2`. The wait is
+doing real work, and an absence is genuinely exceptional.
+
+**Might legitimately be absent** — an optional badge, a field only some
+records have — use `all/2` and match. It returns `[]` immediately instead of
+waiting for something that was never coming:
 
 ```elixir
 case all(session, Query.css(".price")) do
@@ -170,11 +190,12 @@ case all(session, Query.css(".price")) do
 end
 ```
 
-Use `text/2` and `find/2` only for elements you're confident exist, where the
-wait is genuinely useful. If you *want* auto-wait for content that renders
-late, that's exactly what it's for — just make it a deliberate choice.
+Getting this wrong is the most common performance surprise in both tests and
+scrapers: a suite or crawl that's mysteriously slow is usually paying a full
+`max_wait_time` on every optional element.
 
-You can lower the global default:
+Tune the budget to your pages — lower if content renders fast and you check
+many optional selectors, higher for slow pages:
 
 ```elixir
 config :wallabidi, max_wait_time: 500
