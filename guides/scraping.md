@@ -25,21 +25,21 @@ identically across them. Only the trade-offs differ.
 |---|---|---|
 | Session start | ~70ms | ~1.1s |
 | Page visit | ~20ms | ~160ms |
-| User-Agent | `Lightpanda/1.0`, fixed | Real Chrome UA |
+| Default User-Agent | `Lightpanda/1.0` | Real Chrome UA |
+| Per-session User-Agent | ✗ (process-wide) | ✓ |
 | `file://` URLs | ✗ | ✓ |
 | Screenshots | ✗ | ✓ |
 | iframes, dialogs, localStorage | ✗ | ✓ |
 | CSS layout / visibility | ✗ | ✓ |
 
 **Lightpanda** for volume: it's an order of magnitude cheaper per page, so
-crawling many pages of a site you control (or one that doesn't care who's
-asking) is much faster.
+crawling many pages is much faster.
 
-**Chrome** for fidelity: a real User-Agent, full CSS, and everything
-Lightpanda's stripped-down engine leaves out. The fixed `Lightpanda/1.0`
-User-Agent is the usual reason to switch — it's an obvious non-browser
-signature, and sites that filter on it will serve different content or
-block you outright.
+**Chrome** for fidelity: a real browser User-Agent by default, full CSS,
+and everything Lightpanda's stripped-down engine leaves out.
+
+Both let you set the User-Agent (see below); the difference is that
+Lightpanda's is process-wide while Chrome's can vary per session.
 
 Set it globally in config, or per session:
 
@@ -201,6 +201,39 @@ many optional selectors, higher for slow pages:
 config :wallabidi, max_wait_time: 500
 ```
 
+## User-Agent
+
+Identify your crawler. One config key covers every driver:
+
+```elixir
+config :wallabidi, user_agent: "MyScraper/1.0 (+https://example.com/bot)"
+```
+
+On Lightpanda you can append instead of replacing, which keeps the browser
+identifiable while still naming you:
+
+```elixir
+config :wallabidi, lightpanda_user_agent_suffix: "MyScraper/1.0"
+#=> Lightpanda/1.0 MyScraper/1.0
+```
+
+Chrome can also vary it per session — useful for mobile-vs-desktop or for
+rotating identities across a crawl:
+
+```elixir
+{:ok, mobile} = Wallabidi.start_session(driver: :chrome_cdp, user_agent: "…iPhone…")
+```
+
+Lightpanda can't: its User-Agent is a property of the browser process, not
+of a session, so every session on the shared binary reports the same one.
+Passing `:user_agent` to `start_session/1` there logs a warning rather than
+silently doing nothing.
+
+> Lightpanda's `--user-agent` is documented as refusing to impersonate other
+> browsers — values containing "Mozilla" — though 0.3.6 doesn't currently
+> enforce it. Impersonating a browser you aren't is also how you end up
+> blocked; a truthful UA with a contact URL gets you further.
+
 ## HTTP status
 
 `visit/2` does not raise on an error status — a 404 or 500 loads like any
@@ -268,7 +301,7 @@ laptop, so the cap is rarely the bottleneck. Chrome has no equivalent hard
 cap, but each session costs far more memory — tune to your machine.
 
 Be a good citizen on someone else's site: add delays, respect `robots.txt`,
-and identify yourself where you can (though see the User-Agent note below).
+and [identify yourself](#user-agent) in the User-Agent.
 
 ## Lightpanda's limits
 
@@ -280,16 +313,16 @@ supports everything below; Lightpanda trades these away for speed:
 |---|---|
 | Screenshots | `Page.captureScreenshot` isn't implemented |
 | `file://` URLs | Raises `NavigationError` with `UnsupportedProtocol` — serve over HTTP instead |
-| Custom User-Agent | Fixed at `Lightpanda/1.0`; `Network.setUserAgentOverride` is accepted and ignored |
+| Per-session User-Agent | Process-wide only — see [User-Agent](#user-agent) |
 | Custom request headers | `Network.setExtraHTTPHeaders` is accepted and ignored |
 | iframes, dialogs, multi-window | Single browsing context only |
 | Viewport resize | Accepted but has no effect (nothing is rendered) |
 | localStorage | |
 | CSS rendering | So layout-based visibility is unreliable — pass `visible: :any` |
 
-Two of these fail *silently* rather than erroring: setting a User-Agent or
-extra request headers returns `{:ok, %{}}` and then has no effect. Both are
-upstream limitations in the Lightpanda binary, not in Wallabidi.
+Custom request headers fail *silently* rather than erroring —
+`Network.setExtraHTTPHeaders` returns `{:ok, %{}}` and then has no effect.
+That's an upstream limitation in the Lightpanda binary, not in Wallabidi.
 
 When you need any of these, switch that session to Chrome:
 

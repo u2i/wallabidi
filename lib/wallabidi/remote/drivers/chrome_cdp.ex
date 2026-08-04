@@ -14,7 +14,7 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
 
   use Wallabidi.Remote.Driver.Generic
 
-  alias Wallabidi.{DependencyError, Metadata, Session}
+  alias Wallabidi.{DependencyError, Metadata, Session, UserAgent}
   alias Wallabidi.Remote.{Browser, Transport, WebSocket}
   alias Wallabidi.Remote.CDP.Client, as: CDPClient
   alias Wallabidi.Remote.Chrome.Server, as: ChromeServer
@@ -120,8 +120,12 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
             caller
           )
 
-        if metadata = Keyword.get(opts, :metadata) do
-          ua = Metadata.append(@base_user_agent, metadata)
+        if UserAgent.override?(opts) do
+          ua =
+            opts
+            |> UserAgent.resolve(@base_user_agent)
+            |> Metadata.append(Keyword.get(opts, :metadata))
+
           _ = CDPClient.cdp_send(session, "Network.setUserAgentOverride", %{userAgent: ua})
         end
 
