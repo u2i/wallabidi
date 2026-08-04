@@ -77,6 +77,8 @@ WALLABIDI_LIGHTPANDA_PATH=/opt/lightpanda/lightpanda mix test
 
 If you don't run `mix wallabidi.install`, the `lightpanda` package falls back to downloading into `_build/` on first use.
 
+The Lightpanda driver also works outside ExUnit — see the [Scraping guide](scraping.html) for using it to read pages from a script or Mix task.
+
 ### Remote Chrome (CI / Docker)
 
 When Chrome runs as a service in your Docker Compose stack, point Wallabidi at it:
