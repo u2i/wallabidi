@@ -5,15 +5,50 @@ ExUnit. If you need a real JavaScript-executing browser to read a page —
 content rendered client-side, behind a login, or assembled by a framework —
 you can drive one from a plain script, a Mix task, or a GenServer.
 
-The [Lightpanda](setup.html#lightpanda) driver is usually the right choice
-here: it starts in tens of milliseconds and has no CSS rendering to pay for.
-Chrome is available when you need something Lightpanda doesn't support (see
-[Driver capabilities](#driver-capabilities)).
+Everything in this guide works on any of the browser drivers — the API is
+the same, and `status/1`, `response_headers/1` and `NavigationError` behave
+identically across them. Only the trade-offs differ.
 
 > If a plain HTTP request would do, use one. `Req` plus
 > [`LazyHTML`](https://hex.pm/packages/lazy_html) is faster and simpler than
 > any browser. Reach for Wallabidi when the content only exists after
 > JavaScript runs.
+
+## Choosing a driver
+
+| | Lightpanda | Chrome (CDP) |
+|---|---|---|
+| Session start | ~70ms | ~1.1s |
+| Page visit | ~20ms | ~160ms |
+| User-Agent | `Lightpanda/1.0`, fixed | Real Chrome UA |
+| `file://` URLs | ✗ | ✓ |
+| Screenshots | ✗ | ✓ |
+| iframes, dialogs, localStorage | ✗ | ✓ |
+| CSS layout / visibility | ✗ | ✓ |
+
+**Lightpanda** for volume: it's an order of magnitude cheaper per page, so
+crawling many pages of a site you control (or one that doesn't care who's
+asking) is much faster.
+
+**Chrome** for fidelity: a real User-Agent, full CSS, and everything
+Lightpanda's stripped-down engine leaves out. The fixed `Lightpanda/1.0`
+User-Agent is the usual reason to switch — it's an obvious non-browser
+signature, and sites that filter on it will serve different content or
+block you outright.
+
+Set it globally in config, or per session:
+
+```elixir
+config :wallabidi, driver: :chrome_cdp        # or :lightpanda
+
+{:ok, session} = Wallabidi.start_session(driver: :chrome_cdp)
+```
+
+Chrome BiDi (`:chrome`) also works and supports the same API; CDP is the
+faster of the two.
+
+The rest of this guide uses Lightpanda in examples. Swap the driver and
+everything else is unchanged.
 
 ## Setup
 
@@ -25,25 +60,29 @@ test-scoped because that's its context, but nothing about the driver is:
 def deps do
   [
     {:wallabidi, "~> 0.4"},
+    # only for the Lightpanda driver; Chrome needs no extra dep
     {:lightpanda, "~> 0.3.6"}
   ]
 end
 ```
 
-Then install the binary and point the app at the driver:
+Then install the browser and point the app at the driver:
 
 ```bash
-mix wallabidi.install.lightpanda
+mix wallabidi.install            # Chrome + Lightpanda
 ```
 
 ```elixir
 # config/config.exs
-config :wallabidi, driver: :lightpanda
+config :wallabidi, driver: :lightpanda   # or :chrome_cdp
 ```
 
+Chrome is picked up off your PATH if it's already installed, so
+`mix wallabidi.install` may skip the download entirely.
+
 Setting `:driver` matters for more than defaults: it makes the supervisor
-start the shared Lightpanda server, so sessions multiplex over one browser
-process. Without it each session spawns its own binary.
+start that driver's shared browser process, so sessions multiplex over one
+browser rather than each spawning its own.
 
 ## A first scrape
 
@@ -109,11 +148,12 @@ end)
 
 Wallabidi is built for tests, where a missing element means the page hasn't
 finished updating — so most read functions **retry until `:max_wait_time`
-(3.5s by default)** before giving up. In a scraper, a missing element is
-usually just a page that doesn't have that element, and paying 3.5s for each
-one is ruinous.
+(3s by default)** before giving up. In a scraper, a missing element is
+usually just a page that doesn't have that element, and paying that on every
+miss is ruinous.
 
-Measured on a page with no `.nope` element:
+Measured against a page with no `.nope` element (with `max_wait_time` set to
+3500ms, hence the ~3.5s figures):
 
 | Call | Cost on a miss |
 |---|---|
@@ -200,18 +240,20 @@ urls
 |> Enum.to_list()
 ```
 
-**Keep `max_concurrency` at 16 or below.** Lightpanda is started with
+**On Lightpanda, keep `max_concurrency` at 16 or below.** It's started with
 `--cdp-max-connections 24`, and sessions beyond that limit fail rather than
 queue. 16 leaves headroom; 8 concurrent sessions complete in ~150ms on a
-laptop, so the cap is rarely the bottleneck.
+laptop, so the cap is rarely the bottleneck. Chrome has no equivalent hard
+cap, but each session costs far more memory — tune to your machine.
 
 Be a good citizen on someone else's site: add delays, respect `robots.txt`,
 and identify yourself where you can (though see the User-Agent note below).
 
-## Driver capabilities
+## Lightpanda's limits
 
-Lightpanda executes JavaScript — `setTimeout` handlers, framework rendering,
-`fetch` — which is the reason to use a browser at all. What it doesn't do:
+Both drivers execute JavaScript — `setTimeout` handlers, framework
+rendering, `fetch` — which is the reason to use a browser at all. Chrome
+supports everything below; Lightpanda trades these away for speed:
 
 | Not supported on Lightpanda | Notes |
 |---|---|
@@ -224,10 +266,9 @@ Lightpanda executes JavaScript — `setTimeout` handlers, framework rendering,
 | localStorage | |
 | CSS rendering | So layout-based visibility is unreliable — pass `visible: :any` |
 
-The fixed User-Agent is the one most likely to matter: `Lightpanda/1.0` is
-an obvious non-browser signature, and sites that filter on it will serve you
-different content or block you. Both limitations are upstream in the
-Lightpanda binary, not in Wallabidi.
+Two of these fail *silently* rather than erroring: setting a User-Agent or
+extra request headers returns `{:ok, %{}}` and then has no effect. Both are
+upstream limitations in the Lightpanda binary, not in Wallabidi.
 
 When you need any of these, switch that session to Chrome:
 

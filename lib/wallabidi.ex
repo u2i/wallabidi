@@ -1,6 +1,7 @@
 defmodule Wallabidi do
   @moduledoc """
-  A concurrent feature testing library.
+  A concurrent browser automation library — feature testing, and scraping
+  or automating pages outside ExUnit.
 
   ## Configuration
 

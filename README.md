@@ -2,13 +2,14 @@
 
 [![License](https://img.shields.io/hexpm/l/wallabidi.svg)](https://github.com/u2i/wallabidi/blob/main/LICENSE)
 
-Concurrent browser testing for Elixir. Write your tests once — they run on the fastest driver that supports them.
+Concurrent browser automation for Elixir. Write your tests once — they run on the fastest driver that supports them.
 
 What that means in practice:
 
 - **Real multi-threading with Chrome via CDP** (and aspirationally BiDi) — no chromedriver in the loop. CDP performs better today; BiDi is the future-proof path and tracks the W3C protocol's evolution.
 - **Multi-threading with Lightpanda** — a headless JS-capable browser that's fast enough to run nearly as quickly as the LiveView driver. Lightpanda is a practical default for full functional test suites.
 - **LiveView driver** for tests that don't need a browser at all — renders pages in-process via `Phoenix.ConnTest`.
+- **Scraping and automation outside ExUnit** — the browser drivers are plain processes, so you can drive them from a script, Mix task, or GenServer to read JavaScript-rendered pages. See the [Scraping guide](guides/scraping.md).
 
 Wallabidi is a fork of [Wallaby](https://github.com/elixir-wallaby/wallaby) with these four drivers, automatic LiveView-aware waiting, and a public API close to Wallaby's for easy migration.
 
