@@ -1512,20 +1512,37 @@ defmodule Wallabidi.Browser do
   Changes the current page to the provided route.
   Relative paths are appended to the provided base_url.
   Absolute paths do not use the base_url.
+
+  Raises `Wallabidi.NavigationError` if the navigation itself fails (DNS
+  failure, connection refused, TLS error). Without that the browser would
+  stay on the previously loaded page while this returned normally, so every
+  subsequent read would silently yield stale content from the prior page.
+
+  An HTTP error status is *not* a navigation failure: a 404 or 500 loads
+  successfully and raises nothing.
   """
   @spec visit(session, String.t()) :: session
   def visit(%Session{driver: driver} = session, path) do
     uri = URI.parse(path)
 
-    cond do
-      uri.host == nil && String.length(base_url()) == 0 ->
-        raise NoBaseUrlError, path
+    result =
+      cond do
+        uri.host == nil && String.length(base_url()) == 0 ->
+          raise NoBaseUrlError, path
 
-      uri.host ->
-        driver.visit(session, path)
+        uri.host ->
+          driver.visit(session, path)
 
-      true ->
-        driver.visit(session, request_url(path))
+        true ->
+          driver.visit(session, request_url(path))
+      end
+
+    case result do
+      {:error, reason} ->
+        raise Wallabidi.NavigationError, %{url: path, reason: reason}
+
+      _ ->
+        :ok
     end
 
     # On remote drivers, wait for the LiveView client to connect (a no-op

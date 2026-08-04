@@ -91,6 +91,48 @@ defmodule Wallabidi.DriverError do
   end
 end
 
+defmodule Wallabidi.NavigationError do
+  defexception [:message, :url, :reason]
+
+  @moduledoc """
+  Raised when `Wallabidi.Browser.visit/2` fails to navigate to a URL.
+
+  Without this, a failed navigation leaves the browser on the *previous*
+  page while `visit/2` returns normally — so subsequent reads silently
+  return stale content from the page before it.
+
+  Note this signals a *navigation* failure (DNS, connection refused, TLS),
+  not an HTTP error status: a 404 or 500 navigates successfully and raises
+  nothing.
+  """
+
+  def exception(%{url: url, reason: reason}) do
+    msg = """
+    Failed to navigate to #{inspect(url)}: #{format_reason(reason)}
+
+    The browser is still on the previously loaded page — reading from the
+    session now (page_source/1, text/2, …) would return stale content from
+    that page, not from #{inspect(url)}.
+    """
+
+    %__MODULE__{message: msg, url: url, reason: reason}
+  end
+
+  defp format_reason({:navigate_failed, text}) when is_binary(text) do
+    case text do
+      "CouldntResolveHost" -> "could not resolve host (DNS failure)"
+      "ConnectionRefused" -> "connection refused"
+      "ConnectionFailed" -> "connection failed"
+      "NameNotResolved" -> "could not resolve host (DNS failure)"
+      other -> other
+    end
+  end
+
+  defp format_reason(:timeout), do: "navigation timed out"
+  defp format_reason({:error, reason}), do: format_reason(reason)
+  defp format_reason(other), do: inspect(other)
+end
+
 defmodule Wallabidi.NavigationTimeoutError do
   defexception [:message]
 
