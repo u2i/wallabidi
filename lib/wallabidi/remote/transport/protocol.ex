@@ -99,6 +99,20 @@ defmodule Wallabidi.Remote.Transport.Protocol do
     GenServer.call(pid, {:subscribe, event_method, routing_key})
   end
 
+  # ----- HTTP response metadata -----
+
+  @doc """
+  The main-frame HTTP response recorded for the most recent navigation, or
+  `nil` if none has been captured (e.g. the driver's wire protocol doesn't
+  report it, or nothing has been visited yet).
+  """
+  @spec last_response(Session.t()) :: map() | nil
+  def last_response(%Session{pid: pid}) when is_pid(pid) do
+    GenServer.call(pid, :last_response)
+  catch
+    :exit, _ -> nil
+  end
+
   # ----- Page-load & page-ready awaits -----
 
   @spec await_page_load(Session.t(), String.t(), String.t(), timeout) :: :ok | :timeout

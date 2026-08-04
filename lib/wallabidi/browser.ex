@@ -763,6 +763,52 @@ defmodule Wallabidi.Browser do
   end
 
   @doc """
+  The HTTP status code of the most recently visited page.
+
+  Returns `nil` when no status is available — on the in-process LiveView
+  driver (which makes no real HTTP request), before anything has been
+  visited, or if the driver's wire protocol doesn't report one.
+
+  Note `visit/2` does not raise on an error status: a 404 or 500 loads
+  like any other page, so check this when the status matters.
+
+      visit(session, "https://example.com/missing")
+      status(session)
+      #=> 404
+
+  """
+  @spec status(session) :: non_neg_integer() | nil
+  def status(%Session{} = session) do
+    case last_response(session) do
+      %{status: status} -> status
+      _ -> nil
+    end
+  end
+
+  @doc """
+  Response headers of the most recently visited page, as a map with
+  lowercase string keys. Returns `nil` when unavailable (see `status/1`).
+
+      visit(session, "https://example.com")
+      response_headers(session)["content-type"]
+      #=> "text/html; charset=UTF-8"
+
+  """
+  @spec response_headers(session) :: %{String.t() => String.t()} | nil
+  def response_headers(%Session{} = session) do
+    case last_response(session) do
+      %{headers: headers} when is_map(headers) -> headers
+      _ -> nil
+    end
+  end
+
+  defp last_response(%Session{} = session) do
+    if remote_session?(session) do
+      Wallabidi.Remote.Transport.Protocol.last_response(session)
+    end
+  end
+
+  @doc """
   Sets the value of an element. The allowed type for the value depends on the
   type of the element. The value may be:
   * a string of characters for a text element

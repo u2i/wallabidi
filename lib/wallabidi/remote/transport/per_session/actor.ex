@@ -41,6 +41,10 @@ defmodule Wallabidi.Remote.Transport.PerSession.Actor do
     pending_calls: %{},
     loads: %{},
     load_waiters: [],
+    # Main-frame HTTP responses keyed by loaderId — see the same field on
+    # Transport.Session; both actors share Wire.CDP.handle_event/3.
+    responses: %{},
+    last_loader_id: nil,
     find_waiters: %{},
     frame_stack: [],
     frame_contexts: %{},
@@ -139,6 +143,10 @@ defmodule Wallabidi.Remote.Transport.PerSession.Actor do
   @impl true
   def handle_call(:get_session, _from, state) do
     {:reply, state.session, state}
+  end
+
+  def handle_call(:last_response, _from, state) do
+    {:reply, Map.get(state.responses, state.last_loader_id), state}
   end
 
   def handle_call({:update_browsing_context, session_id, target_id}, _from, state) do

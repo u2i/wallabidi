@@ -76,6 +76,12 @@ defmodule Wallabidi.Remote.CDP.Client do
     :ok = Protocol.subscribe(session, "Page.lifecycleEvent")
     cdp_cast(session, "Page.enable", %{})
     cdp_cast(session, "Page.setLifecycleEventsEnabled", %{enabled: true})
+
+    # Network domain: supplies `Network.responseReceived`, the only source
+    # of the document's HTTP status (`Browser.status/1`). Enabled here so
+    # the subscription is in place before the first navigation.
+    :ok = Protocol.subscribe(session, "Network.responseReceived")
+    cdp_cast(session, "Network.enable", %{})
     :ok
   end
 
