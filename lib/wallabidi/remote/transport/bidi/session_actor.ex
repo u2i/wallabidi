@@ -30,6 +30,11 @@ defmodule Wallabidi.Remote.Transport.BiDi.SessionActor do
     # `{from, navigation_id_or_:any, milestone_name, timer_ref}`.
     loads: %{},
     load_waiters: [],
+    # Document HTTP responses from `network.responseCompleted`, keyed by
+    # navigation id — the BiDi counterpart of the CDP actors' loaderId
+    # map. Read by `Browser.status/1`.
+    responses: %{},
+    last_loader_id: nil,
     # Each find_waiter is keyed by query_id, valued by
     # `{:pending, timer_ref, from_or_nil}` or `{:resolved, result}`.
     find_waiters: %{},
@@ -118,7 +123,9 @@ defmodule Wallabidi.Remote.Transport.BiDi.SessionActor do
       "browsingContext.load",
       "browsingContext.domContentLoaded",
       "script.message",
-      "log.entryAdded"
+      "log.entryAdded",
+      # Supplies the document's HTTP status for `Browser.status/1`.
+      "network.responseCompleted"
     ]
 
     Enum.each(events, fn ev ->
@@ -149,11 +156,8 @@ defmodule Wallabidi.Remote.Transport.BiDi.SessionActor do
   def handle_call(:get_session, _from, state),
     do: {:reply, state.session, state}
 
-  # BiDi reports responses through a different event shape than CDP's
-  # Network.responseReceived, which isn't wired up yet — answer `nil`
-  # rather than letting the call crash the actor.
   def handle_call(:last_response, _from, state),
-    do: {:reply, nil, state}
+    do: {:reply, Map.get(state.responses, state.last_loader_id), state}
 
   def handle_call({:cdp_send, method, params, _opts}, from, state) do
     # Forward to the WSC. Don't block this actor — spawn a tiny

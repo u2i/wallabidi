@@ -765,9 +765,9 @@ defmodule Wallabidi.Browser do
   @doc """
   The HTTP status code of the most recently visited page.
 
-  Returns `nil` when no status is available — on the in-process LiveView
-  driver (which makes no real HTTP request), before anything has been
-  visited, or if the driver's wire protocol doesn't report one.
+  Supported on every browser driver (Chrome CDP, Chrome BiDi, Lightpanda).
+  Returns `nil` on the in-process LiveView driver, which makes no real HTTP
+  request, and before anything has been visited.
 
   Note `visit/2` does not raise on an error status: a 404 or 500 loads
   like any other page, so check this when the status matters.
