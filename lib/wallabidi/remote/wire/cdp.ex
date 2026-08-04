@@ -27,6 +27,8 @@ defmodule Wallabidi.Remote.Wire.CDP do
       for a later caller).
     * `Runtime.bindingCalled` — bootstrap channel; routed to
       `Common.route_bootstrap_payload/2` when the binding name matches.
+    * `Network.responseReceived` — record the main-frame HTTP status and
+      headers, keyed by loaderId, for `Wallabidi.Browser.status/1`.
     * `Runtime.executionContextCreated` — record `frameId → contextId`.
     * `Runtime.executionContextDestroyed` — purge the destroyed context.
 
@@ -42,6 +44,36 @@ defmodule Wallabidi.Remote.Wire.CDP do
 
     if is_binary(loader_id) and name in ["load", "DOMContentLoaded"] do
       Common.record_load_milestone(state, loader_id, name)
+    else
+      state
+    end
+  end
+
+  def handle_event(state, "Network.responseReceived", event) do
+    params = Map.get(event, "params", %{})
+    loader_id = params["loaderId"]
+    response = params["response"]
+
+    # For the document request CDP sets requestId == loaderId; subresources
+    # (images, XHR, …) carry their own requestId. Keeping only the former
+    # means `status/1` reports the page's own status, not whichever asset
+    # happened to load last.
+    main_frame? = is_binary(loader_id) and params["requestId"] == loader_id
+
+    if main_frame? and is_map(response) do
+      entry = %{
+        status: response["status"],
+        status_text: response["statusText"],
+        url: response["url"],
+        mime_type: response["mimeType"],
+        headers: response["headers"] || %{}
+      }
+
+      %{
+        state
+        | responses: Map.put(state.responses, loader_id, entry),
+          last_loader_id: loader_id
+      }
     else
       state
     end

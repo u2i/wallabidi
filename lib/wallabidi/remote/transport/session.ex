@@ -35,6 +35,14 @@ defmodule Wallabidi.Remote.Transport.Session do
     # lands.
     loads: %{},
     load_waiters: [],
+    # Main-frame HTTP responses from `Network.responseReceived`, keyed by
+    # loaderId: %{loader_id => %{status: 404, status_text: "Not Found",
+    # url: ..., headers: %{...}}}. `Browser.status/1` reads the entry for
+    # the most recent navigation. Only main-frame (loaderId == requestId)
+    # responses are kept, so subresources (images, XHR) don't clobber the
+    # document's own status.
+    responses: %{},
+    last_loader_id: nil,
     # Push-based find waiters. The find flow:
     #   1. Caller calls register_find(query_id, timeout) — stashes
     #      a {:pending, timeout_ref, nil} entry.
@@ -404,6 +412,10 @@ defmodule Wallabidi.Remote.Transport.Session do
   @impl true
   def handle_call(:get_session, _from, state) do
     {:reply, state.session, state}
+  end
+
+  def handle_call(:last_response, _from, state) do
+    {:reply, Map.get(state.responses, state.last_loader_id), state}
   end
 
   def handle_call({:update_browsing_context, session_id, target_id}, _from, state) do

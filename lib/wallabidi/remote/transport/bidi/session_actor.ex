@@ -149,6 +149,12 @@ defmodule Wallabidi.Remote.Transport.BiDi.SessionActor do
   def handle_call(:get_session, _from, state),
     do: {:reply, state.session, state}
 
+  # BiDi reports responses through a different event shape than CDP's
+  # Network.responseReceived, which isn't wired up yet — answer `nil`
+  # rather than letting the call crash the actor.
+  def handle_call(:last_response, _from, state),
+    do: {:reply, nil, state}
+
   def handle_call({:cdp_send, method, params, _opts}, from, state) do
     # Forward to the WSC. Don't block this actor — spawn a tiny
     # waiter that does the call and replies on our behalf, so other
