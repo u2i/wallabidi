@@ -156,7 +156,7 @@ defmodule Wallabidi.Browser do
         {:error, :invalid_selector}
 
       {:error, e} ->
-        if max_time_exceeded?(start_time) do
+        if max_time_exceeded?(nil, start_time) do
           {:error, e}
         else
           retry(f, start_time)
@@ -1249,7 +1249,7 @@ defmodule Wallabidi.Browser do
         Query.result(query)
 
       {:error, :stale_reference} ->
-        if max_time_exceeded?(start_time) do
+        if max_time_exceeded?(get_session(parent), start_time) do
           raise Wallabidi.QueryError, ErrorMessage.message(query, :not_found)
         else
           do_find_with(parent, query, start_time, opts)
@@ -1341,7 +1341,7 @@ defmodule Wallabidi.Browser do
     session = Wallabidi.Element.root_session(element)
 
     if remote_session?(session) do
-      case remote_client(session).await_value(session, element, value, max_wait_time()) do
+      case remote_client(session).await_value(session, element, value, max_wait_time(session)) do
         {:ok, true} -> true
         _ -> false
       end
@@ -1401,7 +1401,7 @@ defmodule Wallabidi.Browser do
       # Single-RT await: V8 polls textContent with MutationObserver +
       # onPatchEnd until match or timeout. Replaces an Elixir-side
       # retry loop that polled Element.text every 25ms.
-      case remote_client(session).await_text(session, element, text, max_wait_time()) do
+      case remote_client(session).await_text(session, element, text, max_wait_time(session)) do
         {:ok, true} -> true
         _ -> false
       end
@@ -1573,14 +1573,14 @@ defmodule Wallabidi.Browser do
 
     result =
       cond do
-        uri.host == nil && String.length(base_url()) == 0 ->
+        uri.host == nil && String.length(base_url(session)) == 0 ->
           raise NoBaseUrlError, path
 
         uri.host ->
           driver.visit(session, path)
 
         true ->
-          driver.visit(session, request_url(path))
+          driver.visit(session, request_url(session, path))
       end
 
     case result do
@@ -1851,7 +1851,7 @@ defmodule Wallabidi.Browser do
     lazy? = Keyword.get(opts, :lazy, false)
 
     with {:ok, _ops, validated} <- Ops.compile_query(parent, query) do
-      timeout = query_timeout(validated)
+      timeout = query_timeout(session, validated)
 
       result =
         cond do
@@ -1924,38 +1924,50 @@ defmodule Wallabidi.Browser do
       Process.get({:wallabidi_focused_context, session.id}) != nil
   end
 
-  defp max_time_exceeded?(start_time) do
-    current_time() - start_time > max_wait_time()
+  # `retry/2` is a public arity-2 function taking a closure, with no session
+  # to hand — those retries fall back to the configured budget. The paths
+  # that *do* have a session (find, await_text/value, query_timeout) pass it,
+  # so a session-scoped `:max_wait_time` governs the waits that matter.
+  defp max_time_exceeded?(session, start_time) do
+    current_time() - start_time > max_wait_time(session)
   end
 
   defp current_time do
     :erlang.monotonic_time(:milli_seconds)
   end
 
-  defp max_wait_time do
-    Application.get_env(:wallabidi, :max_wait_time, @default_max_wait_time)
+  defp max_wait_time(session) do
+    Keyword.get(session_opts(session), :max_wait_time) ||
+      Wallabidi.Config.get_for(session, :max_wait_time, @default_max_wait_time)
   end
 
   # `all/2` and similar snapshot queries set `minimum: 0`. They want the
   # current matches now, not "wait until something appears." Skip the
   # full max_wait_time budget for those — fall through to the inline
   # sync-count branch quickly.
-  defp query_timeout(%Wallabidi.Query{conditions: conditions}) do
+  defp query_timeout(session, %Wallabidi.Query{conditions: conditions}) do
     if Keyword.get(conditions, :minimum) == 0,
       do: 50,
-      else: max_wait_time()
+      else: max_wait_time(session)
   end
 
-  defp request_url(path) do
-    base_url = String.trim_trailing(base_url(), "/")
+  defp request_url(session, path) do
+    base_url = String.trim_trailing(base_url(session), "/")
     path = String.trim_leading(path, "/")
 
     "#{base_url}/#{path}"
   end
 
-  defp base_url do
-    Application.get_env(:wallabidi, :base_url) || ""
+  defp base_url(session) do
+    Keyword.get(session_opts(session), :base_url) ||
+      Wallabidi.Config.get_for(session, :base_url) || ""
   end
+
+  # Per-session overrides passed to start_session/1 win over config, so an
+  # application's scraping session isn't governed by whatever the test
+  # suite configured (or vice versa). See `Wallabidi.Config`.
+  defp session_opts(%Session{session_opts: opts}) when is_list(opts), do: opts
+  defp session_opts(_), do: []
 
   defp path_for_screenshot(name) do
     "#{screenshot_dir()}/#{name}.png"

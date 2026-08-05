@@ -221,6 +221,54 @@ Chrome), set `WALLABIDI_CHROME_PATH` and skip `mix wallabidi.install`:
     WALLABIDI_CHROME_PATH: /usr/bin/google-chrome-stable
 ```
 
+## When your app uses Wallabidi too
+
+If your application drives a browser as part of what it *does* — scraping a
+supplier site, rendering a PDF — then under `mix test` there are two
+unrelated Wallabidi users in one VM: your test suite, and your app. They
+need different settings, so keep them in separate namespaces:
+
+```elixir
+# config/test.exs
+
+# your application's own browser use
+config :wallabidi,
+  driver: :lightpanda,
+  base_url: "https://supplier.example.com",
+  max_wait_time: 10_000
+
+# your test suite's
+config :wallabidi, :test,
+  driver: :chrome_cdp,
+  base_url: "http://localhost:4002",
+  max_wait_time: 3_000
+```
+
+Which one applies is decided by the function you start the session with:
+
+| | Reads | Use for |
+|---|---|---|
+| `Wallabidi.start_session/1` | `config :wallabidi` | your application's code |
+| `Wallabidi.Test.start_session/1` | `config :wallabidi, :test` | your test suite |
+
+`Wallabidi.Feature` calls the test one for you, so `feature` tests need no
+change. Use `Wallabidi.Test.start_session/1` directly when you start
+sessions by hand in a test.
+
+Code under test then behaves exactly as it does in production — the suite's
+`base_url` and timeouts don't reach it:
+
+```elixir
+defmodule MyApp.SupplierScraper do
+  # gets config :wallabidi, in test and in prod alike
+  def fetch, do: Wallabidi.start_session()
+end
+```
+
+`config :wallabidi, :test` falls back to the top-level value for any key it
+doesn't set, so a project whose only Wallabidi use is its test suite needs
+neither namespace nor change.
+
 ## Phoenix
 
 The default `:live_view` driver renders in-process and needs no HTTP

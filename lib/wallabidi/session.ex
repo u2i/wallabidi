@@ -44,6 +44,15 @@ defmodule Wallabidi.Session do
     :metadata,
     server: :none,
     screenshots: [],
-    pending_await: nil
+    pending_await: nil,
+    # Set by `Wallabidi.Test.start_session/1`. Routes config reads made
+    # while driving this session (base URL, auto-wait budget) to
+    # `config :wallabidi, :test` rather than the application's own
+    # settings — see `Wallabidi.Config`.
+    test_session?: false,
+    # Settings passed to `start_session/1` that govern later calls rather
+    # than session startup (`:base_url`, `:max_wait_time`). Kept on the
+    # session so they beat config without a global read.
+    session_opts: []
   ]
 end

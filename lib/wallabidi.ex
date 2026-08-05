@@ -162,6 +162,70 @@ defmodule Wallabidi do
     # Each Transport actor monitors its owner and runs cleanup in
     # terminate/2 when the owner dies, so we don't need on_exit hooks
     # or SessionStore monitoring for crashed-test cleanup.
+    maybe_suggest_test_api(opts)
+    opts = Keyword.delete(opts, :__test_api__)
+
+    opts
+    |> do_start_session()
+    |> stash_session_opts(opts)
+  end
+
+  # Called from a running test but not via `Wallabidi.Test.start_session/1`,
+  # so this session gets the application's settings rather than the suite's.
+  # That's the right default for an app that drives a browser itself, and the
+  # wrong one for a test — but only the caller knows which they meant, so
+  # point it out once per VM instead of guessing.
+  #
+  # Only fires when `config :wallabidi, :test` exists: without it the two
+  # namespaces are identical and there is nothing to get wrong.
+  @suggested_test_api_key {__MODULE__, :suggested_test_api}
+
+  defp maybe_suggest_test_api(opts) do
+    if running_under_exunit?() and not Keyword.get(opts, :__test_api__, false) and
+         Wallabidi.Config.test_config() != [] and
+         not :persistent_term.get(@suggested_test_api_key, false) do
+      :persistent_term.put(@suggested_test_api_key, true)
+
+      require Logger
+
+      Logger.warning("""
+      [wallabidi] Wallabidi.start_session/1 was called from a test, but this \
+      project configures `config :wallabidi, :test`. This session will use \
+      the application's settings, not the suite's.
+
+      For a test session, use:
+
+          Wallabidi.Test.start_session()
+
+      which reads `config :wallabidi, :test`, honours the \
+      WALLABIDI_DRIVER env pin, and routes on @tag :browser / :headless. \
+      (`Wallabidi.Feature` already does this for you.)
+
+      If this session is your application's own browser use — code under \
+      test that happens to drive a browser — then Wallabidi.start_session/1 \
+      is correct and you can ignore this.
+      """)
+    end
+
+    :ok
+  end
+
+  defp running_under_exunit? do
+    Code.ensure_loaded?(ExUnit) and is_pid(Process.whereis(ExUnit.Server))
+  end
+
+  # `:base_url` and `:max_wait_time` govern later calls rather than session
+  # startup, so they ride on the session — that way an application's own
+  # session isn't governed by whatever the test suite configured globally.
+  @session_scoped_opts [:base_url, :max_wait_time]
+
+  defp stash_session_opts({:ok, session}, opts) do
+    {:ok, %{session | session_opts: Keyword.take(opts, @session_scoped_opts)}}
+  end
+
+  defp stash_session_opts(other, _opts), do: other
+
+  defp do_start_session(opts) do
     case resolve_driver(opts) do
       :live_view ->
         Wallabidi.LiveView.Driver.start_session(opts)
