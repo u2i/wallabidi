@@ -42,6 +42,7 @@ defmodule Wallabidi.Integration.LiveApp.Router do
       live("/slow-evt-slow-dest", Wallabidi.Integration.LiveApp.SlowEventToSlowMountLive)
       live("/slow-evt-slow-dest-target", Wallabidi.Integration.LiveApp.SlowMountDestLive)
       live("/optimistic-counter", Wallabidi.Integration.LiveApp.OptimisticCounterLive)
+      live("/dependent-selects", Wallabidi.Integration.LiveApp.DependentSelectsLive)
       live("/capture-listener", Wallabidi.Integration.LiveApp.CaptureListenerLive)
       live("/marker-hook", Wallabidi.Integration.LiveApp.MarkerHookLive)
     end

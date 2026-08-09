@@ -73,14 +73,50 @@ defmodule Wallabidi.LiveView do
   def set_latency(%Session{} = session, latency_ms)
       when is_integer(latency_ms) and latency_ms >= 0 do
     if remote?(session) do
-      _ =
-        eval_silent(
-          session,
-          "window.liveSocket && window.liveSocket.enableLatencySim(#{latency_ms})"
-        )
+      # Report whether liveSocket was actually there: without this the call
+      # is a silent no-op on a page that never booted LiveView, and a test
+      # believes it is running under latency while running at full speed —
+      # which turns "the server can't have replied yet" into a coin flip.
+      # `Protocol.eval/2` evaluates an *expression*, so this is an IIFE
+      # rather than a bare statement list.
+      js = """
+      (function() {
+        if (!window.liveSocket) { return false; }
+        window.liveSocket.enableLatencySim(#{latency_ms});
+        return true;
+      })()
+      """
+
+      case eval_silent(session, js) do
+        {:ok, true} -> :ok
+        _ -> warn_no_livesocket(:set_latency)
+      end
     end
 
     session
+  end
+
+  @no_livesocket_key {__MODULE__, :warned_latency_no_livesocket}
+
+  defp warn_no_livesocket(fun) do
+    unless :persistent_term.get(@no_livesocket_key, false) do
+      :persistent_term.put(@no_livesocket_key, true)
+
+      require Logger
+
+      Logger.warning("""
+      [wallabidi] Wallabidi.LiveView.#{fun}/2 had no effect — `window.liveSocket` \
+      is not defined on this page, so the latency simulator was never enabled.
+
+      Anything asserting "the server cannot have replied yet" is running at \
+      full speed and may pass or fail depending on timing.
+
+      Usual causes: the page isn't a LiveView, or its JS bundle isn't built \
+      in the test environment (see the `no-livesocket` diagnostic on visit/2).
+      """)
+    end
+
+    :ok
   end
 
   @doc """
