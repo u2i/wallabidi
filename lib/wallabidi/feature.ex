@@ -172,29 +172,11 @@ defmodule Wallabidi.Feature do
                      Code.ensure_loaded?(Phoenix.Ecto.SQL.Sandbox)
     @moduledoc false
 
-    def resolve_test_driver(context) do
-      cond do
-        # WALLABIDI_DRIVER / WALLABIDI_BROWSER pin the whole run to one
-        # driver — every test routes there regardless of its capability
-        # tag. This is what the per-driver CI lanes use to run "everything
-        # this browser can run" (combined with --only/--exclude tag
-        # filters). The env var VALUE selects the driver.
-        pinned = Wallabidi.pinned_driver() ->
-          pinned
-
-        # @tag :browser — needs a full browser
-        context[:browser] ->
-          Wallabidi.driver_for(:browser)
-
-        # @tag :headless — needs a headless browser
-        context[:headless] ->
-          Wallabidi.driver_for(:headless)
-
-        # Default — untagged, cheapest driver
-        true ->
-          Wallabidi.resolve_driver()
-      end
-    end
+    # Env pinning (WALLABIDI_DRIVER / WALLABIDI_BROWSER, used by the
+    # per-driver CI lanes) and capability-tag routing are test-suite
+    # concerns, so they live in `Wallabidi.Test` alongside the rest of the
+    # test-only session setup.
+    defdelegate resolve_test_driver(context), to: Wallabidi.Test, as: :resolve_driver
 
     def build_setup_return([session]) do
       [session: session]
@@ -212,7 +194,7 @@ defmodule Wallabidi.Feature do
       {:ok, session} =
         start_session_opts
         |> Keyword.merge(more_opts)
-        |> Wallabidi.start_session()
+        |> Wallabidi.Test.start_session()
 
       session
     end
