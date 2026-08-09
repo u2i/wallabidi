@@ -84,6 +84,15 @@ defmodule Wallabidi.Query.ErrorMessage do
     """
   end
 
+  def message(_, {:invalid_wait, wait}) do
+    """
+    The given wait #{inspect(wait)} is not a non-negative number of milliseconds.
+
+    Use `wait: 0` to check the DOM as it is right now, or a positive number
+    to override this query's share of `:max_wait_time`.
+    """
+  end
+
   def message(%{method: method, selector: selector}, :invalid_selector) do
     """
     The #{method} '#{selector}' is not a valid query.

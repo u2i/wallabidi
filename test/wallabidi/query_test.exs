@@ -218,4 +218,34 @@ defmodule Wallabidi.QueryTest do
       assert Query.count(query) == 1
     end
   end
+
+  describe "wait/1" do
+    test "is nil when unset, so the session's max_wait_time applies" do
+      assert Query.wait(Query.css("#thing")) == nil
+    end
+
+    test "reads an explicit wait, including zero" do
+      assert Query.wait(Query.css("#thing", wait: 0)) == 0
+      assert Query.wait(Query.css("#thing", wait: 5_000)) == 5_000
+    end
+  end
+
+  describe "validate/1 with :wait" do
+    test "accepts nil, zero and positive integers" do
+      assert {:ok, _} = Query.validate(Query.css("#thing"))
+      assert {:ok, _} = Query.validate(Query.css("#thing", wait: 0))
+      assert {:ok, _} = Query.validate(Query.css("#thing", wait: 1_000))
+    end
+
+    test "rejects a negative wait" do
+      assert {:error, {:invalid_wait, -1}} = Query.validate(Query.css("#thing", wait: -1))
+    end
+
+    test "rejects a non-integer wait" do
+      assert {:error, {:invalid_wait, :forever}} =
+               Query.validate(Query.css("#thing", wait: :forever))
+
+      assert {:error, {:invalid_wait, 1.5}} = Query.validate(Query.css("#thing", wait: 1.5))
+    end
+  end
 end

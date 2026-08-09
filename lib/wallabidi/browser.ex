@@ -1249,7 +1249,9 @@ defmodule Wallabidi.Browser do
         Query.result(query)
 
       {:error, :stale_reference} ->
-        if max_time_exceeded?(get_session(parent), start_time) do
+        # `wait: 0` means "the DOM as it is right now", so don't re-query
+        # past a stale element either — that would be waiting.
+        if Query.wait(query) == 0 or max_time_exceeded?(get_session(parent), start_time) do
           raise Wallabidi.QueryError, ErrorMessage.message(query, :not_found)
         else
           do_find_with(parent, query, start_time, opts)
@@ -1501,6 +1503,22 @@ defmodule Wallabidi.Browser do
       session
       |> visit("/")
       |> refute_has(Query.css(".secret-admin-content"))
+
+  ## "never appears" vs "not there yet"
+
+  This retries like any other query, so it asserts that the element **never
+  appears within the wait window** — the right meaning for content that must
+  not leak, as above.
+
+  It is the wrong meaning for "this hasn't happened yet". An element that
+  legitimately arrives later (a server round-trip completing, say) will be
+  found mid-window and raise. Use `wait: 0` to check the DOM as it is right
+  now instead:
+
+      # the client-side update is in; the server reply is still in flight
+      assert_has(session, Query.css("#fast", text: "Ontario"))
+      refute_has(session, Query.css("#slow", text: "Ontario", wait: 0))
+
   """
   defmacro refute_has(parent, query) do
     quote do
@@ -1945,10 +1963,22 @@ defmodule Wallabidi.Browser do
   # current matches now, not "wait until something appears." Skip the
   # full max_wait_time budget for those — fall through to the inline
   # sync-count branch quickly.
-  defp query_timeout(session, %Wallabidi.Query{conditions: conditions}) do
-    if Keyword.get(conditions, :minimum) == 0,
-      do: 50,
-      else: max_wait_time(session)
+  #
+  # An explicit `wait:` on the query wins over both: `wait: 0` is the
+  # "right now" form, and a positive value overrides `:max_wait_time` for
+  # this query alone.
+  defp query_timeout(session, %Wallabidi.Query{conditions: conditions} = query) do
+    # Matched with `is_integer/1` rather than truthiness — `wait: 0` is a
+    # meaningful value, not an absent one.
+    case Wallabidi.Query.wait(query) do
+      wait when is_integer(wait) ->
+        wait
+
+      nil ->
+        if Keyword.get(conditions, :minimum) == 0,
+          do: 50,
+          else: max_wait_time(session)
+    end
   end
 
   defp request_url(session, path) do

@@ -34,6 +34,35 @@ defmodule Wallabidi.Query do
     - `:selected` - Determines if the query should return only selected elements (default: `:any`).
     - `:text` - Text that should be found inside the element (default: `nil`).
     - `:at` - The position (a number or `:all`) of the element to return if multiple elements satisfy the query. (default: `:all`)
+    - `:wait` - How long, in milliseconds, this query may wait for a match. Overrides the session's `:max_wait_time` for this query alone (default: `nil`).
+
+  ## Waiting
+
+  By default a query retries until it matches or `:max_wait_time` elapses,
+  which is what makes assertions robust against content that renders late.
+  `:wait` overrides that for one query:
+
+  ```
+  # "is it there right now" — one check against the current DOM
+  Query.css("#flash", wait: 0)
+
+  # "give this one more room" — this query only
+  Query.css("#slow-report", wait: 30_000)
+  ```
+
+  `wait: 0` is the form to reach for when *absence* is the point. Since
+  `refute_has/2` retries like any other query, it otherwise asserts
+  "never appears within the window" — true and useful for "this content
+  must not leak", but wrong for "this hasn't happened *yet*":
+
+  ```
+  # optimistic UI: the client-side update is in, the server reply is not
+  assert_has(session, Query.css("#fast", text: "Ontario"))
+  refute_has(session, Query.css("#slow", text: "Ontario", wait: 0))
+  ```
+
+  Without `wait: 0` that refutation would wait out the round-trip, see the
+  legitimate update land, and fail.
 
   Query options can also be set via functions by the same names:
 
@@ -117,7 +146,8 @@ defmodule Wallabidi.Query do
           text: String.t() | nil,
           visible: boolean() | :any,
           selected: boolean() | :any,
-          at: non_neg_integer | :all
+          at: non_neg_integer | :all,
+          wait: non_neg_integer | nil
         ]
   @type result :: list(Element.t())
   @type opts :: list()
@@ -458,10 +488,16 @@ defmodule Wallabidi.Query do
       at_number(query) != :all && (at_number(query) < 0 || not is_integer(at_number(query))) ->
         {:error, {:invalid_at_number, at_number(query)}}
 
+      not valid_wait?(wait(query)) ->
+        {:error, {:invalid_wait, wait(query)}}
+
       true ->
         {:ok, query}
     end
   end
+
+  defp valid_wait?(nil), do: true
+  defp valid_wait?(wait), do: is_integer(wait) and wait >= 0
 
   @doc """
   Compiles a query into CSS or xpath so its ready to be sent to the driver
@@ -522,6 +558,24 @@ defmodule Wallabidi.Query do
 
   def inner_text(%Query{conditions: conditions}) do
     Keyword.get(conditions, :text)
+  end
+
+  @doc """
+  How long this query may wait for a match, in milliseconds, or `nil` to
+  use the session's `:max_wait_time`.
+
+  `wait: 0` checks once against the DOM as it is right now — the "not yet"
+  form that makes `refute_has/2` mean *absent at this instant* rather than
+  *never appears within the window*.
+
+  Returns the value exactly as given; `validate/1` is what rejects a bad
+  one. Hence the loose return type — narrowing it to
+  `non_neg_integer() | nil` would assert the value is already valid and
+  make that validation provably dead code.
+  """
+  @spec wait(t) :: term()
+  def wait(%Query{conditions: conditions}) do
+    Keyword.get(conditions, :wait)
   end
 
   def result(query) do
