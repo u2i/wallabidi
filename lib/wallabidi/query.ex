@@ -146,7 +146,8 @@ defmodule Wallabidi.Query do
           text: String.t() | nil,
           visible: boolean() | :any,
           selected: boolean() | :any,
-          at: non_neg_integer | :all
+          at: non_neg_integer | :all,
+          wait: non_neg_integer | nil
         ]
   @type result :: list(Element.t())
   @type opts :: list()
@@ -566,8 +567,13 @@ defmodule Wallabidi.Query do
   `wait: 0` checks once against the DOM as it is right now — the "not yet"
   form that makes `refute_has/2` mean *absent at this instant* rather than
   *never appears within the window*.
+
+  Returns the value exactly as given; `validate/1` is what rejects a bad
+  one. Hence the loose return type — narrowing it to
+  `non_neg_integer() | nil` would assert the value is already valid and
+  make that validation provably dead code.
   """
-  @spec wait(t) :: non_neg_integer() | nil
+  @spec wait(t) :: term()
   def wait(%Query{conditions: conditions}) do
     Keyword.get(conditions, :wait)
   end
