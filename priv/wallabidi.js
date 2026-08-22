@@ -889,7 +889,14 @@ function installLvHook() {
           W.observedPatch = true;
           transition('LVReady');
         }
-        W.check();
+        // Deferred to a microtask so LV's onPatchEnd call stack unwinds
+        // first: W.check() runs query pipelines (DOM walks, layout reads)
+        // and can synchronously dispatch a click (click_first), which
+        // would otherwise re-enter LiveView's event handling from inside
+        // its own patch-end processing.
+        queueMicrotask(function() {
+          W.check();
+        });
         // If any form just had phx-trigger-action flipped truthy, a native
         // form submit is about to fire a full page navigation. Signal
         // nav_pending so Elixir extends the page_ready timeout to cover
