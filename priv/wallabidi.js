@@ -37,18 +37,45 @@ function newPageId() {
   return Date.now() + '-' + Math.random().toString(36).slice(2, 8);
 }
 
-// Wraps liveSocket.domCallbacks.onPatchEnd so `cb(container)` is invoked
-// after the original handler. Returns a `restore` function that puts the
-// previous handler back. No-ops when there's no LiveSocket.
-function wrapPatchEnd(cb) {
+// Registry-backed onPatchEnd dispatcher. Installed on
+// liveSocket.domCallbacks exactly once per document; wrapPatchEnd(cb)
+// becomes add/remove on the callback list rather than each caller
+// wrapping (and restoring) the previous handler directly. This makes
+// install/restore order irrelevant — a caller can always remove exactly
+// its own callback without disturbing anyone else's, so a later
+// wrapPatchEnd can never be silently clobbered by an earlier one's
+// restore (see issue #69).
+//
+// The original LiveView handler (if any) is preserved and always
+// invoked first, exactly once, no matter how many times this is called.
+var patchEndCallbacks = [];
+function installPatchEndDispatcher() {
   var ls = window.liveSocket;
-  if (!ls || !ls.domCallbacks) return function() {};
+  if (!ls || !ls.domCallbacks) return false;
+  if (ls.domCallbacks.__wallabidiDispatcher) return true;
   var orig = ls.domCallbacks.onPatchEnd;
-  ls.domCallbacks.onPatchEnd = function(container) {
+  function dispatcher(container) {
     if (orig) orig(container);
-    cb(container);
+    // Snapshot before iterating: a callback may remove itself (or
+    // another) synchronously (e.g. awaitElementMatch resolving).
+    var cbs = patchEndCallbacks.slice();
+    for (var i = 0; i < cbs.length; i++) cbs[i](container);
+  }
+  dispatcher.__wallabidiDispatcher = true;
+  ls.domCallbacks.onPatchEnd = dispatcher;
+  return true;
+}
+
+// Registers `cb` to run on every subsequent onPatchEnd. Returns a
+// `restore` function that removes exactly this callback. No-ops (restore
+// is a no-op too) when there's no LiveSocket yet.
+function wrapPatchEnd(cb) {
+  if (!installPatchEndDispatcher()) return function() {};
+  patchEndCallbacks.push(cb);
+  return function() {
+    var idx = patchEndCallbacks.indexOf(cb);
+    if (idx !== -1) patchEndCallbacks.splice(idx, 1);
   };
-  return function() { ls.domCallbacks.onPatchEnd = orig; };
 }
 
 // --- Visibility check ---
@@ -419,6 +446,10 @@ W.preparePatch = function() {
         r(true);
       }
     });
+    // Registering with the shared dispatcher (see wrapPatchEnd) means
+    // this callback stays installed for the life of the document — no
+    // later wrapPatchEnd/restore can ever knock it out, so hooking once
+    // per document (guarded by this flag) is safe.
     window.__wallabidi_patch_hooked = true;
   }
   window.__wallabidi_patch_promise = new Promise(function(resolve) {
@@ -850,9 +881,10 @@ function installLvHook() {
   try {
     var ls = window.liveSocket;
     if (ls && ls.domCallbacks) {
-      var origPatch = ls.domCallbacks.onPatchEnd;
-      ls.domCallbacks.onPatchEnd = function(c) {
-        if (origPatch) origPatch(c);
+      // Registered through the shared dispatcher (see wrapPatchEnd) rather
+      // than hand-wrapping onPatchEnd directly, so this can never be
+      // silently dropped by another wrapPatchEnd's restore (issue #69).
+      wrapPatchEnd(function(c) {
         if (!W.observedPatch) {
           W.observedPatch = true;
           transition('LVReady');
@@ -873,7 +905,7 @@ function installLvHook() {
         } else {
           bumpPageId('onPatchEnd');
         }
-      };
+      });
       // Watch the socket wire for live_redirect / redirect payloads —
       // these arrive in the click's phx_reply BEFORE the destination
       // mount completes. Firing a `nav_pending` message lets the
