@@ -246,9 +246,23 @@ defmodule Wallabidi do
 
   @doc """
   Ends a browser session.
+
+  Before actually closing the session, synchronizes with the server:
+  issues one final same-origin request from inside the page and waits
+  for its response. `driver.end_session/1` only confirms the *browser*
+  is done — it says nothing about whether the app server has finished
+  handling everything the browser already dispatched. Without this,
+  a request the browser sent moments before the test returned can
+  still be in flight (not yet accepted/handled server-side) when
+  session teardown proceeds, racing anything downstream that assumes
+  "session closed" implies "server caught up" — e.g. a sandboxed test
+  DB connection or Mimic stub getting torn down while that request is
+  still mid-flight. See https://github.com/u2i/wallabidi/issues/76.
   """
   @spec end_session(Session.t()) :: :ok | {:error, reason}
   def end_session(%Session{driver: driver} = session) do
+    sync_with_server(session)
+
     result = driver.end_session(session)
 
     # Drain any in-flight WebSocket events that arrived after session
@@ -256,6 +270,51 @@ defmodule Wallabidi do
     # process mailbox and can interfere with the next session.
     drain_bidi_events()
     result
+  end
+
+  # 2 seconds is generous for a HEAD request the app server already has
+  # a warm connection for; bounded so a genuinely wedged page (or one
+  # where fetch() itself hangs rather than rejecting, observed against
+  # about:/data: URLs in this repo's own test suite) can't stall every
+  # session teardown.
+  @sync_with_server_timeout_ms 2_000
+
+  # Waits for one final same-origin round-trip to resolve before
+  # returning. A HEAD request costs nothing server-side beyond routing
+  # and has no side effects, and running it from inside the page (not
+  # from the test process) means it travels through the exact same
+  # browser networking stack as everything the test already triggered
+  # -- its completion is as strong a signal as we can get, short of
+  # true CDP network-idle tracking, that the server has caught up.
+  #
+  # Best-effort and bounded: if the page is on a non-http(s) URL (a
+  # fresh session, about:blank, a data: URL -- none of which represent
+  # a real request that could still be in flight server-side), has
+  # already navigated away or crashed, or the driver doesn't support
+  # script execution, this no-ops rather than failing an otherwise-
+  # successful test at teardown time. The timeout is enforced INSIDE
+  # the page script (via Promise.race against a timer), not just on
+  # the Elixir side -- fetch() itself can hang rather than reject for
+  # some URL schemes, so bounding only the outer call would still let
+  # the in-page Promise, and the CDP round-trip awaiting it, run long.
+  defp sync_with_server(%Session{driver: driver} = session) do
+    script = """
+    if (!/^https?:$/.test(window.location.protocol)) {
+      arguments[arguments.length - 1](false);
+    } else {
+      var __timeout = new Promise(function(resolve) {
+        setTimeout(function() { resolve(false); }, #{@sync_with_server_timeout_ms});
+      });
+      var __fetch = fetch(window.location.href, {method: "HEAD", cache: "no-store"})
+        .then(function() { return true; })
+        .catch(function() { return false; });
+      Promise.race([__fetch, __timeout]).then(arguments[arguments.length - 1]);
+    }
+    """
+
+    driver.execute_script_async(session, script, [])
+  catch
+    _, _ -> :ok
   end
 
   defp drain_bidi_events do
