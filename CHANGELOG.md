@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.6](https://github.com/u2i/wallabidi/compare/v0.4.5...v0.4.6) (2026-08-31)
+
+
+### CI
+
+* allow manual dispatch of the release workflow ([61769a8](https://github.com/u2i/wallabidi/commit/61769a82d5269984a0f91d784f8f59aca1e92141))
+
 ## [0.4.5](https://github.com/u2i/wallabidi/compare/v0.4.4...v0.4.5) (2026-08-31)
 
 
