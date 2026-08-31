@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.4.5](https://github.com/u2i/wallabidi/compare/v0.4.4...v0.4.5) (2026-08-31)
+
+
+### Added
+
+* **bidi:** support status/1 and response_headers/1 on Chrome BiDi ([cb4c6a7](https://github.com/u2i/wallabidi/commit/cb4c6a7157f60ea2b0cfc00f781e7eb5c013ba46))
+* **browser:** add status/1 and response_headers/1 ([e31c711](https://github.com/u2i/wallabidi/commit/e31c711ba981905a110310dbbba53dcd6391a3d3))
+* **query:** add a `wait:` option for "now" and "not yet" ([#68](https://github.com/u2i/wallabidi/issues/68)) ([c78a96c](https://github.com/u2i/wallabidi/commit/c78a96c2b02b1f6dc4b1c293f2168f7a2d160a41))
+* separate application and test-suite configuration ([#66](https://github.com/u2i/wallabidi/issues/66)) ([e7d4998](https://github.com/u2i/wallabidi/commit/e7d499827c8d319ba5ea830277e2dd041ef9fad7))
+* support setting the User-Agent ([299e6fd](https://github.com/u2i/wallabidi/commit/299e6fd18e4743e164054568c1b53bd257ba98db))
+
+
+### Fixed
+
+* default visit/3 to DOMContentLoaded instead of load ([fcf824a](https://github.com/u2i/wallabidi/commit/fcf824a6b50012427ca4b5d3131038f00f1e3ca0)), closes [#77](https://github.com/u2i/wallabidi/issues/77)
+* defer W.check() to a microtask from LV's onPatchEnd ([e808f13](https://github.com/u2i/wallabidi/commit/e808f139d5ed877b125634e154505e3e9646f097)), closes [#70](https://github.com/u2i/wallabidi/issues/70)
+* install onPatchEnd through a shared callback registry ([c5fd008](https://github.com/u2i/wallabidi/commit/c5fd0085adfa479e64cd27bc008ea1aebf731698)), closes [#69](https://github.com/u2i/wallabidi/issues/69)
+
+
+### Changed
+
+* release 0.4.5 ([6ac5ddb](https://github.com/u2i/wallabidi/commit/6ac5ddbd95aef8b804b50c2268263cca78ccc033))
+
+
+### Documentation
+
+* add a guide for scraping with the Lightpanda driver ([d784463](https://github.com/u2i/wallabidi/commit/d78446380aeb27a5443f9f33393d1d377b8fc241))
+* cover both drivers for scraping; surface it in the description ([f9f0227](https://github.com/u2i/wallabidi/commit/f9f0227c45fa2e1f534172f9d89c35573314e2a6))
+* de-anchor the README intro from testing ([d6302a4](https://github.com/u2i/wallabidi/commit/d6302a4b4522e275c4d448268ea9c9e6ae9d3d52))
+* frame auto-wait as a feature for both testing and scraping ([11b6de6](https://github.com/u2i/wallabidi/commit/11b6de6a74eb44c7a808ed6d9582bd6d3c28c414))
+
 ## [0.4.4](https://github.com/u2i/wallabidi/compare/v0.4.3...v0.4.4) (2026-08-04)
 
 
