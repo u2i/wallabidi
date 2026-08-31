@@ -372,7 +372,16 @@ defmodule Wallabidi.Remote.OpsShared do
       end
 
       @doc """
-      Navigate the session to `url` and wait for `load`.
+      Navigate the session to `url` and wait for a lifecycle milestone
+      (`opts[:wait_until]`, default `"DOMContentLoaded"`).
+
+      Chrome's `"load"` milestone can be indefinitely delayed on pages
+      that keep a persistent connection open during initial load (e.g.
+      a LiveView page's websocket) — see
+      https://github.com/u2i/wallabidi/issues/77. `"DOMContentLoaded"`
+      fires reliably in that situation and is the standard workaround
+      recommended for Puppeteer/Playwright. Pass `wait_until: "load"`
+      to restore the old behavior for a given call.
 
       The host module must export `navigate/2` returning
       `{:ok, %{loader_id: id_or_nil}} | {:error, term}`. When the
@@ -385,6 +394,7 @@ defmodule Wallabidi.Remote.OpsShared do
       @spec visit(Session.t(), String.t(), keyword) :: :ok | {:error, term}
       def visit(%Session{} = session, url, opts \\ []) when is_binary(url) do
         timeout = Keyword.get(opts, :timeout, 10_000)
+        wait_until = Keyword.get(opts, :wait_until, "DOMContentLoaded")
 
         with {:ok, %{loader_id: loader_id}} <- navigate(session, url) do
           result =
@@ -392,7 +402,7 @@ defmodule Wallabidi.Remote.OpsShared do
               case Wallabidi.Remote.Transport.Protocol.await_page_load(
                      session,
                      loader_id,
-                     "load",
+                     wait_until,
                      timeout
                    ) do
                 :ok -> :ok
