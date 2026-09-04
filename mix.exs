@@ -128,6 +128,7 @@ defmodule Wallabidi.Mixfile do
         "guides/isolation.md": [title: "Test Isolation"],
         "guides/api.md": [title: "API"],
         "guides/scraping.md": [title: "Scraping"],
+        "guides/recording.md": [title: "Recording a Session"],
         "guides/migrating.md": [title: "Migrating from Wallaby"],
         "ARCHITECTURE.md": [title: "Architecture"],
         "TESTING.md": [title: "Testing"]
@@ -138,6 +139,7 @@ defmodule Wallabidi.Mixfile do
           "guides/isolation.md",
           "guides/api.md",
           "guides/scraping.md",
+          "guides/recording.md",
           "guides/migrating.md"
         ],
         Internals: ["ARCHITECTURE.md", "TESTING.md"]
