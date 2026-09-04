@@ -29,6 +29,7 @@ identically across them. Only the trade-offs differ.
 | Per-session User-Agent | ✗ (process-wide) | ✓ |
 | `file://` URLs | ✗ | ✓ |
 | Screenshots | ✗ | ✓ |
+| Streaming binary data out of the page | ✗ | ✓ |
 | iframes, dialogs, localStorage | ✗ | ✓ |
 | CSS layout / visibility | ✗ | ✓ |
 
@@ -303,6 +304,67 @@ cap, but each session costs far more memory — tune to your machine.
 Be a good citizen on someone else's site: add delays, respect `robots.txt`,
 and [identify yourself](#user-agent) in the User-Agent.
 
+## Streaming binary data out of the page
+
+Chrome CDP only. `Wallabidi.Browser.open_stream/1` gets a sequence of binary
+chunks out of the page and into an Elixir process, in order, as they're
+produced — the hook for anything that needs to push data out as it happens
+rather than all at once at the end.
+
+The motivating case is recording a live session: drive a headless
+participant into a WebRTC call your app already runs (grant fake camera/mic
+permissions, join like a real user), capture what it receives with an
+in-page `MediaRecorder`, and stream the recording out for upload as it's
+captured rather than buffering the whole call in browser memory.
+
+Wallabidi doesn't do any of that itself — there's no CDP domain for video,
+so it isn't a recording feature. It's the plumbing: a channel from page JS
+to an Elixir mailbox.
+
+```elixir
+{:ok, stream_id} = open_stream(session)
+stream_id_js = Jason.encode!(stream_id)
+
+execute_script(session, """
+  const recorder = new MediaRecorder(remoteStream);
+  recorder.ondataavailable = (e) => window.__wallabidi_stream(#{stream_id_js}, e.data);
+  recorder.start(5000); // push a chunk every 5s instead of buffering the whole call
+""")
+
+# In the process that called open_stream/1:
+receive do
+  {:wallabidi_stream, ^stream_id, _seq, chunk} -> ExAws.S3.upload_part(..., chunk)
+end
+```
+
+`window.__wallabidi_stream(streamId, chunk)` accepts a `Blob`, `ArrayBuffer`,
+typed array, or string — call it from any page JS, not just a
+`MediaRecorder`. Delivery is ordered: chunks arrive as
+`{:wallabidi_stream, stream_id, seq, binary}` with `seq` starting at 0 and
+incrementing by one per chunk, regardless of the order the underlying CDP
+events happen to arrive in. If the process that called `open_stream/1`
+exits, the registration is dropped automatically.
+
+Call `close_stream(session, stream_id)` once your own capture code has
+stopped (e.g. after `recorder.stop()`) and its final chunk has arrived.
+Closing only stops *delivery* — it doesn't reach into the page and stop
+whatever is producing chunks.
+
+Getting a headless Chrome session into a real WebRTC call needs two more
+pieces. Wallabidi has no dedicated API for either yet — both are plain
+Chrome/CDP mechanisms a host app wires up itself:
+
+- **Permission**: `getUserMedia` still prompts even with a fake device
+  configured. CDP's `Browser.grantPermissions` (camera/microphone) on the
+  target avoids that; nothing in Wallabidi wraps this call today.
+- **A synthetic camera/mic**: Chrome's `--use-fake-device-for-media-stream`
+  launch flag (optionally paired with `--use-file-for-fake-video-capture=`
+  / `--use-file-for-fake-audio-capture=` to feed it real media) is what
+  lets a headless tab's own `getUserMedia` calls succeed without real
+  hardware. Wallabidi doesn't currently expose a way to pass extra launch
+  flags to the Chrome process it manages — this is a known gap for the
+  video-recording use case, not something available today.
+
 ## Lightpanda's limits
 
 Both drivers execute JavaScript — `setTimeout` handlers, framework
@@ -312,6 +374,7 @@ supports everything below; Lightpanda trades these away for speed:
 | Not supported on Lightpanda | Notes |
 |---|---|
 | Screenshots | `Page.captureScreenshot` isn't implemented |
+| Streaming binary data out of the page | `open_stream/1` raises `Wallabidi.DriverError` |
 | `file://` URLs | Raises `NavigationError` with `UnsupportedProtocol` — serve over HTTP instead |
 | Per-session User-Agent | Process-wide only — see [User-Agent](#user-agent) |
 | Custom request headers | `Network.setExtraHTTPHeaders` is accepted and ignored |

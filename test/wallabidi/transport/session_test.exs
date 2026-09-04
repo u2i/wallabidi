@@ -48,4 +48,35 @@ defmodule Wallabidi.V2.SessionTest do
       assert new_state.find_waiters == %{}
     end
   end
+
+  describe "streaming" do
+    test "open_stream then close_stream round-trips through handle_call" do
+      state = %Session{}
+
+      assert {:reply, :ok, state} = Session.handle_call({:open_stream, "s1", self()}, nil, state)
+      assert Map.has_key?(state.streams, "s1")
+
+      assert {:reply, :ok, state} = Session.handle_call({:close_stream, "s1"}, nil, state)
+      refute Map.has_key?(state.streams, "s1")
+    end
+
+    test "owner DOWN still stops the session (unaffected by stream subscriber tracking)" do
+      owner_ref = make_ref()
+      state = %Session{owner_ref: owner_ref, streams: %{}}
+
+      assert {:stop, :normal, ^state} =
+               Session.handle_info({:DOWN, owner_ref, :process, self(), :normal}, state)
+    end
+
+    test "a stream subscriber's DOWN drops its stream without stopping the session" do
+      {:reply, :ok, state} = Session.handle_call({:open_stream, "s1", self()}, nil, %Session{})
+
+      subscriber_ref = state.streams["s1"].monitor_ref
+
+      assert {:noreply, new_state} =
+               Session.handle_info({:DOWN, subscriber_ref, :process, self(), :normal}, state)
+
+      refute Map.has_key?(new_state.streams, "s1")
+    end
+  end
 end

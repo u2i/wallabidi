@@ -161,6 +161,26 @@ defmodule Wallabidi.Remote.Driver.Orchestrator do
     take_screenshot(spec, Element.root_session(element))
   end
 
+  @doc """
+  Opens a browser→Elixir binary stream. Chrome CDP only — see
+  `Wallabidi.Remote.CDP.Client.open_stream/1`.
+
+  Unconditional delegation: `spec.wire_protocol` is
+  `Wallabidi.Remote.CDP.Client` on BOTH Chrome CDP and Lightpanda (they
+  share the same CDP façade), so this must never be reached for
+  Lightpanda — `LightpandaCDP.open_stream/1` overrides the `Generic`
+  delegate to raise before dispatch gets here. Don't gate this on
+  `function_exported?/3`; it can't distinguish the two drivers.
+  """
+  @spec open_stream(Spec.t(), Session.t()) :: {:ok, String.t()} | {:error, term}
+  def open_stream(%Spec{} = spec, %Session{} = session),
+    do: spec.wire_protocol.open_stream(session)
+
+  @doc "Closes a stream opened by `open_stream/2`."
+  @spec close_stream(Spec.t(), Session.t(), String.t()) :: :ok
+  def close_stream(%Spec{} = spec, %Session{} = session, stream_id),
+    do: spec.wire_protocol.close_stream(session, stream_id)
+
   @doc "List cookies for the session's current origin."
   @spec cookies(Spec.t(), Session.t()) :: {:ok, list(map)} | {:error, term}
   def cookies(%Spec{} = spec, %Session{} = session), do: spec.wire_protocol.cookies(session)

@@ -1237,6 +1237,92 @@ defmodule Wallabidi.Remote.CDP.Client do
     end
   end
 
+  # ----- Streaming (browser → Elixir binary chunks) -----
+  #
+  # No CDP domain encodes video, so this isn't a video-recording
+  # feature — it's the plumbing a host app needs to build one (or
+  # anything else that wants to push a sequence of binary chunks out
+  # of the page as they're produced, e.g. a MediaRecorder capturing a
+  # WebRTC call the session has joined). The app owns capture (its own
+  # JS calling `window.__wallabidi_stream(streamId, blob)`) and
+  # whatever it does with the bytes (upload, encode, discard); this
+  # only gets them from the page to an Elixir process, in order.
+  #
+  # CDP-only: there's no Lightpanda/BiDi equivalent wired up yet, and
+  # Lightpanda has no camera/mic or MediaRecorder support regardless.
+
+  # The raw CDP binding name. Distinct from `window.__wallabidi_stream`
+  # (the public JS wrapper priv/wallabidi_stream.js installs) so the
+  # wrapper doesn't have to shadow-and-capture the binding CDP
+  # installs — install order between a Runtime.addBinding and an
+  # addScriptToEvaluateOnNewDocument preload isn't a documented CDP
+  # guarantee.
+  @stream_binding "__wallabidi_stream_raw"
+
+  # Same @external_resource pattern as Wallabidi.Remote.Bootstrap:
+  # read at compile time (relative to this file, not the installed
+  # priv dir, so it works before the first `mix compile` populates
+  # priv/) and baked into the BEAM.
+  @stream_binding_js_path Path.join([
+                            __DIR__,
+                            "..",
+                            "..",
+                            "..",
+                            "..",
+                            "priv",
+                            "wallabidi_stream.js"
+                          ])
+  @external_resource @stream_binding_js_path
+  @stream_binding_js File.read!(@stream_binding_js_path)
+
+  @doc """
+  Installs the `window.__wallabidi_stream(streamId, blobOrBuffer)`
+  binding (idempotent, safe to call more than once — mirrors
+  `install_bootstrap/1`). Call this once before a page pushes chunks;
+  `open_stream/2` calls it for you.
+  """
+  @spec install_stream_binding(Session.t()) :: :ok | {:error, term}
+  def install_stream_binding(%Session{} = session) do
+    :ok = Protocol.subscribe(session, "Runtime.bindingCalled")
+    cdp_cast(session, "Runtime.enable", %{})
+    cdp_cast(session, "Runtime.addBinding", %{name: @stream_binding})
+
+    cdp_cast(session, "Page.addScriptToEvaluateOnNewDocument", %{
+      source: @stream_binding_js
+    })
+
+    case cdp_send(session, "Page.getFrameTree", %{}) do
+      {:ok, _} -> :ok
+      err -> err
+    end
+  end
+
+  @doc """
+  Starts a stream: installs the binding, injects it into the *current*
+  document (addScriptToEvaluateOnNewDocument only covers future
+  navigations), and registers the calling process to receive
+  `{:wallabidi_stream, stream_id, seq, binary}` messages in order.
+  Returns a fresh `stream_id` the caller passes to page JS.
+
+  The registration is tied to the calling process — if it exits, the
+  registration is dropped automatically.
+  """
+  @spec open_stream(Session.t()) :: {:ok, String.t()} | {:error, term}
+  def open_stream(%Session{} = session) do
+    with :ok <- install_stream_binding(session),
+         {:ok, _} <- evaluate(session, @stream_binding_js) do
+      stream_id = "stream-#{System.unique_integer([:positive, :monotonic])}"
+      :ok = Protocol.open_stream(session, stream_id, self())
+      {:ok, stream_id}
+    end
+  end
+
+  @doc "Stops delivering chunks for `stream_id`. Does not stop capture in the page — call this after telling the page to stop."
+  @spec close_stream(Session.t(), String.t()) :: :ok
+  def close_stream(%Session{} = session, stream_id) when is_binary(stream_id) do
+    Protocol.close_stream(session, stream_id)
+  end
+
   # ----- Screenshot + window size -----
 
   @doc "Capture a PNG screenshot of the current viewport. Returns raw binary."

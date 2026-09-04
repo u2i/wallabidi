@@ -198,5 +198,13 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
   def send_keys(%Wallabidi.Element{} = element, keys),
     do: Wallabidi.Remote.Driver.Generic.send_keys(element, keys)
 
+  # Streaming (open_stream/close_stream): CDP-only for now — BiDiClient
+  # has no equivalent to CDP's Runtime.addBinding-based streaming
+  # channel wired up. See Wallabidi.Remote.CDP.Client.open_stream/1.
+  def open_stream(%Session{}),
+    do: raise(Wallabidi.DriverError.not_supported("open_stream/1", __MODULE__))
+
+  def close_stream(%Session{}, _stream_id), do: :ok
+
   defdelegate parse_log(log), to: Wallabidi.Remote.Chrome.Logger
 end

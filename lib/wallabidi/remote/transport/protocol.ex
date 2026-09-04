@@ -38,6 +38,11 @@ defmodule Wallabidi.Remote.Transport.Protocol do
   #     fires `__wallabidi(...)` for that query id.
   #   * `{:register_find, query_id, timeout_ms}` → reserves a
   #     find-waiter slot before the JS that fires the binding runs.
+  #   * `{:open_stream, stream_id, subscriber}` → registers `subscriber`
+  #     to receive `{:wallabidi_stream, stream_id, seq, binary}`
+  #     messages for chunks pushed via `window.__wallabidi_stream`
+  #     (CDP only — see `Wallabidi.Remote.CDP.Client.open_stream/2`).
+  #   * `{:close_stream, stream_id}` → drops the registration.
   #   * `:current_context_id` → returns the focused frame's
   #     executionContextId (or nil for root).
   #   * `{:push_frame, context_id}` / `:pop_frame` /
@@ -159,6 +164,32 @@ defmodule Wallabidi.Remote.Transport.Protocol do
     GenServer.call(pid, {:await_find_result, query_id}, timeout_ms + 2_000)
   catch
     :exit, _ -> {:timeout, 0}
+  end
+
+  # ----- Streaming (CDP-only: browser-pushed binary chunks) -----
+
+  @doc """
+  Registers `subscriber` (defaults to the caller) to receive
+  `{:wallabidi_stream, stream_id, seq, binary}` messages for
+  `stream_id`. Delivery is ordered by `seq` — a chunk that arrives
+  before an earlier `seq` is buffered until the gap fills.
+
+  The actor monitors `subscriber` and drops the registration if it
+  exits, so a crashed consumer doesn't leak state.
+  """
+  @spec open_stream(Session.t(), String.t(), pid) :: :ok
+  def open_stream(%Session{pid: pid}, stream_id, subscriber \\ self())
+      when is_binary(stream_id) and is_pid(subscriber) do
+    GenServer.call(pid, {:open_stream, stream_id, subscriber})
+  catch
+    :exit, _ -> :ok
+  end
+
+  @spec close_stream(Session.t(), String.t()) :: :ok
+  def close_stream(%Session{pid: pid}, stream_id) when is_binary(stream_id) do
+    GenServer.call(pid, {:close_stream, stream_id})
+  catch
+    :exit, _ -> :ok
   end
 
   # ----- Frame stack -----

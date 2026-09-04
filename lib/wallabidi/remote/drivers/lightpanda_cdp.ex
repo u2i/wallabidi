@@ -322,4 +322,15 @@ defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
 
   def send_keys(%Element{} = element, keys),
     do: Wallabidi.Remote.Driver.Generic.send_keys(element, keys)
+
+  # Streaming (open_stream/close_stream): Lightpanda has no camera/mic
+  # or MediaRecorder support, and would otherwise silently dispatch
+  # through the SAME wire_protocol module Chrome CDP uses (both point
+  # at Wallabidi.Remote.CDP.Client) — Generic's delegate can't tell
+  # the two drivers apart, so this must be overridden here rather than
+  # gated in Orchestrator.
+  def open_stream(%Session{}),
+    do: raise(Wallabidi.DriverError.not_supported("open_stream/1", __MODULE__))
+
+  def close_stream(%Session{}, _stream_id), do: :ok
 end

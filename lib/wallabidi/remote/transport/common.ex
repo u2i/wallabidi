@@ -250,6 +250,100 @@ defmodule Wallabidi.Remote.Transport.Common do
     end
   end
 
+  # ----- Streaming (CDP-only: browser-pushed binary chunks) -----
+  #
+  # Backs `Wallabidi.Remote.CDP.Client.open_stream/2` /
+  # `close_stream/2`. Page JS calls `window.__wallabidi_stream(streamId,
+  # blob)` (see priv/wallabidi_stream.js); each call arrives here as a
+  # `Runtime.bindingCalled` event carrying `{streamId, seq, data}`
+  # (base64). `state.streams` is `%{stream_id => %{subscriber:,
+  # monitor_ref:, next_seq:, pending: %{seq => binary}}}`.
+  #
+  # Delivery is strictly ordered by `seq`: a chunk is forwarded to the
+  # subscriber only once every lower seq has already been forwarded;
+  # anything that arrives ahead of the gap is buffered in `pending`
+  # until it closes. In practice CDP's single WebSocket delivers
+  # bindingCalled events in the order the page fired them, so `pending`
+  # is expected to stay empty — this is a correctness guarantee, not a
+  # reordering mechanism for out-of-order transport.
+
+  @doc """
+  Registers `subscriber` for `stream_id`, monitoring it so a crashed
+  or exited consumer doesn't leak the registration. Re-registering an
+  already-open stream replaces the subscriber (and demonitors the old
+  one) rather than erroring.
+  """
+  @spec open_stream(map(), term(), pid()) :: map()
+  def open_stream(state, stream_id, subscriber) do
+    streams =
+      case Map.get(state.streams, stream_id) do
+        %{monitor_ref: ref} -> Process.demonitor(ref, [:flush]) && state.streams
+        nil -> state.streams
+      end
+
+    monitor_ref = Process.monitor(subscriber)
+
+    entry = %{subscriber: subscriber, monitor_ref: monitor_ref, next_seq: 0, pending: %{}}
+    %{state | streams: Map.put(streams, stream_id, entry)}
+  end
+
+  @doc "Drops the registration for `stream_id`, demonitoring its subscriber."
+  @spec close_stream(map(), term()) :: map()
+  def close_stream(state, stream_id) do
+    case Map.get(state.streams, stream_id) do
+      %{monitor_ref: ref} ->
+        Process.demonitor(ref, [:flush])
+        %{state | streams: Map.delete(state.streams, stream_id)}
+
+      nil ->
+        state
+    end
+  end
+
+  @doc """
+  Records an incoming `{stream_id, seq, binary}` chunk and delivers it
+  (plus any now-contiguous buffered chunks) to the subscriber in
+  order. A chunk for an unknown/closed stream is dropped — the
+  subscriber has already stopped listening.
+  """
+  @spec route_stream_chunk(map(), term(), non_neg_integer(), binary()) :: map()
+  def route_stream_chunk(state, stream_id, seq, binary) do
+    case Map.get(state.streams, stream_id) do
+      nil ->
+        state
+
+      entry ->
+        entry = %{entry | pending: Map.put(entry.pending, seq, binary)}
+        entry = deliver_ready_chunks(stream_id, entry)
+        %{state | streams: Map.put(state.streams, stream_id, entry)}
+    end
+  end
+
+  defp deliver_ready_chunks(stream_id, %{next_seq: next_seq, pending: pending} = entry) do
+    case Map.pop(pending, next_seq) do
+      {nil, ^pending} ->
+        entry
+
+      {binary, rest} ->
+        send(entry.subscriber, {:wallabidi_stream, stream_id, next_seq, binary})
+        deliver_ready_chunks(stream_id, %{entry | next_seq: next_seq + 1, pending: rest})
+    end
+  end
+
+  @doc """
+  Handles a subscriber's `{:DOWN, ref, :process, _, _}` — drops every
+  stream that process was subscribed to.
+  """
+  @spec handle_stream_subscriber_down(map(), reference()) :: map()
+  def handle_stream_subscriber_down(state, ref) do
+    streams =
+      state.streams
+      |> Enum.reject(fn {_id, entry} -> entry.monitor_ref == ref end)
+      |> Map.new()
+
+    %{state | streams: streams}
+  end
+
   # ----- Bootstrap channel payload routing -----
 
   @doc """

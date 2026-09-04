@@ -217,6 +217,21 @@ defmodule Wallabidi.Driver do
   @callback take_screenshot(Session.t() | Element.t()) :: binary | {:error, reason}
 
   @doc """
+  Opens a browser→Elixir binary stream, registering the calling
+  process to receive `{:wallabidi_stream, stream_id, seq, binary}`
+  messages in order as the page pushes chunks via
+  `window.__wallabidi_stream/2`. CDP-only today — drivers without
+  support raise `Wallabidi.DriverError`.
+  """
+  @callback open_stream(Session.t()) :: {:ok, String.t()} | {:error, reason}
+
+  @doc """
+  Stops delivery for a stream opened by `open_stream/1`. A no-op on
+  drivers that never supported streaming.
+  """
+  @callback close_stream(Session.t(), String.t()) :: :ok
+
+  @doc """
   Invoked to get the handle for the currently focused window.
   """
   @callback window_handle(Session.t() | Element.t()) :: {:ok, String.t()} | {:error, reason}

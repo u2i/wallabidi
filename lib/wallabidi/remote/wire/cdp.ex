@@ -25,8 +25,11 @@ defmodule Wallabidi.Remote.Wire.CDP do
     * `Page.lifecycleEvent` — record `(loaderId, milestone)` so any
       matching load waiter wakes immediately (or the milestone buffers
       for a later caller).
-    * `Runtime.bindingCalled` — bootstrap channel; routed to
-      `Common.route_bootstrap_payload/2` when the binding name matches.
+    * `Runtime.bindingCalled` — bootstrap channel (`__wallabidi`,
+      routed to `Common.route_bootstrap_payload/2`) or the streaming
+      channel (`__wallabidi_stream_raw`, routed to
+      `Common.route_stream_chunk/4` — see
+      `Wallabidi.Remote.CDP.Client.open_stream/1`).
     * `Network.responseReceived` — record the main-frame HTTP status and
       headers, keyed by loaderId, for `Wallabidi.Browser.status/1`.
     * `Runtime.executionContextCreated` — record `frameId → contextId`.
@@ -81,11 +84,17 @@ defmodule Wallabidi.Remote.Wire.CDP do
 
   def handle_event(state, "Runtime.bindingCalled", event) do
     params = Map.get(event, "params", %{})
+    payload = params["payload"]
 
-    if params["name"] == "__wallabidi" and is_binary(params["payload"]) do
-      Common.route_bootstrap_payload(state, params["payload"])
-    else
-      state
+    case {params["name"], is_binary(payload)} do
+      {"__wallabidi", true} ->
+        Common.route_bootstrap_payload(state, payload)
+
+      {"__wallabidi_stream_raw", true} ->
+        decode_stream_payload(state, payload)
+
+      _ ->
+        state
     end
   end
 
@@ -118,4 +127,17 @@ defmodule Wallabidi.Remote.Wire.CDP do
   end
 
   def handle_event(state, _method, _event), do: state
+
+  # Payload shape: {"streamId": "...", "seq": 0, "data": "<base64>"}.
+  # Pushed by `window.__wallabidi_stream` (priv/wallabidi_stream.js) —
+  # see `Wallabidi.Remote.CDP.Client.open_stream/2`.
+  defp decode_stream_payload(state, payload) do
+    with {:ok, %{"streamId" => stream_id, "seq" => seq, "data" => data}} <- Jason.decode(payload),
+         true <- is_binary(stream_id) and is_integer(seq),
+         {:ok, binary} <- Base.decode64(data) do
+      Common.route_stream_chunk(state, stream_id, seq, binary)
+    else
+      _ -> state
+    end
+  end
 end

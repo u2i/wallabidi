@@ -78,7 +78,11 @@ defmodule Wallabidi.Remote.Transport.Session do
     # Runtime.executionContextCreated events arrive. We need this
     # because Page.frameNavigated gives us a `frameId` but
     # Runtime.evaluate wants an `executionContextId`.
-    frame_contexts: %{}
+    frame_contexts: %{},
+    # CDP-only browser→Elixir binary streaming (see
+    # Wallabidi.Remote.Transport.Common's "Streaming" section).
+    # %{stream_id => %{subscriber:, monitor_ref:, next_seq:, pending:}}
+    streams: %{}
   ]
 
   @type t :: %__MODULE__{}
@@ -508,6 +512,14 @@ defmodule Wallabidi.Remote.Transport.Session do
     Common.await_find_result(state, query_id, from)
   end
 
+  def handle_call({:open_stream, stream_id, subscriber}, _from, state) do
+    {:reply, :ok, Common.open_stream(state, stream_id, subscriber)}
+  end
+
+  def handle_call({:close_stream, stream_id}, _from, state) do
+    {:reply, :ok, Common.close_stream(state, stream_id)}
+  end
+
   def handle_call({:await_page_ready_after, pre_page_id, timeout_ms}, from, state) do
     Common.await_page_ready_after(state, pre_page_id, timeout_ms, from)
   end
@@ -600,6 +612,10 @@ defmodule Wallabidi.Remote.Transport.Session do
 
   def handle_info({:DOWN, ref, :process, _pid, _reason}, %{owner_ref: ref} = state) do
     {:stop, :normal, state}
+  end
+
+  def handle_info({:DOWN, ref, :process, _pid, _reason}, state) do
+    {:noreply, Common.handle_stream_subscriber_down(state, ref)}
   end
 
   def handle_info(_msg, state), do: {:noreply, state}

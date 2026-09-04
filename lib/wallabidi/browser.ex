@@ -319,6 +319,51 @@ defmodule Wallabidi.Browser do
   defp remove_illegal_characters(string), do: String.replace(string, ~r{<>:"/\\\?\*}, "")
 
   @doc """
+  Opens a browser→Elixir binary stream on `session` and registers the
+  calling process to receive its chunks.
+
+  Wallabidi has no video/audio recording feature of its own — there's
+  no CDP domain for it. This is the hook a host app uses to build one:
+  once open, page JS can push binary chunks (e.g. a `MediaRecorder`
+  capturing a WebRTC call the session has joined) via
+  `window.__wallabidi_stream(streamId, blob)`, and each chunk arrives
+  in the calling process's mailbox as
+  `{:wallabidi_stream, stream_id, seq, binary}`, strictly ordered by
+  `seq` starting at 0. What you do with the bytes — assemble a file,
+  multipart-upload to S3/Tigris, discard — is entirely up to you.
+
+  CDP-only (`driver: :chrome_cdp`); other drivers raise
+  `Wallabidi.DriverError`.
+
+  ```elixir
+  {:ok, stream_id} = Wallabidi.Browser.open_stream(session)
+  stream_id_js = Jason.encode!(stream_id)
+
+  execute_script(session, "
+    const recorder = new MediaRecorder(remoteStream);
+    recorder.ondataavailable = (e) => window.__wallabidi_stream(\#{stream_id_js}, e.data);
+    recorder.start(5000); // 5s timeslice: push a chunk every 5s
+  ", [])
+
+  receive do
+    {:wallabidi_stream, ^stream_id, _seq, chunk} -> upload_chunk(chunk)
+  end
+  ```
+  """
+  @spec open_stream(session) :: {:ok, String.t()} | {:error, term}
+  def open_stream(%{driver: driver} = session), do: driver.open_stream(session)
+
+  @doc """
+  Stops delivery for a stream opened by `open_stream/1`. Does not stop
+  capture in the page — tell your own JS to stop first (e.g.
+  `recorder.stop()`), then close the stream once its final chunk has
+  arrived.
+  """
+  @spec close_stream(session, String.t()) :: :ok
+  def close_stream(%{driver: driver} = session, stream_id),
+    do: driver.close_stream(session, stream_id)
+
+  @doc """
   Gets the window handle of the current window.
 
   The window is either an instance of a browser tab or another operating system window.

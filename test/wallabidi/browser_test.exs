@@ -37,6 +37,9 @@ defmodule Wallabidi.BrowserTest do
     defp visits do
       Agent.get(__MODULE__, fn visits -> visits end)
     end
+
+    def open_stream(%Session{}), do: {:ok, "fake-stream-1"}
+    def close_stream(%Session{}, _stream_id), do: :ok
   end
 
   describe "visit/2" do
@@ -140,6 +143,27 @@ defmodule Wallabidi.BrowserTest do
 
     test "it retries until time runs out" do
       assert Browser.retry(fn -> {:error, :some_error} end) == {:error, :some_error}
+    end
+  end
+
+  describe "open_stream/1 and close_stream/2" do
+    test "delegate to the driver" do
+      session = session_for_driver(TestDriver)
+
+      assert Browser.open_stream(session) == {:ok, "fake-stream-1"}
+      assert Browser.close_stream(session, "fake-stream-1") == :ok
+    end
+
+    test "open_stream raises on a driver that doesn't support it (e.g. LiveView)" do
+      session = %Session{driver: Wallabidi.LiveView.Driver}
+
+      assert_raise Wallabidi.DriverError, fn -> Browser.open_stream(session) end
+    end
+
+    test "close_stream is a no-op on a driver that never supported streaming" do
+      session = %Session{driver: Wallabidi.LiveView.Driver}
+
+      assert Browser.close_stream(session, "whatever") == :ok
     end
   end
 

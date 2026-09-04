@@ -107,6 +107,7 @@ defmodule Wallabidi.Mixfile do
         # — they must be in the tarball so the consumer's compile sees them.
         "priv/wallabidi.js",
         "priv/wallabidi.min.js",
+        "priv/wallabidi_stream.js",
         "priv/bidi-server/package.json",
         "priv/bidi-server/package-lock.json",
         "priv/bidi-server/run.mjs"

@@ -46,6 +46,8 @@ defmodule Wallabidi.Remote.Driver.Generic do
     {:set_cookie, 3, true},
     {:set_cookie, 4, true},
     {:take_screenshot, 1, true},
+    {:open_stream, 1, true},
+    {:close_stream, 2, true},
     {:get_window_size, 1, true},
     {:set_window_size, 3, true},
     {:click, 1, true},
@@ -152,6 +154,11 @@ defmodule Wallabidi.Remote.Driver.Generic do
 
   def take_screenshot(%Element{} = element),
     do: Orchestrator.take_screenshot(spec(element), element)
+
+  def open_stream(%Session{} = session), do: Orchestrator.open_stream(spec(session), session)
+
+  def close_stream(%Session{} = session, stream_id),
+    do: Orchestrator.close_stream(spec(session), session, stream_id)
 
   def get_window_size(parent), do: Orchestrator.get_window_size(spec(parent), parent)
 
