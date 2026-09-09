@@ -37,6 +37,8 @@ defmodule Wallabidi.BrowserTest do
     defp visits do
       Agent.get(__MODULE__, fn visits -> visits end)
     end
+
+    def grant_permissions(%Session{}, permissions), do: {:ok, permissions}
   end
 
   describe "visit/2" do
@@ -140,6 +142,23 @@ defmodule Wallabidi.BrowserTest do
 
     test "it retries until time runs out" do
       assert Browser.retry(fn -> {:error, :some_error} end) == {:error, :some_error}
+    end
+  end
+
+  describe "grant_permissions/2" do
+    test "delegates to the driver" do
+      session = session_for_driver(TestDriver)
+
+      assert Browser.grant_permissions(session, [:camera, :microphone]) ==
+               {:ok, [:camera, :microphone]}
+    end
+
+    test "raises on a driver that doesn't support it (e.g. LiveView)" do
+      session = %Session{driver: Wallabidi.LiveView.Driver}
+
+      assert_raise Wallabidi.DriverError, fn ->
+        Browser.grant_permissions(session, [:camera])
+      end
     end
   end
 

@@ -866,6 +866,10 @@ defmodule Wallabidi.LiveView.Driver do
   @impl true
   def take_screenshot(_), do: raise(Wallabidi.DriverError.not_supported("take_screenshot/1"))
   @impl true
+  def grant_permissions(_, _),
+    do: raise(Wallabidi.DriverError.not_supported("grant_permissions/2"))
+
+  @impl true
   def accept_alert(_, _), do: raise(Wallabidi.DriverError.not_supported("accept_alert/2"))
   @impl true
   def accept_confirm(_, _), do: raise(Wallabidi.DriverError.not_supported("accept_confirm/2"))

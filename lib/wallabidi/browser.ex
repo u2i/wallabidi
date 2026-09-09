@@ -319,6 +319,28 @@ defmodule Wallabidi.Browser do
   defp remove_illegal_characters(string), do: String.replace(string, ~r{<>:"/\\\?\*}, "")
 
   @doc """
+  Grants media permissions (`:camera`, `:microphone`) for `session`, so a
+  page's `getUserMedia`/`getDisplayMedia` calls succeed without a real
+  permission prompt — useful for driving a headless session into a
+  WebRTC call. Applies to every origin in the session's browser context.
+
+  Pair with launching Chrome with a fake camera/mic
+  (`--use-fake-device-for-media-stream`) — this grants the permission;
+  the launch flags give `getUserMedia` an actual device to open. See the
+  [Recording guide](recording.html) for a Chrome image built for this.
+
+  CDP-only (`driver: :chrome_cdp`); other drivers raise
+  `Wallabidi.DriverError`.
+
+  ```elixir
+  :ok = Wallabidi.Browser.grant_permissions(session, [:camera, :microphone])
+  ```
+  """
+  @spec grant_permissions(session, [:camera | :microphone]) :: :ok | {:error, term}
+  def grant_permissions(%{driver: driver} = session, permissions) when is_list(permissions),
+    do: driver.grant_permissions(session, permissions)
+
+  @doc """
   Gets the window handle of the current window.
 
   The window is either an instance of a browser tab or another operating system window.

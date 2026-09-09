@@ -198,5 +198,11 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
   def send_keys(%Wallabidi.Element{} = element, keys),
     do: Wallabidi.Remote.Driver.Generic.send_keys(element, keys)
 
+  # grant_permissions: CDP-only for now — BiDiClient has no equivalent
+  # to CDP's Browser.grantPermissions wired up. See
+  # Wallabidi.Remote.CDP.Client.grant_permissions/2.
+  def grant_permissions(%Session{}, _permissions),
+    do: raise(Wallabidi.DriverError.not_supported("grant_permissions/2", __MODULE__))
+
   defdelegate parse_log(log), to: Wallabidi.Remote.Chrome.Logger
 end

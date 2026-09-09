@@ -217,6 +217,13 @@ defmodule Wallabidi.Driver do
   @callback take_screenshot(Session.t() | Element.t()) :: binary | {:error, reason}
 
   @doc """
+  Grants media permissions (camera/microphone) so `getUserMedia` calls in
+  the page succeed without a real permission prompt. CDP-only today —
+  drivers without support raise `Wallabidi.DriverError`.
+  """
+  @callback grant_permissions(Session.t(), [:camera | :microphone]) :: :ok | {:error, reason}
+
+  @doc """
   Invoked to get the handle for the currently focused window.
   """
   @callback window_handle(Session.t() | Element.t()) :: {:ok, String.t()} | {:error, reason}
