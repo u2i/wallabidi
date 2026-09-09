@@ -322,4 +322,13 @@ defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
 
   def send_keys(%Element{} = element, keys),
     do: Wallabidi.Remote.Driver.Generic.send_keys(element, keys)
+
+  # grant_permissions: Lightpanda has no camera/mic or getUserMedia
+  # support, and would otherwise silently dispatch through the SAME
+  # wire_protocol module Chrome CDP uses (both point at
+  # Wallabidi.Remote.CDP.Client) — Generic's delegate can't tell the two
+  # drivers apart, so this must be overridden here rather than gated in
+  # Orchestrator.
+  def grant_permissions(%Session{}, _permissions),
+    do: raise(Wallabidi.DriverError.not_supported("grant_permissions/2", __MODULE__))
 end

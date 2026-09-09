@@ -161,6 +161,22 @@ defmodule Wallabidi.Remote.Driver.Orchestrator do
     take_screenshot(spec, Element.root_session(element))
   end
 
+  @doc """
+  Grants media permissions. CDP only — see
+  `Wallabidi.Remote.CDP.Client.grant_permissions/2`.
+
+  Unconditional delegation: `spec.wire_protocol` is
+  `Wallabidi.Remote.CDP.Client` on BOTH Chrome CDP and Lightpanda (they
+  share the same CDP façade), so this must never be reached for
+  Lightpanda — `LightpandaCDP.grant_permissions/2` overrides the
+  `Generic` delegate to raise before dispatch gets here. Don't gate this
+  on `function_exported?/3`; it can't distinguish the two drivers.
+  """
+  @spec grant_permissions(Spec.t(), Session.t(), [:camera | :microphone]) ::
+          :ok | {:error, term}
+  def grant_permissions(%Spec{} = spec, %Session{} = session, permissions),
+    do: spec.wire_protocol.grant_permissions(session, permissions)
+
   @doc "List cookies for the session's current origin."
   @spec cookies(Spec.t(), Session.t()) :: {:ok, list(map)} | {:error, term}
   def cookies(%Spec{} = spec, %Session{} = session), do: spec.wire_protocol.cookies(session)

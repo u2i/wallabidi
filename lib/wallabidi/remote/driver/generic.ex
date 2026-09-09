@@ -46,6 +46,7 @@ defmodule Wallabidi.Remote.Driver.Generic do
     {:set_cookie, 3, true},
     {:set_cookie, 4, true},
     {:take_screenshot, 1, true},
+    {:grant_permissions, 2, true},
     {:get_window_size, 1, true},
     {:set_window_size, 3, true},
     {:click, 1, true},
@@ -152,6 +153,9 @@ defmodule Wallabidi.Remote.Driver.Generic do
 
   def take_screenshot(%Element{} = element),
     do: Orchestrator.take_screenshot(spec(element), element)
+
+  def grant_permissions(%Session{} = session, permissions),
+    do: Orchestrator.grant_permissions(spec(session), session, permissions)
 
   def get_window_size(parent), do: Orchestrator.get_window_size(spec(parent), parent)
 

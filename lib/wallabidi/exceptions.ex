@@ -82,11 +82,19 @@ end
 defmodule Wallabidi.DriverError do
   defexception [:message]
 
+  @doc "Convenience for the common case: unsupported on the in-process LiveView driver."
   def not_supported(operation) do
     %__MODULE__{
       message:
         "#{operation} is not supported by the LiveView driver. " <>
           "Tag this test with @tag :browser to run it with a browser driver."
+    }
+  end
+
+  @doc "Unsupported on `driver_module` specifically (e.g. a capability only Chrome CDP implements)."
+  def not_supported(operation, driver_module) do
+    %__MODULE__{
+      message: "#{operation} is not supported by #{inspect(driver_module)}."
     }
   end
 end
