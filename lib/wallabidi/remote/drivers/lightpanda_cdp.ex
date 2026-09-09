@@ -29,12 +29,26 @@ defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
     log_check_interactions?: false
   }
 
-  # Lightpanda reports `Lightpanda/1.0` and, as of the official 0.3.6
-  # binary, ignores `Network.setUserAgentOverride` — the call returns
-  # `{:ok, %{}}` but the UA on the wire is unchanged. The override is still
-  # issued for the BEAM sandbox metadata (harmless if dropped, and it works
-  # on the older fork builds); a caller-supplied `:user_agent` warns rather
-  # than silently doing nothing. See `warn_user_agent_unsupported/0`.
+  # Lightpanda reports `Lightpanda/1.0`. Its UA is a property of the
+  # *process* (set via the `--user-agent` CLI flag, see
+  # `user_agent_args/0`), not of a CDP session — the official 0.3.6
+  # binary accepts `Network.setUserAgentOverride` (`{:ok, %{}}`) but
+  # does not apply it to change the browser's base UA identity per
+  # session, which is why a caller-supplied `:user_agent` warns rather
+  # than silently doing nothing (see `warn_user_agent_unsupported/0`).
+  #
+  # That said, the override call itself is NOT a no-op: it's still how
+  # the BEAM sandbox metadata (`Wallabidi.Metadata.append/2`) reaches
+  # the page's `navigator.userAgent` on every request, and it works —
+  # verified against the official 0.3.6 binary by
+  # `integration_test/cases/browser/sandbox_metadata_test.exs` and the
+  # full sandbox round-trip in
+  # `integration_test/cases/sandbox_propagation_test.exs`. Don't read
+  # the paragraph above as "the override is ignored" — only the
+  # UA-identity portion is; metadata propagation is not, and both
+  # drivers/tests exercising it are green on this binary. See
+  # https://github.com/u2i/wallabidi/issues/84 for the investigation
+  # that confirmed this.
   @base_user_agent "Lightpanda/1.0"
 
   @doc false
