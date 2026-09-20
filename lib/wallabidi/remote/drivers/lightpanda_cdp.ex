@@ -79,7 +79,8 @@ defmodule Wallabidi.Remote.Drivers.LightpandaCDP do
             [
               "--cdp-max-connections",
               Integer.to_string(@cdp_max_connections)
-            ] ++ user_agent_args(),
+            ] ++
+              user_agent_args() ++ Application.get_env(:wallabidi, :lightpanda_args, []),
           wrapper_script: wrapper_script()
         ]
 

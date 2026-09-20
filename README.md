@@ -216,11 +216,23 @@ config :wallabidi,
   driver: :live_view,              # untagged tests; :live_view | :lightpanda | :chrome_cdp | :chrome (BiDi)
   headless: :lightpanda,           # @tag :headless tests (falls back to the :browser driver if lightpanda dep absent)
   browser: :chrome_cdp,            # @tag :browser tests
+  chrome_args: [],                 # extra args for locally launched Chrome
+  lightpanda_args: [],             # extra args for locally launched Lightpanda
   max_wait_time: 5_000,            # ms to wait for elements
   js_errors: true,                 # re-raise JS errors in Elixir
   js_logger: :stdio,               # IO device for console logs (nil to disable)
   screenshot_on_failure: false,
   screenshot_dir: "screenshots"
+```
+
+`chrome_args` applies when Wallabidi launches Chrome through the `:chrome_cdp`
+or `:chrome` (BiDi) driver. It has no effect when `WALLABIDI_CHROME_URL` points
+to an externally managed Chrome CDP browser. Lightpanda arguments use the separate `lightpanda_args` option:
+
+```elixir
+config :wallabidi,
+  chrome_args: ["--disable-features=MacAppCodeSignClone"],
+  lightpanda_args: ["--log-level", "debug"]
 ```
 
 ## Credits

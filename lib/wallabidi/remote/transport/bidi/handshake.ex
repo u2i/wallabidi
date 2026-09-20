@@ -1,6 +1,8 @@
 defmodule Wallabidi.Remote.Transport.BiDi.Handshake do
   @moduledoc false
 
+  alias Wallabidi.Driver.Utils
+
   # WebDriver-BiDi HTTP `POST /session` step.
   #
   # chromium-bidi's WebSocketServer creates a fresh session record per
@@ -56,7 +58,18 @@ defmodule Wallabidi.Remote.Transport.BiDi.Handshake do
   """
   @spec post_session(String.t(), keyword) :: {:ok, String.t()} | {:error, term}
   def post_session(base_url, opts \\ []) when is_binary(base_url) do
-    capabilities = Keyword.get(opts, :capabilities, @default_capabilities)
+    capabilities =
+      opts
+      |> Keyword.get(:capabilities, @default_capabilities)
+      |> update_in(
+        ["alwaysMatch", "goog:chromeOptions", "args"],
+        &Utils.merge_args(
+          &1,
+          Keyword.get(opts, :chrome_args, []),
+          ["enable-features", "disable-features"]
+        )
+      )
+
     timeout = Keyword.get(opts, :timeout, 10_000)
 
     body = Jason.encode!(%{"capabilities" => capabilities})

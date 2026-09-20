@@ -9,6 +9,8 @@ defmodule Wallabidi.Remote.Chrome.Server do
 
   require Logger
 
+  alias Wallabidi.Driver.Utils
+
   defstruct [
     :port,
     :os_pid,
@@ -187,8 +189,11 @@ defmodule Wallabidi.Remote.Chrome.Server do
       "--window-size=1280,800"
     ]
 
-    extra_args = Keyword.get(opts, :args, [])
-    base_args ++ extra_args
+    Utils.merge_args(
+      base_args,
+      Keyword.get(opts, :args, []),
+      ["enable-features", "disable-features"]
+    )
   end
 
   defp wrapper_script do

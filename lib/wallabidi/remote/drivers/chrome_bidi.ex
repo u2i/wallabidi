@@ -104,7 +104,8 @@ defmodule Wallabidi.Remote.Drivers.ChromeBiDi do
            BiDi.start_session(
              base_url: base_url,
              session_struct: session_struct,
-             owner: Keyword.get(opts, :owner, self())
+             owner: Keyword.get(opts, :owner, self()),
+             chrome_args: Application.get_env(:wallabidi, :chrome_args, [])
            ) do
       caller = Keyword.get(opts, :owner, self())
       _ = WebSocketClient.subscribe(session.bidi_pid, "log.entryAdded", caller, :global)
