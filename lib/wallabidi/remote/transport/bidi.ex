@@ -45,11 +45,7 @@ defmodule Wallabidi.Remote.Transport.BiDi do
     teardown_fun = Keyword.get(opts, :teardown_fun, fn _ -> :ok end)
     owner = Keyword.get(opts, :owner, self())
 
-    handshake_opts =
-      case Keyword.fetch(opts, :capabilities) do
-        {:ok, caps} -> [capabilities: caps]
-        :error -> []
-      end
+    handshake_opts = Keyword.take(opts, [:capabilities, :chrome_args])
 
     # chromium-bidi's session.subscribe can transiently time out on
     # slow runners. Retry the WHOLE handshake → SessionActor.start_link →

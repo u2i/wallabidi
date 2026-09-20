@@ -13,6 +13,8 @@ defmodule Wallabidi do
   * `:max_wait_time` - The amount of time that Wallabidi should wait to find an element on the page. (defaults to `3_000`)
   * `:js_errors` - if Wallabidi should re-throw JavaScript errors in elixir (defaults to true).
   * `:js_logger` - IO device where JavaScript console logs are written to. Defaults to :stdio. This option can also be set to a file or any other io device. You can disable JavaScript console logging by setting this to `nil`.
+  * `:chrome_args` - Additional command-line arguments for locally launched Chrome browsers.
+  * `:lightpanda_args` - Additional command-line arguments for locally launched Lightpanda.
   """
 
   use Application

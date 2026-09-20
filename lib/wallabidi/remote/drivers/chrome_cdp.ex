@@ -53,7 +53,14 @@ defmodule Wallabidi.Remote.Drivers.ChromeCDP do
       if remote_url() do
         [SharedConnection]
       else
-        [{ChromeServer, [name: __MODULE__.Server]}, SharedConnection]
+        [
+          {ChromeServer,
+           [
+             name: __MODULE__.Server,
+             args: Application.get_env(:wallabidi, :chrome_args, [])
+           ]},
+          SharedConnection
+        ]
       end
 
     Supervisor.init(children, strategy: :one_for_one)
